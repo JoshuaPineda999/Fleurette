@@ -1,0 +1,56 @@
+from django.db import models
+from django.utils import timezone
+
+class Garment(models.Model):
+    name = models.CharField(max_length=255)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2)
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2)
+    image = models.ImageField(upload_to='garments/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def profit_per_piece(self):
+        return self.selling_price - self.cost_price
+
+    @property
+    def total_pieces(self):
+        return sum(item.quantity for item in self.sizes.all())
+
+    @property
+    def total_potential_profit(self):
+        return self.total_pieces * self.profit_per_piece
+
+    def __str__(self):
+        return self.name
+
+class SizeStock(models.Model):
+    SIZE_CHOICES = [
+        ('S', 'Small'),
+        ('M', 'Medium'),
+        ('L', 'Large'),
+        ('XL', 'Extra Large'),
+    ]
+    garment = models.ForeignKey(Garment, related_name='sizes', on_delete=models.CASCADE)
+    size = models.CharField(max_length=5, choices=SIZE_CHOICES)
+    quantity = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ('garment', 'size')
+
+class SaleLog(models.Model):
+    garment_name = models.CharField(max_length=255)
+    size = models.CharField(max_length=5)
+    quantity_sold = models.PositiveIntegerField(default=1)
+    profit_earned = models.DecimalField(max_digits=10, decimal_places=2)
+    sold_at = models.DateField(default=timezone.now)
+
+# Update the Expense model at the bottom of models.py:
+class Expense(models.Model):
+    title = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateField(default=timezone.now)
+    # NEW: Saves line-by-line itemized breakdown as JSON array
+    breakdown = models.JSONField(default=list, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.title} - ₱{self.amount}"
