@@ -140,15 +140,16 @@ function CustomerView() {
 // ==========================================
 function LoginScreen() {
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // Toggle visibility state
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handleLogin = (e) => {
     e.preventDefault();
-    // Reads password securely from your hidden .env file (falls back to 'admin123' if .env isn't set yet)
-    const securePassword = import.meta.env.VITE_ADMIN_PASSWORD || 'admin123';
+    // Strictly reads password from hidden .env file without insecure fallback
+    const securePassword = import.meta.env.VITE_ADMIN_PASSWORD;
 
-    if (password === securePassword) {
+    if (securePassword && password === securePassword) {
       localStorage.setItem('isAdmin', 'true');
       navigate('/admin');
     } else {
@@ -164,11 +165,23 @@ function LoginScreen() {
         <p className="text-stone-500 text-sm mb-6">Enter password to access the POS system</p>
         
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
+          <div className="relative">
             <input 
-              type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required
-              className="w-full border border-stone-300 rounded-xl p-3 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+              type={showPassword ? "text" : "password"} 
+              placeholder="Password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              required
+              className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition"
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? '👁️' : '👁️‍🗨️'}
+            </button>
           </div>
           {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
           <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
