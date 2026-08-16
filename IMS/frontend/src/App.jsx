@@ -196,7 +196,7 @@ function LoginScreen() {
 }
 
 // ==========================================
-// 3. ADMIN DASHBOARD (YOUR ORIGINAL LAYOUT)
+// 3. ADMIN DASHBOARD
 // ==========================================
 function AdminDashboard() {
   const navigate = useNavigate();
@@ -222,7 +222,6 @@ function AdminDashboard() {
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
 
-  // NEW: Rename Batch Modal State
   const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
 
@@ -610,16 +609,10 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
   };
   
-  // ==========================================
-  // UPDATED PRE-ORDER: DEDUCTS 1 PCS STOCK & DOES NOT DUPLICATE IN SALES LEDGER
-  // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      // 1. Create Pre-order record
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
-
-      // 2. Deduct 1 stock from the garment size
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
@@ -628,7 +621,6 @@ function AdminDashboard() {
           is_sale: true
         });
       }
-
       setShowPreOrderModal(false);
       setNewPreOrder({ customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
       showToast("📝 Pre-order added & stock deducted!");
@@ -654,7 +646,6 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}preorders/${id}/`); showToast("🗑️ Pre-order removed."); await fetchData(true); } catch (error) { alert('Could not delete pre-order.'); }
   };
 
-  // FIXED: Sales history strictly maps only actual sales to prevent pre-order duplication
   const unifiedHistory = salesHistory.map(log => ({
     id: `sale-${log.id}`,
     isPreOrder: false,
@@ -2171,5 +2162,29 @@ function AdminDashboard() {
       )}
 
     </div>
+  );
+}
+
+// ==========================================
+// 4. ROUTER WRAPPER
+// ==========================================
+function ProtectedRoute({ children }) {
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  return isAdmin ? children : <Navigate to="/login" replace />;
+}
+
+export default function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<CustomerView />} />
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </Router>
   );
 }
