@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 
+// 1. Automatically use Vercel's environment variable, or fallback to localhost
 const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
+
+// 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
+// 3. Safely format the Image URLs so pictures load from Render
 const formatImageUrl = (url) => {
   if (!url) return null;
   if (url.startsWith('/')) {
@@ -14,173 +17,7 @@ const formatImageUrl = (url) => {
   return url;
 };
 
-// ==========================================
-// 1. CUSTOMER CATALOG VIEW (READ-ONLY)
-// ==========================================
-function CustomerView() {
-  const [garments, setGarments] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [zoomedImage, setZoomedImage] = useState(null);
-
-  useEffect(() => {
-    const fetchGarments = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}garments/`);
-        setGarments(res.data.map(g => ({ ...g, image: formatImageUrl(g.image) })));
-      } catch (error) {
-        console.error("Error fetching garments:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchGarments();
-  }, []);
-
-  const filteredGarments = garments.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  return (
-    <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
-      <nav className="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🌸</span>
-            <h1 className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</h1>
-          </div>
-          <Link to="/login" className="text-xs font-black text-white hover:text-white bg-pink-600 hover:bg-pink-700 transition uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-md">
-            Admin Login
-          </Link>
-        </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
-          <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
-          <div className="mt-6 relative max-w-md mx-auto">
-            <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-stone-400">🔍</span>
-            <input 
-              type="text" placeholder="Search styles..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-white border border-stone-300 rounded-2xl text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
-            />
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="text-center text-stone-500 font-bold py-20">Loading Fleurette Collection...</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {filteredGarments.map(item => (
-              <div 
-                key={item.id} 
-                onClick={() => { if (item.image) setZoomedImage(item.image); }}
-                className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300"
-              >
-                {item.total_pieces === 0 && (
-                  <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
-                )}
-                <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
-                  {item.image ? (
-                    <>
-                      <img 
-                        src={item.image} 
-                        alt={item.name} 
-                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                        className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} 
-                      />
-                      <span className="text-6xl text-stone-300 hidden">👗</span>
-                    </>
-                  ) : (
-                    <span className="text-6xl text-stone-300">👗</span>
-                  )}
-                </div>
-                <div className="p-5 flex flex-col flex-1">
-                  <h3 className="font-black text-lg text-stone-900 leading-tight mb-1">{item.name}</h3>
-                  <span className="text-2xl font-black text-pink-600 mb-4">₱{item.selling_price}</span>
-                  
-                  <div className="mt-auto">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
-                    <div className="flex flex-wrap gap-2">
-                      {item.sizes.map(s => (
-                        <span key={s.size} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
-                          {s.size}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-
-      {zoomedImage && (
-        <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img src={zoomedImage} alt="Zoomed clothing" className="max-w-full max-h-[82vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
-            <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">✖ Click anywhere on screen to close</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ==========================================
-// 2. LOGIN SCREEN
-// ==========================================
-function LoginScreen() {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (password === 'admin123') {
-      localStorage.setItem('isAdmin', 'true');
-      navigate('/admin');
-    } else {
-      setError('Incorrect password. Please try again.');
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#eae4dc] flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-stone-200 text-center">
-        <div className="text-4xl mb-4">🌸</div>
-        <h2 className="text-2xl font-black text-stone-900 mb-1">Boutique Admin</h2>
-        <p className="text-stone-500 text-sm mb-6">Enter password to access the POS system</p>
-        
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <input 
-              type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required
-              className="w-full border border-stone-300 rounded-xl p-3 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-            />
-          </div>
-          {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
-          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
-            Login to Workspace
-          </button>
-        </form>
-        <div className="mt-6 pt-6 border-t border-stone-100">
-          <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==========================================
-// 3. FULL ADMIN DASHBOARD POS
-// ==========================================
-function AdminDashboard() {
-  const navigate = useNavigate();
+export default function App() {
   const [activeTab, setActiveTab] = useState('inventory');
   const [garments, setGarments] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
@@ -202,7 +39,8 @@ function AdminDashboard() {
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
-  
+
+  // NEW: Rename Batch Modal State
   const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
 
@@ -213,19 +51,25 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', styles: [{ id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '',
+    styles: [
+      { id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
+    ]
   });
 
   const [editGarment, setEditGarment] = useState({
-    id: null, batch_name: '', name: '', cost_price: '', selling_price: '', image: null, previewUrl: null, sizes: { S: 0, M: 0, L: 0, XL: 0 }
+    id: null, batch_name: '', name: '', cost_price: '', selling_price: '', image: null, previewUrl: null,
+    sizes: { S: 0, M: 0, L: 0, XL: 0 }
   });
 
   const [newExpense, setNewExpense] = useState({
-    title: '', amount: '', date: new Date().toISOString().split('T')[0], isDetailed: false, breakdown: [{ name: '', cost: '' }]
+    title: '', amount: '', date: new Date().toISOString().split('T')[0],
+    isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
   const [editExpense, setEditExpense] = useState({
-    id: null, title: '', amount: '', date: '', isDetailed: false, breakdown: [{ name: '', cost: '' }]
+    id: null, title: '', amount: '', date: '',
+    isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
   const [newPreOrder, setNewPreOrder] = useState({
@@ -236,11 +80,9 @@ function AdminDashboard() {
     id: null, customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
-  const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
-
-  const handleLogout = () => {
-    localStorage.removeItem('isAdmin');
-    navigate('/');
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   const fetchData = async (isBackgroundRefresh = false) => {
@@ -248,12 +90,18 @@ function AdminDashboard() {
     setErrorMessage(null);
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
-      const formattedGarments = garmentsRes.data.map(g => ({ ...g, image: formatImageUrl(g.image) }));
+      const formattedGarments = garmentsRes.data.map(g => ({
+        ...g,
+        image: formatImageUrl(g.image)
+      }));
+
       setGarments(formattedGarments);
 
       if (productModal.show && productModal.garment) {
         const freshCurrent = formattedGarments.find(g => g.id === productModal.garment.id);
-        if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
+        if (freshCurrent) {
+          setProductModal(prev => ({ ...prev, garment: freshCurrent }));
+        }
       }
 
       await fetchSalesHistory();
@@ -263,15 +111,32 @@ function AdminDashboard() {
     } catch (error) {
       console.error('Error fetching data:', error);
       if (!isBackgroundRefresh) {
-        setErrorMessage('Could not connect to Django server. Please ensure the backend is running.');
+        setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.');
         setLoading(false);
       }
     }
   };
 
-  const fetchSalesHistory = async () => { try { const res = await axios.get(`${API_BASE}sales/history/`); setSalesHistory(res.data); } catch (error) {} };
-  const fetchExpenses = async () => { try { const res = await axios.get(`${API_BASE}expenses/`); setExpenses(res.data); } catch (error) {} };
-  const fetchPreOrders = async () => { try { const res = await axios.get(`${API_BASE}preorders/`); setPreOrders(res.data); } catch (error) {} };
+  const fetchSalesHistory = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}sales/history/`);
+      setSalesHistory(res.data);
+    } catch (error) {}
+  };
+
+  const fetchExpenses = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}expenses/`);
+      setExpenses(res.data);
+    } catch (error) {}
+  };
+
+  const fetchPreOrders = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}preorders/`);
+      setPreOrders(res.data);
+    } catch (error) {}
+  };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -283,25 +148,33 @@ function AdminDashboard() {
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, { size: productModal.size, change: -Math.abs(productModal.quantity), is_sale: true });
+      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
+        size: productModal.size, change: -Math.abs(productModal.quantity), is_sale: true
+      });
       const updatedGarment = { ...response.data, image: formatImageUrl(response.data.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name}`);
+      showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name} (${productModal.size})`);
       await fetchData(true);
-    } catch (error) { alert('Could not complete sale. Check stock!'); }
+    } catch (error) {
+      alert('Could not complete sale. Check stock!');
+    }
   };
 
   const handleRestockSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, { size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false });
+      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
+        size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
+      });
       const updatedGarment = { ...response.data, image: formatImageUrl(response.data.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal(prev => ({ ...prev, garment: updatedGarment, quantity: 1 }));
-      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${updatedGarment.name}`);
+      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${updatedGarment.name} (${productModal.size})`);
       await fetchData(true);
-    } catch (error) { alert('Could not restock item.'); }
+    } catch (error) {
+      alert('Could not restock item.');
+    }
   };
 
   const handleBatchStyleChange = (index, field, value) => {
@@ -316,16 +189,31 @@ function AdminDashboard() {
     setNewBatch({ ...newBatch, styles: updatedStyles });
   };
 
-  const addStyleToBatch = () => setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
-  const removeStyleFromBatch = (index) => setNewBatch({ ...newBatch, styles: newBatch.styles.filter((_, i) => i !== index) });
+  const addStyleToBatch = () => {
+    setNewBatch({
+      ...newBatch,
+      styles: [...newBatch.styles, { id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    });
+  };
+
+  const removeStyleFromBatch = (index) => {
+    const updatedStyles = newBatch.styles.filter((_, i) => i !== index);
+    setNewBatch({ ...newBatch, styles: updatedStyles });
+  };
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
     try {
       for (const style of newBatch.styles) {
         if (!style.name) continue; 
+        
         const batchName = newBatch.batch_name || 'Uncategorized';
-        const existingGarment = garments.find(g => g.name.toLowerCase().trim() === style.name.toLowerCase().trim() && (g.batch_name || 'Uncategorized').toLowerCase().trim() === batchName.toLowerCase().trim());
+        
+        const existingGarment = garments.find(g => 
+          g.name.toLowerCase().trim() === style.name.toLowerCase().trim() &&
+          (g.batch_name || 'Uncategorized').toLowerCase().trim() === batchName.toLowerCase().trim()
+        );
+
         const formData = new FormData();
         formData.append('batch_name', batchName);
         formData.append('name', style.name.trim());
@@ -333,62 +221,115 @@ function AdminDashboard() {
         if (existingGarment) {
           const mergedSizes = { S: 0, M: 0, L: 0, XL: 0 };
           const currentSizeMap = {};
+          
           existingGarment.sizes.forEach(s => { currentSizeMap[s.size] = s.quantity; });
-          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => { mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0); });
+          
+          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => {
+            mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
+          });
+
           formData.append('cost_price', style.cost_price || existingGarment.cost_price);
           formData.append('selling_price', style.selling_price || existingGarment.selling_price);
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
+          
           if (style.image) formData.append('image', style.image);
-          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+
         } else {
           formData.append('cost_price', style.cost_price || 0);
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
           if (style.image) formData.append('image', style.image);
-          await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+          await axios.post(`${API_BASE}garments/`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
         }
       }
+
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', styles: [{ id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
-      showToast(`✨ Successfully imported Batch!`);
+      setNewBatch({
+        batch_name: '',
+        styles: [{ id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+      });
+      
+      showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
-    } catch (error) { alert('Error uploading batch.'); }
+    } catch (error) {
+      alert('Error uploading batch. Check your inputs.');
+    }
   };
 
-  const openRenameBatchModal = (oldName) => { setBatchRenameState({ oldName, newName: oldName }); setShowRenameBatchModal(true); };
+  // ==========================================
+  // BATCH MANAGEMENT (EDIT & DELETE ENTIRE BATCH)
+  // ==========================================
+  const openRenameBatchModal = (oldName) => {
+    setBatchRenameState({ oldName, newName: oldName });
+    setShowRenameBatchModal(true);
+  };
+
   const handleRenameBatchSubmit = async (e) => {
     e.preventDefault();
     const { oldName, newName } = batchRenameState;
-    if (!newName.trim() || newName.trim() === oldName) { setShowRenameBatchModal(false); return; }
+    if (!newName.trim() || newName.trim() === oldName) {
+      setShowRenameBatchModal(false);
+      return;
+    }
+
     try {
       const itemsToUpdate = garments.filter(g => (g.batch_name || 'Uncategorized') === oldName);
+      
       for (const item of itemsToUpdate) {
         const formData = new FormData();
         formData.append('batch_name', newName.trim());
         await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
       }
-      if (selectedBatch === oldName) setSelectedBatch(newName.trim());
+
+      if (selectedBatch === oldName) {
+        setSelectedBatch(newName.trim());
+      }
+
       setShowRenameBatchModal(false);
-      showToast(`✏️ Batch renamed!`);
+      showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
       await fetchData(true);
-    } catch (error) { alert('Could not rename batch.'); }
+    } catch (error) {
+      alert('Could not rename batch. Please try again.');
+    }
   };
 
   const handleDeleteBatch = async (batchName) => {
     const itemsToDelete = garments.filter(g => (g.batch_name || 'Uncategorized') === batchName);
-    if (!window.confirm(`Delete "${batchName}" and all its ${itemsToDelete.length} styles?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) {
+      return;
+    }
+
     try {
-      for (const item of itemsToDelete) await axios.delete(`${API_BASE}garments/${item.id}/`);
-      if (selectedBatch === batchName) setSelectedBatch(null);
-      showToast(`🗑️ Batch deleted.`);
+      for (const item of itemsToDelete) {
+        await axios.delete(`${API_BASE}garments/${item.id}/`);
+      }
+
+      if (selectedBatch === batchName) {
+        setSelectedBatch(null);
+      }
+
+      showToast(`🗑️ Batch "${batchName}" and all its styles have been removed.`);
       await fetchData(true);
-    } catch (error) { alert('Could not delete batch.'); }
+    } catch (error) {
+      alert('Could not delete all items in batch.');
+    }
   };
 
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     item.sizes.forEach(s => { sizeMap[s.size] = s.quantity; });
-    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name, cost_price: item.cost_price, selling_price: item.selling_price, image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap });
+    
+    setEditGarment({
+      id: item.id, batch_name: item.batch_name || '', name: item.name, cost_price: item.cost_price, selling_price: item.selling_price,
+      image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap
+    });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -403,20 +344,35 @@ function AdminDashboard() {
       formData.append('selling_price', editGarment.selling_price);
       formData.append('initial_sizes', JSON.stringify(editGarment.sizes));
       if (editGarment.image) formData.append('image', editGarment.image);
-      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
       setShowEditModal(false);
-      showToast("✏️ Style updated!");
+      showToast("✏️ Style details updated!");
       await fetchData(true);
-    } catch (error) { alert('Error saving changes.'); }
+    } catch (error) {
+      alert('Error saving changes. Check your inputs.');
+    }
   };
 
   const handleDeleteGarment = async (id) => {
-    if (!window.confirm("Delete this style?")) return;
-    try { await axios.delete(`${API_BASE}garments/${id}/`); setShowEditModal(false); showToast("🗑️ Garment removed."); await fetchData(true); } catch (error) { alert('Could not delete garment.'); }
+    if (!window.confirm("Are you sure you want to delete this style? All remaining stock for this item will be removed.")) return;
+    try {
+      await axios.delete(`${API_BASE}garments/${id}/`);
+      setShowEditModal(false);
+      setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
+      showToast("🗑️ Garment style removed.");
+      await fetchData(true);
+    } catch (error) {
+      alert('Could not delete garment. Please try again.');
+    }
   };
 
   const handleBreakdownChange = (index, field, value) => {
-    const updated = [...newExpense.breakdown]; updated[index][field] = value;
+    const updated = [...newExpense.breakdown];
+    updated[index][field] = value;
     const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
     setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
@@ -433,7 +389,7 @@ function AdminDashboard() {
       await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
       setShowExpenseModal(false);
       setNewExpense({ title: '', amount: '', date: new Date().toISOString().split('T')[0], isDetailed: false, breakdown: [{ name: '', cost: '' }] });
-      showToast("📈 Expense recorded!");
+      showToast("📈 Batch expense recorded!");
       await fetchData(true);
     } catch (error) { alert('Could not save expense.'); }
   };
@@ -444,7 +400,8 @@ function AdminDashboard() {
     setShowEditExpenseModal(true);
   };
   const handleEditBreakdownChange = (index, field, value) => {
-    const updated = [...editExpense.breakdown]; updated[index][field] = value;
+    const updated = [...editExpense.breakdown];
+    updated[index][field] = value;
     const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
     setEditExpense({ ...editExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
@@ -465,20 +422,36 @@ function AdminDashboard() {
     } catch (error) { alert('Could not update expense.'); }
   };
   const handleDeleteExpense = async (id) => {
-    if (!window.confirm("Remove expense?")) return;
+    if (!window.confirm("Remove this recorded expense?")) return;
     try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
   };
   
+  // ==========================================
+  // UPDATED PRE-ORDER: CREATES PRE-ORDER & DEDUCTS STOCK
+  // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
+      // 1. Create the pre-order entry
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
+
+      // 2. Automatically deduct 1 piece from the garment's stock for that size
+      const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
+      if (targetGarment && newPreOrder.size) {
+        await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
+          size: newPreOrder.size,
+          change: -1,
+          is_sale: true
+        });
+      }
+
       setShowPreOrderModal(false);
       setNewPreOrder({ customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
-      showToast("📝 Pre-order added!");
+      showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
-    } catch (error) { alert('Error creating pre-order.'); }
+    } catch (error) { alert('Error creating pre-order. Check your inputs.'); }
   };
+
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ id: item.id, customer_name: item.customer_name, item_name: item.item_name, size: item.size, color: item.color, price: item.price || '', down_payment: item.down_payment || '', is_paid: item.is_paid, balance: item.balance });
     setShowEditPreOrderModal(true);
@@ -499,7 +472,7 @@ function AdminDashboard() {
 
   const unifiedHistory = [
     ...salesHistory.map(log => ({ id: `sale-${log.id}`, isPreOrder: false, date: log.sold_at, name: log.garment_name, size: log.size, qty: log.quantity_sold, earned: parseFloat(log.profit_earned || 0) })),
-    ...preOrders.map(order => ({ id: `preorder-${order.id}`, isPreOrder: true, date: order.order_date, name: `📝 Pre-Order: ${order.item_name}`, size: order.size, qty: 1, earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0) }))
+    ...preOrders.map(order => ({ id: `preorder-${order.id}`, isPreOrder: true, date: order.order_date, name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, size: order.size, qty: 1, earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0) }))
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredUnifiedHistory = historyFilterDate ? unifiedHistory.filter(log => log.date === historyFilterDate) : unifiedHistory;
@@ -507,12 +480,15 @@ function AdminDashboard() {
   const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + log.qty, 0);
 
   const dailyHistory = unifiedHistory.filter(log => log.date === selectedDate);
-  const dailyStats = { total_pieces_sold: dailyHistory.reduce((sum, log) => sum + log.qty, 0), total_profit_earned: dailyHistory.reduce((sum, log) => sum + log.earned, 0) };
+  const dailyStats = { 
+    total_pieces_sold: dailyHistory.reduce((sum, log) => sum + log.qty, 0), 
+    total_profit_earned: dailyHistory.reduce((sum, log) => sum + log.earned, 0) 
+  };
 
   const totalStoreProfit = garments.reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
   const totalStorePieces = garments.reduce((sum, item) => sum + (item.total_pieces || 0), 0);
 
-  const filteredGarments = garments.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredGarments = garments.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + log.earned, 0);
   const totalBatchExpenses = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
@@ -521,12 +497,15 @@ function AdminDashboard() {
   const batchMap = {};
   garments.forEach(g => {
     const bName = g.batch_name || 'Uncategorized';
-    if (!batchMap[bName]) batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
+    if (!batchMap[bName]) {
+      batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
+    }
     batchMap[bName].pieces_left += g.total_pieces;
     batchMap[bName].potential_profit += parseFloat(g.total_potential_profit);
     batchMap[bName].styles_count += 1;
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => b.pieces_left - a.pieces_left);
+
   const uniqueGarmentNames = Array.from(new Set(garments.map(g => g.name)));
 
   if (errorMessage) {
@@ -540,7 +519,7 @@ function AdminDashboard() {
     );
   }
 
-  if (loading) return <div className="p-8 text-center text-lg font-semibold text-stone-600 bg-[#f9f6f0] min-h-screen flex items-center justify-center font-sans">🌸 Loading Fleurette POS...</div>;
+  if (loading) return <div className="p-8 text-center text-lg font-semibold text-stone-600 bg-[#f9f6f0] min-h-screen flex items-center justify-center font-sans">🌸 Loading Fleurette Collection...</div>;
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] text-stone-800 flex flex-col md:flex-row relative font-sans">
@@ -552,7 +531,9 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* ADMIN SIDEBAR */}
+      {/* ========================================== */}
+      {/* 1. LIGHT KHAKI SIDEBAR                     */}
+      {/* ========================================== */}
       <aside className="w-full md:w-64 bg-[#eae4dc] text-stone-900 p-6 flex flex-col justify-between shrink-0 md:h-screen md:sticky md:top-0 z-30 shadow-xl border-r border-[#ddd5cc]">
         <div>
           <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[#ddd5cc]">
@@ -565,38 +546,81 @@ function AdminDashboard() {
 
           <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-3 px-2">Collection Menu</p>
           <div className="space-y-2">
-            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}><span className="text-lg">🛍️</span> Product Gallery</button>
-            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}><span className="text-lg">📜</span> Sales Ledger</button>
-            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}><span className="text-lg">📈</span> Net Profit Analytics</button>
-            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}><span className="text-lg">📝</span> Custom Pre-Orders</button>
-            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${ activeTab === 'batches' ? 'bg-white shadow-md border-stone-200 text-stone-900 font-extrabold' : 'border-transparent text-stone-700 hover:bg-white hover:shadow-sm' }`}><span className="text-lg">📊</span> Batch Tracker</button>
+            <button
+              onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
+                activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
+              }`}
+            >
+              <span className="text-lg">🛍️</span> Product Gallery
+            </button>
+            <button
+              onClick={() => { setActiveTab('history'); setSelectedBatch(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
+                activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
+              }`}
+            >
+              <span className="text-lg">📜</span> Sales Ledger
+            </button>
+            <button
+              onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
+                activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
+              }`}
+            >
+              <span className="text-lg">📈</span> Net Profit Analytics
+            </button>
+            <button
+              onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
+                activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
+              }`}
+            >
+              <span className="text-lg">📝</span> Custom Pre-Orders
+            </button>
+
+            <button
+              onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${
+                activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent'
+              }`}
+            >
+              <span className="text-lg">📊</span> Batch Tracker
+            </button>
           </div>
         </div>
 
-        <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-3">
-          <button onClick={() => setShowAddBatchModal(true)} className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm">
+        <div className="pt-6 border-t border-[#ddd5cc] mt-6">
+          <button 
+            onClick={() => setShowAddBatchModal(true)}
+            className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm"
+          >
             <span className="text-lg leading-none">📦</span> Import New Batch
           </button>
-          <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
-            Log Out
-          </button>
+          <p className="text-center text-[11px] text-stone-600 mt-3 font-medium">PHP Currency Active (₱)</p>
         </div>
       </aside>
 
-      {/* ADMIN WORKSPACE */}
+      {/* ========================================== */}
+      {/* 2. MAIN WORKSPACE                          */}
+      {/* ========================================== */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto min-w-0">
         
-        {/* INVENTORY TAB */}
+        {/* TAB 1: PRODUCT GALLERY VIEW */}
         {activeTab === 'inventory' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-              <div><h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Catalog &amp; Gallery</h2></div>
+              <div>
+                <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Fleurette Catalog &amp; Gallery</h2>
+                <p className="text-stone-500 text-sm mt-0.5">Click any garment card to open the Boutique Showcase &amp; POS checkout</p>
+              </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:w-64">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">🔍</span>
-                  <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                  <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
                   {searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-stone-400 hover:text-stone-600 font-bold text-sm" title="Clear search">✖</button>)}
                 </div>
+                <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{filteredGarments.length} Styles</span>
               </div>
             </div>
 
@@ -637,75 +661,86 @@ function AdminDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredGarments.map((item) => (
-                <div key={item.id} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
-                  <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
-                    {item.image ? (
-                      <>
-                        <img 
-                          src={item.image} 
-                          alt={item.name} 
-                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
-                        />
-                        <span className="text-6xl text-stone-300 hidden">👗</span>
-                      </>
-                    ) : (
-                      <span className="text-6xl text-stone-300">👗</span>
-                    )}
-                    <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black shadow-md text-stone-900">{item.total_pieces} pcs left</div>
-                  </div>
-                  <div className="p-5 flex flex-col justify-between flex-1">
-                    <div>
-                      <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
-                      <div className="mt-2 flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
-                        <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
+            {filteredGarments.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-200 max-w-xl mx-auto my-12 shadow-sm">
+                <span className="text-5xl block mb-3">🌸</span>
+                <h3 className="text-lg font-bold text-stone-800 mb-1">No Styles Found</h3>
+                <p className="text-stone-500 text-sm mb-6">We couldn't find any Fleurette style matching <strong className="text-stone-800">"{searchQuery}"</strong>.</p>
+                <button onClick={() => setSearchQuery('')} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Search</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredGarments.map((item) => (
+                  <div key={item.id} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
+                    <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
+                      {item.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+                      <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item.total_pieces} pcs left</div>
+                    </div>
+                    <div className="p-5 flex flex-col justify-between flex-1">
+                      <div>
+                        <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
+                          <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
+                        </div>
+                        <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
                       </div>
-                      <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
-                      {item.sizes.map((s) => (
-                        <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
-                      ))}
+                      <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
+                        {item.sizes.map((s) => (
+                          <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* BATCHES TAB */}
+        {/* TAB 5: BATCH TRACKER VIEW (WITH EDIT & DELETE ACTIONS) */}
         {activeTab === 'batches' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
+            
+            {/* SUB-VIEW: INSIDE A SPECIFIC BATCH */}
             {selectedBatch ? (
-              <div>
+              <div className="animate-fade-in">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-stone-200">
                   <div>
-                    <button onClick={() => setSelectedBatch(null)} className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition"><span>⬅</span> Back to All Batches</button>
+                    <button 
+                      onClick={() => setSelectedBatch(null)} 
+                      className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition"
+                    >
+                      <span>⬅</span> Back to All Batches
+                    </button>
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {selectedBatch}</h2>
                   </div>
+
                   <div className="flex items-center gap-2">
-                    <button onClick={() => openRenameBatchModal(selectedBatch)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"><span>✏️</span> Rename Batch</button>
-                    <button onClick={() => handleDeleteBatch(selectedBatch)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"><span>🗑️</span> Delete Entire Batch</button>
+                    <button 
+                      onClick={() => openRenameBatchModal(selectedBatch)}
+                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
+                    >
+                      <span>✏️</span> Rename Batch
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteBatch(selectedBatch)}
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
+                    >
+                      <span>🗑️</span> Delete Entire Batch
+                    </button>
                   </div>
                 </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {garments.filter(g => (g.batch_name || 'Uncategorized') === selectedBatch).map((item) => (
                     <div key={item.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
+                      
                       <div onClick={() => openProductModal(item, 'sell')} className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2 cursor-pointer">
-                        {item.image ? (
-                          <>
-                            <img src={item.image} alt={item.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                            <span className="text-6xl text-stone-300 hidden">👗</span>
-                          </>
-                        ) : (
-                          <span className="text-6xl text-stone-300">👗</span>
-                        )}
+                        {item.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
                         <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item.total_pieces} pcs left</div>
                       </div>
+
                       <div className="p-5 flex flex-col justify-between flex-1">
                         <div onClick={() => openProductModal(item, 'sell')} className="cursor-pointer">
                           <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
@@ -715,28 +750,49 @@ function AdminDashboard() {
                           </div>
                           <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
                         </div>
+
                         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
                           {item.sizes.map((s) => (
                             <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
                           ))}
                         </div>
+
+                        {/* ITEM ACTION BUTTONS INSIDE BATCH GALLERY */}
                         <div className="pt-2 border-t border-stone-100 flex gap-2">
-                          <button onClick={() => openEditModal(item)} className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1"><span>✏️</span> Edit</button>
-                          <button onClick={() => handleDeleteGarment(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center" title="Delete this style">🗑️</button>
+                          <button 
+                            type="button"
+                            onClick={() => openEditModal(item)}
+                            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                          >
+                            <span>✏️</span> Edit
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleDeleteGarment(item.id)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center"
+                            title="Delete this style"
+                          >
+                            🗑️
+                          </button>
                         </div>
                       </div>
+
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
+              /* MAIN BATCH OVERVIEW LIST */
               <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <div>
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Active Batch Tracker</h2>
                     <p className="text-stone-500 text-sm mt-1">Click a batch to view its items, or manage and delete batches below</p>
                   </div>
-                  <button onClick={() => setShowAddBatchModal(true)} className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
+                  <button 
+                    onClick={() => setShowAddBatchModal(true)}
+                    className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
+                  >
                     <span className="text-lg leading-none">📦</span> Import New Batch
                   </button>
                 </div>
@@ -750,22 +806,56 @@ function AdminDashboard() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {batchTrackerData.map((batch, index) => (
-                      <div key={index} className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group">
+                      <div 
+                        key={index} 
+                        className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group"
+                      >
                         <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
-                            <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">{batch.styles_count} Styles Inside</span>
+                            <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
+                              {batch.styles_count} Styles Inside
+                            </span>
                             {batch.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
                           </div>
                           <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{batch.name}</h3>
+                          
                           <div className="space-y-4 mb-6">
-                            <div><span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Pieces Remaining</span><span className="text-3xl font-black text-stone-900">{batch.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span></div>
-                            <div><span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span><span className="text-2xl font-black text-pink-600">₱{batch.potential_profit.toFixed(2)}</span></div>
+                            <div>
+                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Pieces Remaining</span>
+                              <span className="text-3xl font-black text-stone-900">{batch.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
+                              <span className="text-2xl font-black text-pink-600">₱{batch.potential_profit.toFixed(2)}</span>
+                            </div>
                           </div>
                         </div>
+
+                        {/* BATCH CONTROLS (EDIT & DELETE) */}
                         <div className="pt-4 border-t border-stone-100 flex gap-2">
-                          <button type="button" onClick={() => setSelectedBatch(batch.name)} className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center">👁️ View Items</button>
-                          <button type="button" onClick={() => openRenameBatchModal(batch.name)} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Rename batch">✏️</button>
-                          <button type="button" onClick={() => handleDeleteBatch(batch.name)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Delete whole batch">🗑️</button>
+                          <button 
+                            type="button" 
+                            onClick={() => setSelectedBatch(batch.name)}
+                            className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center"
+                          >
+                            👁️ View Items
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => openRenameBatchModal(batch.name)}
+                            className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
+                            title="Rename batch"
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => handleDeleteBatch(batch.name)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
+                            title="Delete whole batch"
+                          >
+                            🗑️
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -776,7 +866,7 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* HISTORY TAB */}
+        {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW */}
         {activeTab === 'history' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
@@ -808,36 +898,47 @@ function AdminDashboard() {
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-sm border border-stone-200 w-full overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
-                    <th className="p-4">Date</th>
-                    <th className="p-4">Transaction / Style Name</th>
-                    <th className="p-4 text-center">Size</th>
-                    <th className="p-4 text-center">Quantity</th>
-                    <th className="p-4 text-right">Revenue Collected</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200/80">
-                  {filteredUnifiedHistory.map((log) => (
-                    <tr key={log.id} className="hover:bg-[#f9f6f0] transition">
-                      <td className="p-4 text-sm font-bold text-stone-500">📅 {log.date}</td>
-                      <td className="p-4 font-black text-stone-900 text-base">{log.isPreOrder ? <span className="text-pink-600">{log.name}</span> : log.name}</td>
-                      <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
-                      <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
-                      <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
+            {filteredUnifiedHistory.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-200 max-w-xl mx-auto my-12 shadow-sm">
+                <span className="text-5xl block mb-3">🌸</span>
+                <h3 className="text-lg font-bold text-stone-800 mb-1">No Activity Found</h3>
+                <p className="text-stone-500 text-sm mb-6">{historyFilterDate ? `No transactions were recorded on ${historyFilterDate}. Try selecting another date.` : 'Your ledger is empty. Start recording sales or pre-orders!'}</p>
+                {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Show All Time</button>)}
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-stone-200 w-full">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
+                      <th className="p-4">Date</th><th className="p-4">Transaction / Style Name</th><th className="p-4 text-center">Size</th><th className="p-4 text-center">Quantity</th><th className="p-4 text-right">Revenue Collected</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200/80">
+                    {filteredUnifiedHistory.map((log) => (
+                      <tr key={log.id} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500">📅 {log.date}</td>
+                        <td className="p-4 font-black text-stone-900 text-base">
+                          {log.isPreOrder ? (
+                            <span className="text-pink-600">{log.name}</span>
+                          ) : (
+                            log.name
+                          )}
+                        </td>
+                        <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
+                        <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ANALYTICS TAB */}
+        {/* TAB 3: NET PROFIT ANALYTICS VIEW */}
         {activeTab === 'analytics' && (
-           <div className="animate-fade-in max-w-6xl mx-auto">
+          <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Net Profit Analytics</h2>
@@ -856,6 +957,7 @@ function AdminDashboard() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-bold text-stone-500"><span>Total cash collected</span><span className="text-lg">🌸</span></div>
               </div>
+
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between">
                 <div>
                   <span className="text-xs font-black text-rose-500 uppercase tracking-widest block mb-1">Total Batch Expenses</span>
@@ -863,6 +965,7 @@ function AdminDashboard() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-bold text-stone-500"><span>Shipping, trims &amp; customs</span><span className="text-lg">💸</span></div>
               </div>
+
               <div className={`rounded-3xl p-6 shadow-xl border flex flex-col justify-between text-white ${actualNetProfit >= 0 ? 'bg-gradient-to-br from-pink-900 to-[#52453c] border-pink-800' : 'bg-gradient-to-br from-rose-900 to-[#52453c] border-rose-800'}`}>
                 <div>
                   <span className="text-xs uppercase tracking-widest block mb-1 font-extrabold text-pink-300">Real Net Profit (Cash in Hand)</span>
@@ -872,106 +975,172 @@ function AdminDashboard() {
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-sm border border-stone-200 w-full overflow-hidden">
+            <div className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden w-full">
               <div className="p-5 border-b border-stone-200 bg-[#f2ece4] flex justify-between items-center">
                 <h3 className="font-black text-stone-900 text-base flex items-center gap-2"><span>📑</span> Recorded Batch Expenses &amp; Shipping Logs</h3>
                 <span className="text-xs font-bold text-stone-600 bg-white px-3 py-1 rounded-lg border border-stone-200">{expenses.length} Records</span>
               </div>
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
-                    <th className="p-4 w-32">Date Logged</th>
-                    <th className="p-4">Batch / Expense Title &amp; Itemized Breakdown</th>
-                    <th className="p-4 text-right">Total Amount (₱)</th>
-                    <th className="p-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200/80">
-                  {expenses.map((item) => (
-                    <tr key={item.id} className="hover:bg-[#f9f6f0] transition">
-                      <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {item.date}</td>
-                      <td className="p-4 align-top">
-                        <div className="font-black text-stone-900 text-base">{item.title}</div>
-                        {item.breakdown && item.breakdown.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {item.breakdown.map((b, idx) => (
-                              <span key={idx} className="text-xs bg-[#f2ece4] text-stone-700 font-bold px-2.5 py-1 rounded-md border border-stone-300 shadow-2xs flex items-center gap-1.5">
-                                <span>{b.name || 'Item'}:</span>
-                                <span className="text-rose-600 font-black">₱{parseFloat(b.cost || 0).toFixed(2)}</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{parseFloat(item.amount || 0).toFixed(2)}</td>
-                      <td className="p-4 text-center align-top">
-                        <div className="flex justify-center gap-1.5">
-                          <button onClick={() => openEditExpenseModal(item)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit expense record">✏️ Edit</button>
-                          <button onClick={() => handleDeleteExpense(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete expense record">🗑️ Delete</button>
-                        </div>
-                      </td>
+
+              {expenses.length === 0 ? (
+                <div className="p-12 text-center max-w-md mx-auto my-6">
+                  <span className="text-5xl block mb-3">📑</span>
+                  <h4 className="text-base font-bold text-stone-800 mb-1">No Expenses Logged Yet</h4>
+                  <p className="text-stone-500 text-sm mb-6">When a new shipment of garments arrives, click the button above to input itemized shipping fees, trims, or customs costs!</p>
+                  <button onClick={() => setShowExpenseModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Record First Expense</button>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
+                      <th className="p-4 w-32">Date Logged</th>
+                      <th className="p-4">Batch / Expense Title &amp; Itemized Breakdown</th>
+                      <th className="p-4 text-right">Total Amount (₱)</th>
+                      <th className="p-4 text-center">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200/80">
+                    {expenses.map((item) => (
+                      <tr key={item.id} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {item.date}</td>
+                        <td className="p-4 align-top">
+                          <div className="font-black text-stone-900 text-base">{item.title}</div>
+                          {item.breakdown && item.breakdown.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {item.breakdown.map((b, idx) => (
+                                <span key={idx} className="text-xs bg-[#f2ece4] text-stone-700 font-bold px-2.5 py-1 rounded-md border border-stone-300 shadow-2xs flex items-center gap-1.5">
+                                  <span>{b.name || 'Item'}:</span>
+                                  <span className="text-rose-600 font-black">₱{parseFloat(b.cost || 0).toFixed(2)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{parseFloat(item.amount || 0).toFixed(2)}</td>
+                        <td className="p-4 text-center align-top">
+                          <div className="flex justify-center gap-1.5">
+                            <button onClick={() => openEditExpenseModal(item)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit expense record">✏️ Edit</button>
+                            <button onClick={() => handleDeleteExpense(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete expense record">🗑️ Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
 
-        {/* PREORDERS TAB */}
+        {/* TAB 4: PRE-ORDERS VIEW */}
         {activeTab === 'preorders' && (
-           <div className="animate-fade-in max-w-7xl mx-auto">
+          <div className="animate-fade-in max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Customer Pre-Orders</h2>
                 <p className="text-stone-500 text-sm mt-1">Track custom reservations, down payments, and remaining balances</p>
               </div>
-              <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
+              <button 
+                onClick={() => setShowPreOrderModal(true)} 
+                className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
+              >
                 <span className="text-lg leading-none">+</span> Add Pre-Order
               </button>
             </div>
-            <div className="bg-white rounded-3xl shadow-sm border border-stone-200 w-full overflow-hidden">
+
+            <div className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden w-full">
               <div className="p-5 border-b border-stone-200 bg-[#f2ece4] flex justify-between items-center">
                 <h3 className="font-black text-stone-900 text-base flex items-center gap-2"><span>📝</span> Open Pre-Orders &amp; Reservations</h3>
                 <span className="text-xs font-bold text-stone-600 bg-white px-3 py-1 rounded-lg border border-stone-200">{preOrders.length} Records</span>
               </div>
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
-                    <th className="p-4">Order Date</th><th className="p-4">Customer Name</th><th className="p-4">Item &amp; Details</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Balance Due</th><th className="p-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200/80">
-                  {preOrders.map((order) => (
-                    <tr key={order.id} className="hover:bg-[#f9f6f0] transition">
-                      <td className="p-4 text-sm font-bold text-stone-500">📅 {order.order_date}</td>
-                      <td className="p-4 font-black text-stone-900 text-base">{order.customer_name}</td>
-                      <td className="p-4">
-                        <div className="font-bold text-stone-800">{order.item_name}</div>
-                        <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} | Color: {order.color}</div>
-                      </td>
-                      <td className="p-4 text-center">
-                        {order.is_paid ? <span className="bg-emerald-100 text-emerald-800 font-black text-xs px-2.5 py-1 rounded-md border border-emerald-200 shadow-2xs">Fully Paid</span> : <span className="bg-rose-50 text-rose-600 font-black text-xs px-2.5 py-1 rounded-md border border-rose-200 shadow-2xs">Pending</span>}
-                      </td>
-                      <td className="p-4 text-right font-black text-rose-600 text-base">
-                        {parseFloat(order.balance) > 0 ? `₱${parseFloat(order.balance).toFixed(2)}` : '₱0.00'}
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex justify-center gap-1.5">
-                          <button onClick={() => openEditPreOrderModal(order)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit Pre-order">✏️ Edit</button>
-                          <button onClick={() => handleDeletePreOrder(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete Pre-order">🗑️ Delete</button>
-                        </div>
-                      </td>
+
+              {preOrders.length === 0 ? (
+                <div className="p-12 text-center max-w-md mx-auto my-6">
+                  <span className="text-5xl block mb-3">📝</span>
+                  <h4 className="text-base font-bold text-stone-800 mb-1">No Pre-orders Found</h4>
+                  <p className="text-stone-500 text-sm mb-6">You currently have no active pre-orders or reservations. Click below to add a new customer order.</p>
+                  <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
+                      <th className="p-4">Order Date</th>
+                      <th className="p-4">Customer Name</th>
+                      <th className="p-4">Item &amp; Details</th>
+                      <th className="p-4 text-center">Status</th>
+                      <th className="p-4 text-right">Balance Due</th>
+                      <th className="p-4 text-center">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200/80">
+                    {preOrders.map((order) => (
+                      <tr key={order.id} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500">📅 {order.order_date}</td>
+                        <td className="p-4 font-black text-stone-900 text-base">{order.customer_name}</td>
+                        <td className="p-4">
+                          <div className="font-bold text-stone-800">{order.item_name}</div>
+                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} | Color: {order.color}</div>
+                        </td>
+                        <td className="p-4 text-center">
+                          {order.is_paid ? (
+                            <span className="bg-emerald-100 text-emerald-800 font-black text-xs px-2.5 py-1 rounded-md border border-emerald-200 shadow-2xs">Fully Paid</span>
+                          ) : (
+                            <span className="bg-rose-50 text-rose-600 font-black text-xs px-2.5 py-1 rounded-md border border-rose-200 shadow-2xs">Pending</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right font-black text-rose-600 text-base">
+                          {parseFloat(order.balance) > 0 ? `₱${parseFloat(order.balance).toFixed(2)}` : '₱0.00'}
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex justify-center gap-1.5">
+                            <button onClick={() => openEditPreOrderModal(order)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit Pre-order">✏️ Edit</button>
+                            <button onClick={() => handleDeletePreOrder(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete Pre-order">🗑️ Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
       </main>
 
-      {/* ADMIN POS PRODUCT MODAL */}
+      {/* ========================================== */}
+      {/* RENAME BATCH MODAL                         */}
+      {/* ========================================== */}
+      {showRenameBatchModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200">
+            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100">
+              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Rename Batch</h2>
+              <button onClick={() => setShowRenameBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
+            </div>
+
+            <form onSubmit={handleRenameBatchSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">New Batch Name</label>
+                <input 
+                  type="text" required 
+                  value={batchRenameState.newName} 
+                  onChange={(e) => setBatchRenameState({ ...batchRenameState, newName: e.target.value })}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+                <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
+                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2 rounded-xl shadow text-sm transition">Save Name</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* E-COMMERCE SHOWCASE & POS MODAL            */}
+      {/* ========================================== */}
       {productModal.show && productModal.garment && (
         <div className="fixed inset-0 bg-[#3b322f]/70 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] relative border border-stone-200">
@@ -986,17 +1155,12 @@ function AdminDashboard() {
 
             <div className="w-full md:w-1/2 bg-gradient-to-br from-[#f9f6f0] to-[#e6dece] p-8 flex flex-col items-center justify-center relative min-h-[280px] md:min-h-full border-b md:border-b-0 md:border-r border-stone-200">
               {productModal.garment.image ? (
-                <>
-                  <img 
-                    src={productModal.garment.image} 
-                    alt={productModal.garment.name} 
-                    onClick={() => setZoomedImage(productModal.garment.image)}
-                    onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                    className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
-                    title="Click to fullscreen zoom" 
-                  />
-                  <span className="text-8xl select-none py-12 hidden">👗</span>
-                </>
+                <img 
+                  src={productModal.garment.image} alt={productModal.garment.name} 
+                  onClick={() => setZoomedImage(productModal.garment.image)}
+                  className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
+                  title="Click to fullscreen zoom" 
+                />
               ) : (
                 <div className="text-8xl select-none py-12">👗</div>
               )}
@@ -1133,36 +1297,9 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* RENAME BATCH MODAL */}
-      {showRenameBatchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200 flex flex-col">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Rename Batch</h2>
-              <button onClick={() => setShowRenameBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleRenameBatchSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">New Batch Name</label>
-                <input 
-                  type="text" required 
-                  value={batchRenameState.newName} 
-                  onChange={(e) => setBatchRenameState({ ...batchRenameState, newName: e.target.value })}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 mt-4">
-                <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100 transition">Cancel</button>
-                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Name</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ADD BATCH WIZARD MODAL */}
+      {/* ========================================== */}
+      {/* ADD BATCH WIZARD MODAL                     */}
+      {/* ========================================== */}
       {showAddBatchModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl overflow-hidden flex flex-col border border-stone-200 max-h-[90vh]">
@@ -1291,7 +1428,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* EDIT STYLE MODAL */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[90vh] flex flex-col">
@@ -1323,13 +1459,7 @@ function AdminDashboard() {
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Change Photo (Optional)</label>
                 {editGarment.previewUrl && (
                   <div className="flex items-center gap-3 mb-2 bg-[#f2ece4] p-2 rounded-xl border border-stone-200">
-                    <img 
-                      src={editGarment.previewUrl} 
-                      alt="Current" 
-                      onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                      className="w-12 h-12 object-cover rounded-lg shadow-sm border border-stone-200" 
-                    />
-                    <span className="text-2xl text-stone-400 hidden">👗</span>
+                    <img src={editGarment.previewUrl} alt="Current" className="w-12 h-12 object-cover rounded-lg shadow-sm border border-stone-200" />
                     <span className="text-xs text-stone-600 font-bold">Current photo active</span>
                   </div>
                 )}
@@ -1398,7 +1528,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* ADD EXPENSE MODAL */}
       {showExpenseModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
@@ -1494,7 +1623,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* EDIT EXPENSE MODAL */}
       {showEditExpenseModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
@@ -1600,7 +1728,7 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* ADD PRE-ORDER MODAL */}
+      {/* PRE-ORDER MODALS */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
@@ -1729,7 +1857,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* EDIT PRE-ORDER MODAL */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
@@ -1858,40 +1985,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* ZOOM IMAGE MODAL FOR ADMIN */}
-      {zoomedImage && (
-        <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img src={zoomedImage} alt="Zoomed clothing" className="max-w-full max-h-[82vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
-            <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">✖ Click anywhere on screen to close</span>
-          </div>
-        </div>
-      )}
-
     </div>
-  );
-}
-
-// ==========================================
-// 4. ROUTER WRAPPER
-// ==========================================
-function ProtectedRoute({ children }) {
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
-  return isAdmin ? children : <Navigate to="/login" replace />;
-}
-
-export default function App() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<CustomerView />} />
-        <Route path="/login" element={<LoginScreen />} />
-        <Route path="/admin" element={
-          <ProtectedRoute>
-            <AdminDashboard />
-          </ProtectedRoute>
-        } />
-      </Routes>
-    </Router>
   );
 }
