@@ -610,7 +610,7 @@ function AdminDashboard() {
   };
   
   // ==========================================
-  // FIXED PRE-ORDER: DEDUCTS STOCK VIA is_sale: false (NO DUPLICATION)
+  // UPDATED PRE-ORDER: DEDUCTS STOCK (WITH DEDUPLICATION FIX)
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
@@ -618,13 +618,14 @@ function AdminDashboard() {
       // 1. Create Pre-order record
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
 
-      // 2. Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
+      // 2. Automatically deduct 1 piece from the matching garment stock
+      // (This will generate a SalesHistory record in the backend which we filter below)
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
           size: newPreOrder.size,
           change: -1,
-          is_sale: false // <--- FALSE prevents duplicate SalesHistory creation
+          is_sale: true
         });
       }
 
@@ -654,28 +655,67 @@ function AdminDashboard() {
   };
 
   // ==========================================
-  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
+  // NEW: DELETE SALES HISTORY CONTROLS
   // ==========================================
-  const unifiedHistory = [
-    ...salesHistory.map(log => ({ 
-      id: `sale-${log.id}`, 
-      isPreOrder: false, 
-      date: log.sold_at, 
-      name: log.garment_name, 
-      size: log.size, 
-      qty: log.quantity_sold, 
-      earned: parseFloat(log.profit_earned || 0) 
-    })),
-    ...preOrders.map(order => ({ 
+  const handleDeleteSalesHistory = async (id) => {
+    if (!window.confirm("Delete this specific sales record?")) return;
+    try {
+      await axios.delete(`${API_BASE}sales/history/${id}/`);
+      showToast("🗑️ Sales record deleted.");
+      await fetchData(true);
+    } catch (error) { alert('Could not delete sales record.'); }
+  };
+
+  const handleClearAllHistory = async () => {
+    if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger? This will delete all recorded regular sales. (Pre-orders won't be deleted here).")) return;
+    try {
+      for (const log of salesHistory) {
+        await axios.delete(`${API_BASE}sales/history/${log.id}/`);
+      }
+      showToast("🗑️ Entire Sales Ledger cleared!");
+      await fetchData(true);
+    } catch (error) { alert('Error clearing some records.'); }
+  };
+
+  // ==========================================
+  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING (DEDUPLICATED)
+  // ==========================================
+  
+  // 1. Create a mutable copy of salesHistory so we can pull out the generic pre-order duplicates
+  let localSalesHistory = [...salesHistory];
+  
+  // 2. Map Pre-Orders AND remove their corresponding generic "Sale" log from localSalesHistory
+  const mappedPreOrders = preOrders.map(order => {
+    const matchIndex = localSalesHistory.findIndex(s => s.garment_name === order.item_name && s.size === order.size);
+    if (matchIndex !== -1) {
+      localSalesHistory.splice(matchIndex, 1); // Remove the duplicate generic log
+    }
+    return { 
       id: `preorder-${order.id}`, 
+      originalId: order.id,
       isPreOrder: true, 
       date: order.order_date, 
       name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, 
       size: order.size, 
       qty: 1, 
       earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0) 
-    }))
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+    };
+  });
+
+  // 3. Map the remaining (actual) sales
+  const mappedSales = localSalesHistory.map(log => ({
+    id: `sale-${log.id}`,
+    originalId: log.id,
+    isPreOrder: false,
+    date: log.sold_at,
+    name: log.garment_name,
+    size: log.size,
+    qty: log.quantity_sold,
+    earned: parseFloat(log.profit_earned || 0)
+  }));
+
+  // 4. Combine and sort
+  const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredUnifiedHistory = historyFilterDate ? unifiedHistory.filter(log => log.date === historyFilterDate) : unifiedHistory;
   const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + log.earned, 0);
@@ -1069,7 +1109,7 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW */}
+        {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW (UPDATED) */}
         {activeTab === 'history' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
@@ -1077,10 +1117,19 @@ function AdminDashboard() {
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Fleurette Sales Ledger</h2>
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
               </div>
-              <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-stone-200 w-full sm:w-auto">
-                <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Filter Date:</span>
-                <input type="date" value={historyFilterDate} onChange={(e) => setHistoryFilterDate(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-3 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500" />
-                {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-[#e6dece] hover:bg-stone-300 text-stone-800 text-xs font-extrabold px-3 py-2 rounded-lg transition">Show All</button>)}
+              <div className="flex items-center gap-2">
+                {/* NEW: CLEAR ALL HISTORY BUTTON */}
+                <button 
+                  onClick={handleClearAllHistory} 
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1"
+                >
+                  <span>🗑️</span> Clear Ledger
+                </button>
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200">
+                  <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Filter Date:</span>
+                  <input type="date" value={historyFilterDate} onChange={(e) => setHistoryFilterDate(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-3 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                  {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-[#e6dece] hover:bg-stone-300 text-stone-800 text-xs font-extrabold px-3 py-2 rounded-lg transition">Show All</button>)}
+                </div>
               </div>
             </div>
 
@@ -1113,7 +1162,13 @@ function AdminDashboard() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
-                      <th className="p-4">Date</th><th className="p-4">Transaction / Style Name</th><th className="p-4 text-center">Size</th><th className="p-4 text-center">Quantity</th><th className="p-4 text-right">Revenue Collected</th>
+                      <th className="p-4">Date</th>
+                      <th className="p-4">Transaction / Style Name</th>
+                      <th className="p-4 text-center">Size</th>
+                      <th className="p-4 text-center">Quantity</th>
+                      <th className="p-4 text-right">Revenue Collected</th>
+                      {/* NEW ACTION COLUMN */}
+                      <th className="p-4 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
@@ -1130,6 +1185,19 @@ function AdminDashboard() {
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
                         <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
+                        <td className="p-4 text-center">
+                          {log.isPreOrder ? (
+                            <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
+                          ) : (
+                            <button 
+                              onClick={() => handleDeleteSalesHistory(log.originalId)} 
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition" 
+                              title="Delete Sales Record"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
