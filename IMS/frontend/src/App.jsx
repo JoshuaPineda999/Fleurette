@@ -609,18 +609,25 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
   };
   
+  // ==========================================
+  // FIXED PRE-ORDER: DEDUCTS STOCK VIA is_sale: false (NO DUPLICATION)
+  // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
+      // 1. Create Pre-order record
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
+
+      // 2. Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
           size: newPreOrder.size,
           change: -1,
-          is_sale: true
+          is_sale: false // <--- FALSE prevents duplicate SalesHistory creation
         });
       }
+
       setShowPreOrderModal(false);
       setNewPreOrder({ customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
       showToast("📝 Pre-order added & stock deducted!");
@@ -646,15 +653,29 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}preorders/${id}/`); showToast("🗑️ Pre-order removed."); await fetchData(true); } catch (error) { alert('Could not delete pre-order.'); }
   };
 
-  const unifiedHistory = salesHistory.map(log => ({
-    id: `sale-${log.id}`,
-    isPreOrder: false,
-    date: log.sold_at,
-    name: log.garment_name,
-    size: log.size,
-    qty: log.quantity_sold,
-    earned: parseFloat(log.profit_earned || 0)
-  })).sort((a, b) => new Date(b.date) - new Date(a.date));
+  // ==========================================
+  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
+  // ==========================================
+  const unifiedHistory = [
+    ...salesHistory.map(log => ({ 
+      id: `sale-${log.id}`, 
+      isPreOrder: false, 
+      date: log.sold_at, 
+      name: log.garment_name, 
+      size: log.size, 
+      qty: log.quantity_sold, 
+      earned: parseFloat(log.profit_earned || 0) 
+    })),
+    ...preOrders.map(order => ({ 
+      id: `preorder-${order.id}`, 
+      isPreOrder: true, 
+      date: order.order_date, 
+      name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, 
+      size: order.size, 
+      qty: 1, 
+      earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0) 
+    }))
+  ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredUnifiedHistory = historyFilterDate ? unifiedHistory.filter(log => log.date === historyFilterDate) : unifiedHistory;
   const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + log.earned, 0);
@@ -1099,7 +1120,13 @@ function AdminDashboard() {
                     {filteredUnifiedHistory.map((log) => (
                       <tr key={log.id} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {log.date}</td>
-                        <td className="p-4 font-black text-stone-900 text-base">{log.name}</td>
+                        <td className="p-4 font-black text-stone-900 text-base">
+                          {log.isPreOrder ? (
+                            <span className="text-pink-600">{log.name}</span>
+                          ) : (
+                            log.name
+                          )}
+                        </td>
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
                         <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
@@ -2162,29 +2189,5 @@ function AdminDashboard() {
       )}
 
     </div>
-  );
-}
-
-// ==========================================
-// 4. ROUTER WRAPPER
-// ==========================================
-function ProtectedRoute({ children }) {
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
-  return isAdmin ? children : <Navigate to="/login" replace />;
-}
-
-export default function App() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<CustomerView />} />
-        <Route path="/login" element={<LoginScreen />} />
-        <Route path="/admin" element={
-          <ProtectedRoute>
-            <AdminDashboard />
-          </ProtectedRoute>
-        } />
-      </Routes>
-    </Router>
   );
 }
