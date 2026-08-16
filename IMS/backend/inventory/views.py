@@ -60,3 +60,10 @@ def sales_history_list(request):
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all().order_by('-date', '-id')
     serializer_class = ExpenseSerializer
+
+from .models import PreOrder
+from .serializers import PreOrderSerializer
+
+class PreOrderViewSet(viewsets.ModelViewSet):
+    queryset = PreOrder.objects.all().order_by('-order_date', '-id')
+    serializer_class = PreOrderSerializer

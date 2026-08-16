@@ -1,6 +1,6 @@
 import json
 from rest_framework import serializers
-from .models import Garment, SizeStock, SaleLog, Expense
+from .models import Garment, SizeStock, SaleLog, Expense, PreOrder
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,7 +27,7 @@ class GarmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Garment
         fields = [
-            'id', 'name', 'cost_price', 'selling_price', 'image', 
+            'id', 'batch_name', 'name', 'cost_price', 'selling_price', 'image', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
@@ -60,3 +60,8 @@ class GarmentSerializer(serializers.ModelSerializer):
                         stock.save()
                     except (ValueError, TypeError): pass
         return instance
+
+class PreOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PreOrder
+        fields = '__all__'

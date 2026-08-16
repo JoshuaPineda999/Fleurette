@@ -2,11 +2,16 @@ from django.db import models
 from django.utils import timezone
 
 class Garment(models.Model):
+    # NEW FIELD:
+    batch_name = models.CharField(max_length=255, default="Uncategorized")
+    
     name = models.CharField(max_length=255)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
     image = models.ImageField(upload_to='garments/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # ... rest of the code remains exactly the same
 
     @property
     def profit_per_piece(self):
@@ -54,3 +59,20 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.title} - ₱{self.amount}"
+
+class PreOrder(models.Model):
+    customer_name = models.CharField(max_length=255)
+    item_name = models.CharField(max_length=255)
+    size = models.CharField(max_length=50)
+    color = models.CharField(max_length=50)
+    
+    # NEW FIELDS:
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    down_payment = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    
+    is_paid = models.BooleanField(default=False)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    order_date = models.DateField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.customer_name} - {self.item_name}"
