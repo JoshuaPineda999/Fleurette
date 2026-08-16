@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL 
-  ? (import.meta.env.VITE_API_URL.endsWith('/') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/`) 
-  : `http://${window.location.hostname}:8000/api/`;
+// 1. Automatically use Vercel's environment variable, or fallback to localhost
+const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
+// 2. Safely format the API route
+const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
+
+// 3. Safely format the Image URLs so pictures load from Render
 const formatImageUrl = (url) => {
   if (!url) return null;
   if (url.startsWith('/')) {
-    return `http://${window.location.hostname}:8000${url}`;
+    const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+    return `${cleanBase}${url}`;
   }
   return url;
 };
