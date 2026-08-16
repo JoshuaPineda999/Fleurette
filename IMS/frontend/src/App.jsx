@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE = `http://${window.location.hostname}:8000/api/`;
+const API_BASE = import.meta.env.VITE_API_URL 
+  ? (import.meta.env.VITE_API_URL.endsWith('/') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/`) 
+  : `http://${window.location.hostname}:8000/api/`;
 
 const formatImageUrl = (url) => {
   if (!url) return null;
