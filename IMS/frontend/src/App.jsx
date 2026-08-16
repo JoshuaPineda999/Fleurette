@@ -2191,3 +2191,27 @@ function AdminDashboard() {
     </div>
   );
 }
+
+// ==========================================
+// 4. ROUTER WRAPPER
+// ==========================================
+function ProtectedRoute({ children }) {
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  return isAdmin ? children : <Navigate to="/login" replace />;
+}
+
+export default function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<CustomerView />} />
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </Router>
+  );
+}
