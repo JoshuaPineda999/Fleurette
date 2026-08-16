@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 
 // 1. Automatically use Vercel's environment variable, or fallback to localhost
 const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
@@ -17,7 +18,176 @@ const formatImageUrl = (url) => {
   return url;
 };
 
-export default function App() {
+// ==========================================
+// 1. CUSTOMER CATALOG VIEW (DEFAULT /)
+// ==========================================
+function CustomerView() {
+  const [garments, setGarments] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [zoomedImage, setZoomedImage] = useState(null);
+
+  useEffect(() => {
+    const fetchGarments = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}garments/`);
+        setGarments(res.data.map(g => ({ ...g, image: formatImageUrl(g.image) })));
+      } catch (error) {
+        console.error("Error fetching garments:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchGarments();
+  }, []);
+
+  const filteredGarments = garments.filter(item => 
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
+      <nav className="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🌸</span>
+            <h1 className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</h1>
+          </div>
+          <Link to="/login" className="text-xs font-black text-white hover:text-white bg-pink-600 hover:bg-pink-700 transition uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-md">
+            Admin Login
+          </Link>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
+          <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
+          <div className="mt-6 relative max-w-md mx-auto">
+            <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-stone-400">🔍</span>
+            <input 
+              type="text" placeholder="Search styles..." 
+              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 bg-white border border-stone-300 rounded-2xl text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center text-stone-500 font-bold py-20">Loading Fleurette Collection...</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {filteredGarments.map(item => (
+              <div 
+                key={item.id} 
+                onClick={() => { if (item.image) setZoomedImage(item.image); }}
+                className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300"
+              >
+                {item.total_pieces === 0 && (
+                  <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
+                )}
+                <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
+                  {item.image ? (
+                    <>
+                      <img 
+                        src={item.image} 
+                        alt={item.name} 
+                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+                        className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} 
+                      />
+                      <span className="text-6xl text-stone-300 hidden">👗</span>
+                    </>
+                  ) : (
+                    <span className="text-6xl text-stone-300">👗</span>
+                  )}
+                </div>
+                <div className="p-5 flex flex-col flex-1">
+                  <h3 className="font-black text-lg text-stone-900 leading-tight mb-1">{item.name}</h3>
+                  <span className="text-2xl font-black text-pink-600 mb-4">₱{item.selling_price}</span>
+                  
+                  <div className="mt-auto">
+                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
+                    <div className="flex flex-wrap gap-2">
+                      {item.sizes.map(s => (
+                        <span key={s.size} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
+                          {s.size}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {zoomedImage && (
+        <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <img src={zoomedImage} alt="Zoomed clothing" className="max-w-full max-h-[82vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
+            <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">✖ Click anywhere on screen to close</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// 2. LOGIN SCREEN (SECURED VIA .ENV)
+// ==========================================
+function LoginScreen() {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    // Reads password securely from your hidden .env file (falls back to 'admin123' if .env isn't set yet)
+    const securePassword = import.meta.env.VITE_ADMIN_PASSWORD || 'admin123';
+
+    if (password === securePassword) {
+      localStorage.setItem('isAdmin', 'true');
+      navigate('/admin');
+    } else {
+      setError('Incorrect password. Please try again.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#eae4dc] flex items-center justify-center p-4 font-sans">
+      <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-stone-200 text-center">
+        <div className="text-4xl mb-4">🌸</div>
+        <h2 className="text-2xl font-black text-stone-900 mb-1">Boutique Admin</h2>
+        <p className="text-stone-500 text-sm mb-6">Enter password to access the POS system</p>
+        
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <input 
+              type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required
+              className="w-full border border-stone-300 rounded-xl p-3 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+            />
+          </div>
+          {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
+          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
+            Login to Workspace
+          </button>
+        </form>
+        <div className="mt-6 pt-6 border-t border-stone-100">
+          <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 3. ADMIN DASHBOARD (YOUR ORIGINAL LAYOUT)
+// ==========================================
+function AdminDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
   const [garments, setGarments] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
@@ -83,6 +253,11 @@ export default function App() {
   const showToast = (message) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('isAdmin');
+    navigate('/');
   };
 
   const fetchData = async (isBackgroundRefresh = false) => {
@@ -263,9 +438,6 @@ export default function App() {
     }
   };
 
-  // ==========================================
-  // BATCH MANAGEMENT (EDIT & DELETE ENTIRE BATCH)
-  // ==========================================
   const openRenameBatchModal = (oldName) => {
     setBatchRenameState({ oldName, newName: oldName });
     setShowRenameBatchModal(true);
@@ -427,15 +599,15 @@ export default function App() {
   };
   
   // ==========================================
-  // UPDATED PRE-ORDER: CREATES PRE-ORDER & DEDUCTS STOCK
+  // UPDATED PRE-ORDER: CREATES PRE-ORDER & DEDUCTS 1 PCS STOCK
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      // 1. Create the pre-order entry
+      // 1. Create the Pre-order
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
 
-      // 2. Automatically deduct 1 piece from the garment's stock for that size
+      // 2. Automatically deduct 1 piece from the matching garment stock
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
@@ -590,14 +762,19 @@ export default function App() {
           </div>
         </div>
 
-        <div className="pt-6 border-t border-[#ddd5cc] mt-6">
+        <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-2">
           <button 
             onClick={() => setShowAddBatchModal(true)}
             className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm"
           >
             <span className="text-lg leading-none">📦</span> Import New Batch
           </button>
-          <p className="text-center text-[11px] text-stone-600 mt-3 font-medium">PHP Currency Active (₱)</p>
+          <button 
+            onClick={handleLogout}
+            className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
+          >
+            Log Out
+          </button>
         </div>
       </aside>
 
@@ -698,11 +875,10 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: BATCH TRACKER VIEW (WITH EDIT & DELETE ACTIONS) */}
+        {/* TAB 5: BATCH TRACKER VIEW */}
         {activeTab === 'batches' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
             
-            {/* SUB-VIEW: INSIDE A SPECIFIC BATCH */}
             {selectedBatch ? (
               <div className="animate-fade-in">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-stone-200">
@@ -757,7 +933,6 @@ export default function App() {
                           ))}
                         </div>
 
-                        {/* ITEM ACTION BUTTONS INSIDE BATCH GALLERY */}
                         <div className="pt-2 border-t border-stone-100 flex gap-2">
                           <button 
                             type="button"
@@ -782,7 +957,6 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* MAIN BATCH OVERVIEW LIST */
               <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <div>
@@ -831,7 +1005,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* BATCH CONTROLS (EDIT & DELETE) */}
                         <div className="pt-4 border-t border-stone-100 flex gap-2">
                           <button 
                             type="button" 
@@ -1986,5 +2159,29 @@ export default function App() {
       )}
 
     </div>
+  );
+}
+
+// ==========================================
+// 4. ROUTER WRAPPER
+// ==========================================
+function ProtectedRoute({ children }) {
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  return isAdmin ? children : <Navigate to="/login" replace />;
+}
+
+export default function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<CustomerView />} />
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </Router>
   );
 }
