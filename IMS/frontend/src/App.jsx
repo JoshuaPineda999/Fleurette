@@ -40,6 +40,10 @@ export default function App() {
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
 
+  // NEW: Rename Batch Modal State
+  const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
+  const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
+
   const [productModal, setProductModal] = useState({
     show: false, garment: null, mode: 'sell', size: 'M', quantity: 1
   });
@@ -107,7 +111,7 @@ export default function App() {
     } catch (error) {
       console.error('Error fetching data:', error);
       if (!isBackgroundRefresh) {
-        setErrorMessage('Could not connect to Django server. Make sure "python manage.py runserver 0.0.0.0:8000" is running!');
+        setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.');
         setLoading(false);
       }
     }
@@ -150,7 +154,6 @@ export default function App() {
       const updatedGarment = { ...response.data, image: formatImageUrl(response.data.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      setActiveTab('inventory');
       showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name} (${productModal.size})`);
       await fetchData(true);
     } catch (error) {
@@ -257,6 +260,65 @@ export default function App() {
       await fetchData(true);
     } catch (error) {
       alert('Error uploading batch. Check your inputs.');
+    }
+  };
+
+  // ==========================================
+  // BATCH MANAGEMENT (EDIT & DELETE ENTIRE BATCH)
+  // ==========================================
+  const openRenameBatchModal = (oldName) => {
+    setBatchRenameState({ oldName, newName: oldName });
+    setShowRenameBatchModal(true);
+  };
+
+  const handleRenameBatchSubmit = async (e) => {
+    e.preventDefault();
+    const { oldName, newName } = batchRenameState;
+    if (!newName.trim() || newName.trim() === oldName) {
+      setShowRenameBatchModal(false);
+      return;
+    }
+
+    try {
+      const itemsToUpdate = garments.filter(g => (g.batch_name || 'Uncategorized') === oldName);
+      
+      for (const item of itemsToUpdate) {
+        const formData = new FormData();
+        formData.append('batch_name', newName.trim());
+        await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
+      }
+
+      if (selectedBatch === oldName) {
+        setSelectedBatch(newName.trim());
+      }
+
+      setShowRenameBatchModal(false);
+      showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
+      await fetchData(true);
+    } catch (error) {
+      alert('Could not rename batch. Please try again.');
+    }
+  };
+
+  const handleDeleteBatch = async (batchName) => {
+    const itemsToDelete = garments.filter(g => (g.batch_name || 'Uncategorized') === batchName);
+    if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) {
+      return;
+    }
+
+    try {
+      for (const item of itemsToDelete) {
+        await axios.delete(`${API_BASE}garments/${item.id}/`);
+      }
+
+      if (selectedBatch === batchName) {
+        setSelectedBatch(null);
+      }
+
+      showToast(`🗑️ Batch "${batchName}" and all its styles have been removed.`);
+      await fetchData(true);
+    } catch (error) {
+      alert('Could not delete all items in batch.');
     }
   };
 
@@ -428,7 +490,6 @@ export default function App() {
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => b.pieces_left - a.pieces_left);
 
-  // NEW: Grab a unique list of existing garment names for the smart Dropdown in the "Import Batch" modal!
   const uniqueGarmentNames = Array.from(new Set(garments.map(g => g.name)));
 
   if (errorMessage) {
@@ -483,7 +544,7 @@ export default function App() {
                 activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
               }`}
             >
-              <span className="text-lg">📜</span> Sales
+              <span className="text-lg">📜</span> Sales Ledger
             </button>
             <button
               onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }}
@@ -505,7 +566,7 @@ export default function App() {
             <button
               onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }}
               className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${
-                activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent'
+                activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent'
               }`}
             >
               <span className="text-lg">📊</span> Batch Tracker
@@ -525,7 +586,7 @@ export default function App() {
       </aside>
 
       {/* ========================================== */}
-      {/* 2. WARM BEIGE WORKSPACE                    */}
+      {/* 2. MAIN WORKSPACE                          */}
       {/* ========================================== */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto min-w-0">
         
@@ -540,7 +601,7 @@ export default function App() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:w-64">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">🔍</span>
-                  <input type="text" placeholder="Search styles or batches..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                  <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
                   {searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-stone-400 hover:text-stone-600 font-bold text-sm" title="Clear search">✖</button>)}
                 </div>
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{filteredGarments.length} Styles</span>
@@ -621,34 +682,51 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: BATCH TRACKER VIEW */}
+        {/* TAB 5: BATCH TRACKER VIEW (WITH EDIT & DELETE ACTIONS) */}
         {activeTab === 'batches' && (
-          <div className="animate-fade-in max-w-6xl mx-auto">
+          <div className="animate-fade-in max-w-7xl mx-auto">
             
-            {/* If a batch is clicked, show its internal gallery! */}
+            {/* SUB-VIEW: INSIDE A SPECIFIC BATCH */}
             {selectedBatch ? (
               <div className="animate-fade-in">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-stone-200">
                   <div>
                     <button 
                       onClick={() => setSelectedBatch(null)} 
-                      className="text-stone-500 hover:text-stone-900 font-black text-sm mb-2 flex items-center gap-2 transition"
+                      className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition"
                     >
-                      <span>⬅</span> Back to Batch List
+                      <span>⬅</span> Back to All Batches
                     </button>
-                    <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Viewing Batch: {selectedBatch}</h2>
+                    <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {selectedBatch}</h2>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => openRenameBatchModal(selectedBatch)}
+                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
+                    >
+                      <span>✏️</span> Rename Batch
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteBatch(selectedBatch)}
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
+                    >
+                      <span>🗑️</span> Delete Entire Batch
+                    </button>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {garments.filter(g => (g.batch_name || 'Uncategorized') === selectedBatch).map((item) => (
-                    <div key={item.id} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
-                      <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
+                    <div key={item.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
+                      
+                      <div onClick={() => openProductModal(item, 'sell')} className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2 cursor-pointer">
                         {item.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
                         <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item.total_pieces} pcs left</div>
                       </div>
+
                       <div className="p-5 flex flex-col justify-between flex-1">
-                        <div>
+                        <div onClick={() => openProductModal(item, 'sell')} className="cursor-pointer">
                           <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
                           <div className="mt-2 flex items-baseline gap-2">
                             <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
@@ -656,23 +734,44 @@ export default function App() {
                           </div>
                           <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
                         </div>
-                        <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
+
+                        <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
                           {item.sizes.map((s) => (
                             <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
                           ))}
                         </div>
+
+                        {/* ITEM ACTION BUTTONS INSIDE BATCH GALLERY */}
+                        <div className="pt-2 border-t border-stone-100 flex gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => openEditModal(item)}
+                            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                          >
+                            <span>✏️</span> Edit
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleDeleteGarment(item.id)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center"
+                            title="Delete this style"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
+
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              /* Main Batch List View */
+              /* MAIN BATCH OVERVIEW LIST */
               <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <div>
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Active Batch Tracker</h2>
-                    <p className="text-stone-500 text-sm mt-1">Click any batch below to view the specific garments inside it!</p>
+                    <p className="text-stone-500 text-sm mt-1">Click a batch to view its items, or manage and delete batches below</p>
                   </div>
                   <button 
                     onClick={() => setShowAddBatchModal(true)}
@@ -693,10 +792,9 @@ export default function App() {
                     {batchTrackerData.map((batch, index) => (
                       <div 
                         key={index} 
-                        onClick={() => setSelectedBatch(batch.name)}
-                        className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition cursor-pointer group"
+                        className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group"
                       >
-                        <div>
+                        <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
                               {batch.styles_count} Styles Inside
@@ -705,7 +803,7 @@ export default function App() {
                           </div>
                           <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{batch.name}</h3>
                           
-                          <div className="space-y-4">
+                          <div className="space-y-4 mb-6">
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Pieces Remaining</span>
                               <span className="text-3xl font-black text-stone-900">{batch.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span>
@@ -715,6 +813,33 @@ export default function App() {
                               <span className="text-2xl font-black text-pink-600">₱{batch.potential_profit.toFixed(2)}</span>
                             </div>
                           </div>
+                        </div>
+
+                        {/* BATCH CONTROLS (EDIT & DELETE) */}
+                        <div className="pt-4 border-t border-stone-100 flex gap-2">
+                          <button 
+                            type="button" 
+                            onClick={() => setSelectedBatch(batch.name)}
+                            className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center"
+                          >
+                            👁️ View Items
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => openRenameBatchModal(batch.name)}
+                            className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
+                            title="Rename batch"
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => handleDeleteBatch(batch.name)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
+                            title="Delete whole batch"
+                          >
+                            🗑️
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -728,7 +853,7 @@ export default function App() {
         {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW */}
         {activeTab === 'history' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
               <div>
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Fleurette Sales Ledger</h2>
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
@@ -967,6 +1092,37 @@ export default function App() {
       </main>
 
       {/* ========================================== */}
+      {/* RENAME BATCH MODAL                         */}
+      {/* ========================================== */}
+      {showRenameBatchModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200">
+            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100">
+              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Rename Batch</h2>
+              <button onClick={() => setShowRenameBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
+            </div>
+
+            <form onSubmit={handleRenameBatchSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">New Batch Name</label>
+                <input 
+                  type="text" required 
+                  value={batchRenameState.newName} 
+                  onChange={(e) => setBatchRenameState({ ...batchRenameState, newName: e.target.value })}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+                <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
+                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2 rounded-xl shadow text-sm transition">Save Name</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
       {/* E-COMMERCE SHOWCASE & POS MODAL            */}
       {/* ========================================== */}
       {productModal.show && productModal.garment && (
@@ -1126,7 +1282,7 @@ export default function App() {
       )}
 
       {/* ========================================== */}
-      {/* NEW: ADD BATCH WIZARD MODAL (SMART DD)     */}
+      {/* ADD BATCH WIZARD MODAL                     */}
       {/* ========================================== */}
       {showAddBatchModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1166,8 +1322,6 @@ export default function App() {
                     )}
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
-                      {/* SMART DATALIST DROPDOWN FOR STYLE NAME */}
                       <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Style Name</label>
                         <input 
@@ -1354,15 +1508,6 @@ export default function App() {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {zoomedImage && (
-        <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img src={zoomedImage} alt="Zoomed clothing" className="max-w-full max-h-[82vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
-            <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">✖ Click anywhere on screen to close</span>
           </div>
         </div>
       )}
@@ -1580,7 +1725,7 @@ export default function App() {
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
                 <input 
-                  type="text" required placeholder="e.g. Dill Doe" 
+                  type="text" required placeholder="e.g. Jane Doe" 
                   value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 />
