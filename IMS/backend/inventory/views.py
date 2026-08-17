@@ -72,6 +72,10 @@ class PreOrderViewSet(viewsets.ModelViewSet):
 
 from rest_framework import generics
 
-class SaleLogDetail(generics.RetrieveDestroyAPIView):
+class SaleLogDetail(generics.RetrieveUpdateDestroyAPIView): # Must be this!
     queryset = SaleLog.objects.all()
     serializer_class = SaleLogSerializer
+    
+class PreOrderDetail(generics.RetrieveUpdateDestroyAPIView): # Must be this!
+    queryset = PreOrder.objects.all()
+    serializer_class = PreOrderSerializer

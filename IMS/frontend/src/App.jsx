@@ -344,12 +344,14 @@ function AdminDashboard() {
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
+  // UPDATED: Added address field
   const [newPreOrder, setNewPreOrder] = useState({
-    customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
+  // UPDATED: Added address field
   const [editPreOrder, setEditPreOrder] = useState({
-    id: null, customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    id: null, customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
   const showToast = (message) => {
@@ -738,7 +740,8 @@ function AdminDashboard() {
     try {
       const orderPayload = {
         ...newPreOrder,
-        color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color
+        color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
+        address: newPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
       };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
@@ -750,18 +753,24 @@ function AdminDashboard() {
       }
 
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
+      setNewPreOrder({ customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
       showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
-    } catch (error) { alert('Error creating pre-order. Check your inputs.'); }
+    } catch (error) { alert(`Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); }
   };
 
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ 
       id: item.id, 
-      customer_name: item.customer_name || '', item_name: item.item_name || '', size: item.size || '', 
-      color: !item.color || item.color === 'N/A' ? '' : item.color, price: item.price || '', 
-      down_payment: item.down_payment || '', is_paid: item.is_paid || false, balance: item.balance || '' 
+      customer_name: item.customer_name || '', 
+      address: item.address || '', 
+      item_name: item.item_name || '', 
+      size: item.size || '', 
+      color: !item.color || item.color === 'N/A' ? '' : item.color, 
+      price: item.price || '', 
+      down_payment: item.down_payment || '', 
+      is_paid: item.is_paid || false, 
+      balance: item.balance || '' 
     });
     setShowEditPreOrderModal(true);
   };
@@ -785,14 +794,15 @@ function AdminDashboard() {
 
       const orderPayload = {
         ...editPreOrder,
-        color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color
+        color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color,
+        address: editPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
       };
 
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
-    } catch (error) { alert('Error updating pre-order.'); }
+    } catch (error) { alert(`Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); }
   };
 
   const handleDeletePreOrder = async (id) => {
@@ -847,6 +857,7 @@ function AdminDashboard() {
   };
 
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
+    // 1. Optimistic UI update so the dropdown visually changes instantly
     if (isPreOrder) {
       setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p));
     } else {
@@ -855,11 +866,14 @@ function AdminDashboard() {
 
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
+      // 2. Perform the patch operation
       await axios.patch(endpoint, { status: newStatus });
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      alert('Error updating status.');
+      // 3. Catch error with heavy detail!
+      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your serializers.py contains the 'status' field.`);
+      // 4. Force UI to revert back to what the database says
       await fetchData(true);
     }
   };
@@ -876,12 +890,18 @@ function AdminDashboard() {
     if (matchIndex !== -1) {
       localSalesHistory.splice(matchIndex, 1);
     }
+    
+    // Build PreOrder Name String
+    let poName = `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''}`;
+    if (order?.address) poName += `, ${order.address}`;
+    poName += `)`;
+
     return { 
       id: `preorder-${order?.id}`, 
       originalId: order?.id,
       isPreOrder: true, 
       date: String(order?.order_date || ''), 
-      name: `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''})`, 
+      name: poName, 
       size: String(order?.size || ''), 
       qty: 1, 
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
@@ -1634,7 +1654,14 @@ function AdminDashboard() {
                     {preOrders.map((order) => (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
-                        <td className="p-4 font-black text-stone-900 text-base">{String(order?.customer_name || 'Unnamed')}</td>
+                        <td className="p-4 font-black text-stone-900 text-base">
+                          {String(order?.customer_name || 'Unnamed')}
+                          {order?.address && (
+                            <div className="text-[10px] font-bold text-stone-400 mt-0.5 flex items-center gap-1 uppercase">
+                              <span>📍</span> {String(order.address)}
+                            </div>
+                          )}
+                        </td>
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
                           <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
@@ -2346,13 +2373,23 @@ function AdminDashboard() {
             </div>
 
             <form onSubmit={handleCreatePreOrder} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
-                <input 
-                  type="text" required placeholder="e.g. Dill Doe" 
-                  value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
+                  <input 
+                    type="text" required placeholder="e.g. Dill Doe" 
+                    value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Address (Optional)</label>
+                  <input 
+                    type="text" placeholder="e.g. 123 Main St" 
+                    value={newPreOrder.address} onChange={(e) => setNewPreOrder({...newPreOrder, address: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
               </div>
 
               <div>
@@ -2476,13 +2513,23 @@ function AdminDashboard() {
             </div>
 
             <form onSubmit={handleUpdatePreOrder} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
-                <input 
-                  type="text" required 
-                  value={editPreOrder.customer_name} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
+                  <input 
+                    type="text" required 
+                    value={editPreOrder.customer_name} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Address (Optional)</label>
+                  <input 
+                    type="text" placeholder="e.g. 123 Main St" 
+                    value={editPreOrder.address} onChange={(e) => setEditPreOrder({...editPreOrder, address: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
               </div>
 
               <div>
