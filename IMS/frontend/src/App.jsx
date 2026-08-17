@@ -857,8 +857,7 @@ function AdminDashboard() {
   const totalStoreProfit = garments.reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
   const totalStorePieces = garments.reduce((sum, item) => sum + (item.total_pieces || 0), 0);
 
-  const categories = ['All', ...new Set(garments.map(g => g.category || 'Uncategorized'))];
-
+  // 'categories' constant is extracted securely above
   const filteredGarments = garments.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
@@ -1827,9 +1826,15 @@ function AdminDashboard() {
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Category</label>
                         <input 
                           type="text" placeholder="e.g. Tops, Dresses..." 
+                          list={`batch-category-list-${index}`}
                           value={style.category} onChange={(e) => handleBatchStyleChange(index, 'category', e.target.value)}
                           className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                         />
+                        <datalist id={`batch-category-list-${index}`}>
+                          {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
+                            <option key={cat} value={cat} />
+                          ))}
+                        </datalist>
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
@@ -1929,9 +1934,15 @@ function AdminDashboard() {
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Category</label>
                   <input 
                     type="text" placeholder="e.g. Tops" 
+                    list="edit-category-list"
                     value={editGarment.category} onChange={(e) => setEditGarment({...editGarment, category: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
+                  <datalist id="edit-category-list">
+                    {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
+                      <option key={cat} value={cat} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
