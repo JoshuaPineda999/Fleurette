@@ -3,7 +3,8 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Sum
-from .models import Garment, SizeStock, SaleLog, Expense
+from .models import Garment, SizeStock, SaleLog, Expense 
+
 from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer
 
 class GarmentViewSet(viewsets.ModelViewSet):
@@ -68,8 +69,9 @@ class PreOrderViewSet(viewsets.ModelViewSet):
     queryset = PreOrder.objects.all().order_by('-order_date', '-id')
     serializer_class = PreOrderSerializer
 
+
 from rest_framework import generics
 
-class SalesHistoryDetail(generics.RetrieveDestroyAPIView):
-    queryset = SalesHistory.objects.all()
-    serializer_class = SalesHistorySerializer
+class SaleLogDetail(generics.RetrieveDestroyAPIView):
+    queryset = SaleLog.objects.all()
+    serializer_class = SaleLogSerializer

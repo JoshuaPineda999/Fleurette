@@ -13,5 +13,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('sales/daily_summary/', daily_sales_summary, name='daily_sales_summary'),
     path('sales/history/', sales_history_list, name='sales_history_list'),
-    path('sales/history/<int:pk>/', views.SalesHistoryDetail.as_view(), name='sales-history-detail'),
+    path('sales/history/<int:pk>/', views.SaleLogDetail.as_view(), name='salelog-detail'),
 ]
