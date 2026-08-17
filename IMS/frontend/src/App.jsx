@@ -5,9 +5,16 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } f
 // Prevent infinite hangs on requests if Render goes down (60 sec max to allow cold-starts)
 axios.defaults.timeout = 60000;
 
-// 1. Automatically use Vercel's environment variable, or fallback to localhost
-// FIXED: Reverted to your exact working setup to prevent the infinite loading hang
-const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
+// 1. Intelligent Backend URL Resolver (Prevents the port 8000 Vercel infinite hang)
+let BACKEND_URL = import.meta.env.VITE_API_URL;
+if (!BACKEND_URL || BACKEND_URL.includes('vercel.app')) {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    BACKEND_URL = 'http://localhost:8000';
+  } else {
+    // Hard-fallback to your live Render backend if Vercel ENV is missing
+    BACKEND_URL = 'https://fleurettesdajkdhashjkdasfjadsfa.onrender.com';
+  }
+}
 
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
@@ -420,7 +427,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}sales/history/`);
       setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Sales History. Backend might be crashing.", error);
+      console.error("Failed to load Sales History.", error);
     }
   };
 
@@ -439,7 +446,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}preorders/`);
       setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Pre-orders. Backend might be crashing.", error);
+      console.error("Failed to load Pre-orders.", error);
     }
   };
 
@@ -775,18 +782,18 @@ function AdminDashboard() {
       showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
     }
   };
 
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ 
-      id: item.id, 
+      id: item.originalId || item.id, // Grab true database ID directly
       customer_name: item.customer_name || '', 
       recipient_name: item.recipient_name || '', 
       contact_number: item.contact_number || '', 
       address: item.address || '', 
-      item_name: item.item_name || '', 
+      item_name: item.item_name || item.name || '', // Safe fallback
       size: item.size || '', 
       color: !item.color || item.color === 'N/A' ? '' : item.color, 
       price: item.price || '', 
@@ -827,7 +834,7 @@ function AdminDashboard() {
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
     }
   };
 
@@ -925,6 +932,7 @@ function AdminDashboard() {
       recipient_name: order?.recipient_name ? String(order.recipient_name) : '',
       contact_number: order?.contact_number ? String(order.contact_number) : '',
       address: order?.address ? String(order.address) : '',
+      item_name: order?.item_name ? String(order.item_name) : '', 
       size: order?.size ? String(order.size) : '', 
       color: order?.color ? String(order.color) : '', 
       qty: 1, 
@@ -948,6 +956,7 @@ function AdminDashboard() {
     recipient_name: '',
     contact_number: '',
     address: '',
+    item_name: '',
     size: log?.size ? String(log.size) : '',
     qty: parseFloat(log?.quantity_sold) || 0,
     earned: parseFloat(log?.profit_earned) || 0,
@@ -1508,8 +1517,8 @@ function AdminDashboard() {
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
                               <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
                               <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
-                                <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
-                                {(log?.recipient_name || log?.contact_number || log?.address) && (
+                                <span>👤 By: {log?.customer_name || log?.customer || 'Unnamed'}</span>
+                                {!!(log?.recipient_name?.trim() || log?.contact_number?.trim() || log?.address?.trim()) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
                                      🔍 Zoom Info
                                    </span>
@@ -1701,7 +1710,7 @@ function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
                     {preOrders.map((order) => {
-                      const hasExtraDetails = order?.recipient_name || order?.contact_number || order?.address;
+                      const hasExtraDetails = !!(order?.recipient_name?.trim() || order?.contact_number?.trim() || order?.address?.trim());
                       return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
@@ -1769,15 +1778,15 @@ function AdminDashboard() {
                   </div>
                   <div>
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Recipient Name</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.recipient_name || 'Same as Customer'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.recipient_name?.trim() ? viewPreOrder.recipient_name : 'Same as Customer'}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Contact Number</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.contact_number || 'Not provided'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.contact_number?.trim() ? viewPreOrder.contact_number : 'Not provided'}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Full Delivery Address</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.address || 'Not provided'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.address?.trim() ? viewPreOrder.address : 'Not provided'}</span>
                   </div>
                 </div>
               </div>
