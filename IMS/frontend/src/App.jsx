@@ -610,7 +610,7 @@ function AdminDashboard() {
   };
   
   // ==========================================
-  // UPDATED PRE-ORDER: DEDUCTS STOCK (WITH DEDUPLICATION FIX)
+  // FIXED PRE-ORDER: DEDUCTS STOCK VIA is_sale: false (NO DUPLICATION)
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
@@ -618,14 +618,13 @@ function AdminDashboard() {
       // 1. Create Pre-order record
       await axios.post(`${API_BASE}preorders/`, newPreOrder);
 
-      // 2. Automatically deduct 1 piece from the matching garment stock
-      // (This will generate a SalesHistory record in the backend which we filter below)
+      // 2. Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
           size: newPreOrder.size,
           change: -1,
-          is_sale: true
+          is_sale: false // <--- FALSE prevents duplicate SalesHistory creation
         });
       }
 
@@ -637,7 +636,7 @@ function AdminDashboard() {
   };
 
   const openEditPreOrderModal = (item) => {
-    setEditPreOrder({ id: item.id, customer_name: item.customer_name, item_name: item.item_name, size: item.size, color: item.color, price: item.price || '', down_payment: item.down_payment || '', is_paid: item.is_paid, balance: item.balance });
+    setEditPreOrder({ id: item.id, customer_name: item.customer_name, item_name: item.item_name, size: item.size, color: item.color || '', price: item.price || '', down_payment: item.down_payment || '', is_paid: item.is_paid, balance: item.balance });
     setShowEditPreOrderModal(true);
   };
   const handleUpdatePreOrder = async (e) => {
@@ -655,7 +654,7 @@ function AdminDashboard() {
   };
 
   // ==========================================
-  // NEW: DELETE SALES HISTORY CONTROLS
+  // DELETE SALES HISTORY CONTROLS
   // ==========================================
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record?")) return;
@@ -681,14 +680,12 @@ function AdminDashboard() {
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING (DEDUPLICATED)
   // ==========================================
   
-  // 1. Create a mutable copy of salesHistory so we can pull out the generic pre-order duplicates
   let localSalesHistory = [...salesHistory];
   
-  // 2. Map Pre-Orders AND remove their corresponding generic "Sale" log from localSalesHistory
   const mappedPreOrders = preOrders.map(order => {
     const matchIndex = localSalesHistory.findIndex(s => s.garment_name === order.item_name && s.size === order.size);
     if (matchIndex !== -1) {
-      localSalesHistory.splice(matchIndex, 1); // Remove the duplicate generic log
+      localSalesHistory.splice(matchIndex, 1);
     }
     return { 
       id: `preorder-${order.id}`, 
@@ -702,7 +699,6 @@ function AdminDashboard() {
     };
   });
 
-  // 3. Map the remaining (actual) sales
   const mappedSales = localSalesHistory.map(log => ({
     id: `sale-${log.id}`,
     originalId: log.id,
@@ -714,7 +710,6 @@ function AdminDashboard() {
     earned: parseFloat(log.profit_earned || 0)
   }));
 
-  // 4. Combine and sort
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredUnifiedHistory = historyFilterDate ? unifiedHistory.filter(log => log.date === historyFilterDate) : unifiedHistory;
@@ -1118,7 +1113,7 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* NEW: CLEAR ALL HISTORY BUTTON */}
+                {/* CLEAR ALL HISTORY BUTTON */}
                 <button 
                   onClick={handleClearAllHistory} 
                   className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1"
@@ -1167,7 +1162,6 @@ function AdminDashboard() {
                       <th className="p-4 text-center">Size</th>
                       <th className="p-4 text-center">Quantity</th>
                       <th className="p-4 text-right">Revenue Collected</th>
-                      {/* NEW ACTION COLUMN */}
                       <th className="p-4 text-center">Actions</th>
                     </tr>
                   </thead>
@@ -1350,7 +1344,7 @@ function AdminDashboard() {
                         <td className="p-4 font-black text-stone-900 text-base">{order.customer_name}</td>
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{order.item_name}</div>
-                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} | Color: {order.color}</div>
+                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} {order.color ? `| Color: ${order.color}` : ''}</div>
                         </td>
                         <td className="p-4 text-center">
                           {order.is_paid ? (
@@ -2052,22 +2046,24 @@ function AdminDashboard() {
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
                   <select 
                     required 
-                    value={newPreOrder.size} 
+                    value={newPreOrder.size || ''} 
                     onChange={(e) => setNewPreOrder({...newPreOrder, size: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     disabled={!newPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && garments.find(g => g.name === newPreOrder.item_name)?.sizes.map(s => (
-                      <option key={s.size} value={s.size}>{s.size}</option>
+                    {newPreOrder.item_name && garments.find(g => g.name === newPreOrder.item_name)?.sizes?.map(s => (
+                      <option key={s.size} value={s.size} disabled={s.quantity <= 0}>
+                        {s.size} {s.quantity <= 0 ? '(Out of Stock)' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
                   <input 
-                    type="text" required placeholder="Rose Pink" 
-                    value={newPreOrder.color} onChange={(e) => setNewPreOrder({...newPreOrder, color: e.target.value})}
+                    type="text" placeholder="Color (Optional)" 
+                    value={newPreOrder.color || ''} onChange={(e) => setNewPreOrder({...newPreOrder, color: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2180,22 +2176,25 @@ function AdminDashboard() {
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
                   <select 
                     required 
-                    value={editPreOrder.size} 
+                    value={editPreOrder.size || ''} 
                     onChange={(e) => setEditPreOrder({...editPreOrder, size: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     disabled={!editPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && garments.find(g => g.name === editPreOrder.item_name)?.sizes.map(s => (
+                    {editPreOrder.item_name && garments.find(g => g.name === editPreOrder.item_name)?.sizes?.map(s => (
                       <option key={s.size} value={s.size}>{s.size}</option>
                     ))}
+                    {editPreOrder.size && !garments.find(g => g.name === editPreOrder.item_name)?.sizes?.find(s => s.size === editPreOrder.size) && (
+                      <option value={editPreOrder.size}>{editPreOrder.size}</option>
+                    )}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
                   <input 
-                    type="text" required 
-                    value={editPreOrder.color} onChange={(e) => setEditPreOrder({...editPreOrder, color: e.target.value})}
+                    type="text" placeholder="Color (Optional)" 
+                    value={editPreOrder.color || ''} onChange={(e) => setEditPreOrder({...editPreOrder, color: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
