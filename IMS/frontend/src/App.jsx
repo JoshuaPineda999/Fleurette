@@ -47,7 +47,6 @@ function CustomerView() {
 
   const categories = ['All', ...new Set((garments || []).map(g => g.category || 'Uncategorized'))];
 
-  // Filter AND sort alphabetically
   const filteredGarments = (garments || [])
     .filter(item => {
       const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
@@ -818,19 +817,24 @@ function AdminDashboard() {
 
   // HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
+    // 1. Optimistically update UI so it snaps immediately
+    if (isPreOrder) {
+      setPreOrders(prev => prev.map(p => p.id === originalId ? { ...p, status: newStatus } : p));
+    } else {
+      setSalesHistory(prev => prev.map(s => s.id === originalId ? { ...s, status: newStatus } : s));
+    }
+
+    // 2. Perform backend patch
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
       await axios.patch(endpoint, { status: newStatus });
       showToast(`📦 Order marked as ${newStatus}!`);
-      
-      // Optimistic UI Update so the dropdown visually changes instantly
-      if (isPreOrder) {
-        setPreOrders(preOrders.map(p => p.id === originalId ? { ...p, status: newStatus } : p));
-      } else {
-        setSalesHistory(salesHistory.map(s => s.id === originalId ? { ...s, status: newStatus } : s));
-      }
+      // Force sync with backend to guarantee it saved correctly
+      await fetchData(true);
     } catch (error) {
-      alert('Error updating status. Please ensure you have added the "status" field to your backend models and deployed.');
+      alert('Error updating status. Please ensure you have added the "status" field to your backend serializers.');
+      // If backend fails, revert UI to match truth
+      await fetchData(true);
     }
   };
 
@@ -889,7 +893,7 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (item.total_pieces || 0), 0);
 
-  // Filter AND sort alphabetically
+  // Filter AND sort alphabetically for Admin View
   const filteredGarments = (garments || [])
     .filter(item => {
       const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
@@ -1387,8 +1391,8 @@ function AdminDashboard() {
               <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-200 max-w-xl mx-auto my-12 shadow-sm">
                 <span className="text-5xl block mb-3">🌸</span>
                 <h3 className="text-lg font-bold text-stone-800 mb-1">No Activity Found</h3>
-                <p className="text-stone-500 text-sm mb-6">{historyFilterDate ? `No transactions were recorded on ${historyFilterDate}. Try selecting another date.` : 'Your ledger is empty. Start recording sales or pre-orders!'}</p>
-                {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Show All Time</button>)}
+                <p className="text-stone-500 text-sm mb-6">We couldn't find any transactions matching your filters.</p>
+                <button onClick={() => {setHistoryFilterDate(''); setHistoryFilterStatus('All');}} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Filters</button>
               </div>
             ) : (
               <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-stone-200 w-full">
@@ -1405,7 +1409,9 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
-                    {filteredUnifiedHistory.map((log) => (
+                    {filteredUnifiedHistory.map((log) => {
+                      const currentStatus = log.status || 'Pending';
+                      return (
                       <tr key={log.id} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {log.date}</td>
                         <td className="p-4 font-black text-stone-900 text-base">
@@ -1421,11 +1427,11 @@ function AdminDashboard() {
                         
                         <td className="p-4 text-center">
                           <select 
-                            value={log.status} 
+                            value={currentStatus} 
                             onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
                             className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer transition shadow-2xs ${
-                              log.status === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              log.status === 'Shipped' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                              currentStatus === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              currentStatus === 'Shipped' ? 'bg-sky-50 text-sky-700 border-sky-200' :
                               'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
@@ -1449,7 +1455,7 @@ function AdminDashboard() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
@@ -1588,7 +1594,7 @@ function AdminDashboard() {
                       <th className="p-4">Order Date</th>
                       <th className="p-4">Customer Name</th>
                       <th className="p-4">Item &amp; Details</th>
-                      <th className="p-4 text-center">Status</th>
+                      <th className="p-4 text-center">Payment Status</th>
                       <th className="p-4 text-right">Balance Due</th>
                       <th className="p-4 text-center">Actions</th>
                     </tr>
