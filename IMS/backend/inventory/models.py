@@ -85,6 +85,8 @@ class PreOrder(models.Model):
         ('Received', 'Received'),
     ]
     address = models.CharField(max_length=255, blank=True, null=True)
+    recipient_name = models.CharField(max_length=255, blank=True, null=True) # <--- ADD THIS
+    contact_number = models.CharField(max_length=50, blank=True, null=True)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending') # <--- ADD THIS
 
     def __str__(self):
