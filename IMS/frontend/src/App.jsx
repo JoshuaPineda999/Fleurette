@@ -8,17 +8,26 @@ const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.ho
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
-// 3. Safely format Image URLs
+// 3. Ultra-Safe Image Formatter (Fixes broken / relative image URLs & Cloudinary)
 const formatImageUrl = (url) => {
   if (!url) return null;
-  if (typeof url === 'object' && url.url) return String(url.url);
+  if (typeof url === 'object' && url.url) url = String(url.url);
   if (typeof url !== 'string') return null;
-  if (url.startsWith('http') || url.includes('cloudinary')) return url;
-  if (url.startsWith('/')) {
-    const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
-    return `${cleanBase}${url}`;
-  }
-  return url;
+  
+  url = url.trim();
+  
+  // Full external URLs
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return `https:${url}`;
+  if (url.includes('res.cloudinary.com')) return `https://${url.replace(/^http(s)?:\/\//, '')}`;
+
+  // Local / Relative backend media URLs
+  let hostUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  // If your env URL ends with /api, remove it so it points to the media root!
+  if (hostUrl.endsWith('/api')) hostUrl = hostUrl.slice(0, -4);
+  
+  if (url.startsWith(hostUrl)) return url;
+  return url.startsWith('/') ? `${hostUrl}${url}` : `${hostUrl}/${url}`;
 };
 
 // 4. Strict JSON Array Parser to prevent .map() crashes
@@ -55,7 +64,7 @@ class ErrorBoundary extends React.Component {
         <div className="min-h-screen bg-rose-50 flex flex-col items-center justify-center p-6 text-center font-sans">
           <span className="text-6xl mb-4">💥</span>
           <h2 className="text-2xl font-black text-stone-900 mb-2">Display Error Caught</h2>
-          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200">
+          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200 break-all overflow-hidden">
             {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
           <button 
@@ -305,6 +314,7 @@ function AdminDashboard() {
   const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
 
   const [zoomedImage, setZoomedImage] = useState(null);
+  const [viewPreOrder, setViewPreOrder] = useState(null); // MODAL STATE FOR ZOOMING IN
 
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -344,12 +354,13 @@ function AdminDashboard() {
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
+  // UPDATED: Added Recipient Name and Contact Number
   const [newPreOrder, setNewPreOrder] = useState({
-    customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
   const [editPreOrder, setEditPreOrder] = useState({
-    id: null, customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    id: null, customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
   const showToast = (message) => {
@@ -745,7 +756,9 @@ function AdminDashboard() {
       const orderPayload = {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
-        address: newPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
+        recipient_name: newPreOrder.recipient_name || '', // ADDED RECIPIENT
+        contact_number: newPreOrder.contact_number || '', // ADDED CONTACT
+        address: newPreOrder.address || ''
       };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
@@ -757,16 +770,20 @@ function AdminDashboard() {
       }
 
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
+      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
       showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
-    } catch (error) { alert(`Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); }
+    } catch (error) { 
+        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+    }
   };
 
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ 
       id: item.id, 
       customer_name: item.customer_name || '', 
+      recipient_name: item.recipient_name || '', 
+      contact_number: item.contact_number || '', 
       address: item.address || '', 
       item_name: item.item_name || '', 
       size: item.size || '', 
@@ -799,14 +816,18 @@ function AdminDashboard() {
       const orderPayload = {
         ...editPreOrder,
         color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color,
-        address: editPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
+        recipient_name: editPreOrder.recipient_name || '', // ADDED RECIPIENT
+        contact_number: editPreOrder.contact_number || '', // ADDED CONTACT
+        address: editPreOrder.address || ''
       };
 
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
-    } catch (error) { alert(`Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); }
+    } catch (error) { 
+        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+    }
   };
 
   const handleDeletePreOrder = async (id) => {
@@ -895,20 +916,24 @@ function AdminDashboard() {
       localSalesHistory.splice(matchIndex, 1);
     }
     
-    // Build PreOrder Name String
-    let poName = `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''}`;
-    if (order?.address) poName += `, ${order.address}`;
-    poName += `)`;
-
     return { 
       id: `preorder-${order?.id}`, 
       originalId: order?.id,
       isPreOrder: true, 
       date: String(order?.order_date || ''), 
-      name: poName, 
+      name: String(order?.item_name || ''),
+      customer: String(order?.customer_name || 'Unnamed'),
+      recipient_name: String(order?.recipient_name || ''),
+      contact_number: String(order?.contact_number || ''),
+      address: String(order?.address || ''),
       size: String(order?.size || ''), 
+      color: String(order?.color || ''), 
       qty: 1, 
+      price: parseFloat(order?.price) || 0,
+      down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
+      balance: parseFloat(order?.balance) || 0,
+      is_paid: order?.is_paid || false,
       status: String(order?.status || 'Pending')
     };
   });
@@ -920,6 +945,8 @@ function AdminDashboard() {
     date: String(log?.sold_at || ''),
     name: String(log?.garment_name || ''),
     customer: '',
+    recipient_name: '',
+    contact_number: '',
     address: '',
     size: String(log?.size || ''),
     qty: parseFloat(log?.quantity_sold) || 0,
@@ -1471,19 +1498,25 @@ function AdminDashboard() {
                       return (
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
+                        
                         <td className="p-4 font-black text-stone-900 text-base">
                           {log?.isPreOrder ? (
-                            <div className="flex flex-col">
-                              <span className="text-pink-600">📝 Pre-Order: {String(log?.name || '')}</span>
-                              <span className="text-[11px] font-bold text-stone-500 mt-1">
-                                For: {log?.customer}
-                                {log?.address && <span className="ml-1 text-stone-400">| 📍 {log.address}</span>}
+                            <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
+                              <span className="text-pink-600 group-hover:text-pink-800 transition">{String(log?.name || '')}</span>
+                              <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
+                                <span>👤 By: {log?.customer}</span>
+                                {(log?.recipient_name || log?.contact_number || log?.address) && (
+                                   <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
+                                     🔍 Zoom Info
+                                   </span>
+                                )}
                               </span>
                             </div>
                           ) : (
                             String(log?.name || '')
                           )}
                         </td>
+
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{String(log?.size || '')}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
                         <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
@@ -1655,7 +1688,7 @@ function AdminDashboard() {
                   <thead>
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
                       <th className="p-4">Order Date</th>
-                      <th className="p-4">Customer Name</th>
+                      <th className="p-4">Customer Info</th>
                       <th className="p-4">Item &amp; Details</th>
                       <th className="p-4 text-center">Payment Status</th>
                       <th className="p-4 text-right">Balance Due</th>
@@ -1663,17 +1696,21 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
-                    {preOrders.map((order) => (
+                    {preOrders.map((order) => {
+                      const hasExtraDetails = order?.recipient_name || order?.contact_number || order?.address;
+                      return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
-                        <td className="p-4 font-black text-stone-900 text-base">
-                          {String(order?.customer_name || 'Unnamed')}
-                          {order?.address && (
-                            <div className="text-[10px] font-bold text-stone-400 mt-0.5 flex items-center gap-1 uppercase">
-                              <span>📍</span> {String(order.address)}
+                        
+                        <td className="p-4 font-black text-stone-900 text-base cursor-pointer group" onClick={() => setViewPreOrder(order)}>
+                          <span className="group-hover:text-pink-600 transition block">{String(order?.customer_name || 'Unnamed')}</span>
+                          {hasExtraDetails && (
+                            <div className="text-[10px] font-bold text-stone-500 mt-1 flex items-center gap-1 uppercase bg-stone-100 px-2 py-0.5 rounded w-fit group-hover:bg-pink-50 group-hover:text-pink-600 transition">
+                              <span>🔍 View Details</span>
                             </div>
                           )}
                         </td>
+
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
                           <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
@@ -1695,7 +1732,7 @@ function AdminDashboard() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               )}
@@ -1703,6 +1740,71 @@ function AdminDashboard() {
           </div>
         )}
       </main>
+
+      {/* ========================================== */}
+      {/* ZOOM PRE-ORDER MODAL (NEW)                 */}
+      {/* ========================================== */}
+      {viewPreOrder && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setViewPreOrder(null)}>
+          <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-stone-200 relative" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-6 border-b border-stone-100 pb-4">
+              <div>
+                <h2 className="text-2xl font-black text-stone-900 tracking-tight">Pre-Order Details</h2>
+                <p className="text-stone-500 text-xs mt-1 font-bold">Order Ref: {viewPreOrder.id || viewPreOrder.originalId}</p>
+              </div>
+              <button onClick={() => setViewPreOrder(null)} className="text-stone-400 hover:text-rose-500 font-black text-3xl transition">&times;</button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-[#f9f6f0] p-4 rounded-2xl border border-stone-200 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase text-pink-600 tracking-widest mb-3 flex items-center gap-1.5"><span>🚚</span> Customer & Delivery</h3>
+                <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
+                  <div>
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Ordered By</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.customer_name || viewPreOrder.customer || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Recipient Name</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.recipient_name || 'Same as Customer'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Contact Number</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.contact_number || 'Not provided'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Full Delivery Address</span>
+                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.address || 'Not provided'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
+                <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name).replace('📝 Pre-Order: ', '').split(' (Ordered')[0]}</p>
+                <div className="flex gap-3 mt-1.5">
+                  <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
+                  {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
+                    <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Color: {viewPreOrder.color}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                 <div>
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Payment Status</span>
+                    <span className={`text-base font-black ${viewPreOrder.is_paid || (viewPreOrder.balance && parseFloat(viewPreOrder.balance) <= 0) ? 'text-emerald-500' : 'text-rose-500'}`}>
+                       {viewPreOrder.is_paid || (viewPreOrder.balance && parseFloat(viewPreOrder.balance) <= 0) ? '✅ Fully Paid' : `₱${parseFloat(viewPreOrder.balance).toFixed(2)} Balance`}
+                    </span>
+                 </div>
+                 <div className="text-right">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Fulfillment</span>
+                    <span className="text-base font-black text-sky-600 uppercase">{viewPreOrder.status || 'Pending'}</span>
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================== */}
       {/* RENAME BATCH MODAL                         */}
@@ -2387,7 +2489,7 @@ function AdminDashboard() {
             <form onSubmit={handleCreatePreOrder} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
                   <input 
                     type="text" required placeholder="e.g. Dill Doe" 
                     value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
@@ -2395,9 +2497,28 @@ function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Address (Optional)</label>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
                   <input 
-                    type="text" placeholder="e.g. 123 Main St" 
+                    type="text" placeholder="Optional" 
+                    value={newPreOrder.recipient_name} onChange={(e) => setNewPreOrder({...newPreOrder, recipient_name: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
+                  <input 
+                    type="text" placeholder="Optional" 
+                    value={newPreOrder.contact_number} onChange={(e) => setNewPreOrder({...newPreOrder, contact_number: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
+                  <input 
+                    type="text" placeholder="Optional" 
                     value={newPreOrder.address} onChange={(e) => setNewPreOrder({...newPreOrder, address: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
@@ -2527,7 +2648,7 @@ function AdminDashboard() {
             <form onSubmit={handleUpdatePreOrder} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
                   <input 
                     type="text" required 
                     value={editPreOrder.customer_name} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
@@ -2535,9 +2656,28 @@ function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Address (Optional)</label>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
                   <input 
-                    type="text" placeholder="e.g. 123 Main St" 
+                    type="text" placeholder="Optional" 
+                    value={editPreOrder.recipient_name} onChange={(e) => setEditPreOrder({...editPreOrder, recipient_name: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
+                  <input 
+                    type="text" placeholder="Optional" 
+                    value={editPreOrder.contact_number} onChange={(e) => setEditPreOrder({...editPreOrder, contact_number: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
+                  <input 
+                    type="text" placeholder="Optional" 
                     value={editPreOrder.address} onChange={(e) => setEditPreOrder({...editPreOrder, address: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
