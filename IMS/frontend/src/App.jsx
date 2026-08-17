@@ -11,7 +11,7 @@ const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_U
 // 3. Safely format Image URLs
 const formatImageUrl = (url) => {
   if (!url) return null;
-  if (typeof url === 'object' && url.url) url = url.url; // Deep fallback
+  if (typeof url === 'object' && url.url) return String(url.url);
   if (typeof url !== 'string') return null;
   if (url.startsWith('http') || url.includes('cloudinary')) return url;
   if (url.startsWith('/')) {
@@ -41,10 +41,13 @@ const parseSafeArray = (data) => {
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, errorInfo: null };
+    this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error) {
-    return { hasError: true, errorInfo: error };
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Critical Render Error Caught:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -53,7 +56,7 @@ class ErrorBoundary extends React.Component {
           <span className="text-6xl mb-4">💥</span>
           <h2 className="text-2xl font-black text-stone-900 mb-2">Display Error Caught</h2>
           <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200">
-            {this.state.errorInfo?.toString() || "An unexpected data error occurred."}
+            {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
           <button 
             onClick={() => window.location.reload()} 
@@ -67,7 +70,6 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-
 
 // ==========================================
 // 1. CUSTOMER CATALOG VIEW (DEFAULT /)
@@ -84,7 +86,7 @@ function CustomerView() {
       try {
         const res = await axios.get(`${API_BASE}garments/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setGarments(gData.map(g => ({ ...g, sizes: parseSafeArray(g.sizes), image: formatImageUrl(g.image) })));
+        setGarments(gData.map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
       } finally {
@@ -94,17 +96,18 @@ function CustomerView() {
     fetchGarments();
   }, []);
 
-  const categories = ['All', ...new Set((garments || []).map(g => g.category || 'Uncategorized'))];
+  const categories = ['All', ...new Set((garments || []).map(g => g?.category || 'Uncategorized'))];
 
   const filteredGarments = (garments || [])
     .filter(item => {
+      if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       return matchesSearch && matchesCategory;
     })
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
@@ -139,13 +142,13 @@ function CustomerView() {
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {categories.map(cat => (
               <button
-                key={cat}
+                key={String(cat)}
                 onClick={() => setActiveCategory(cat)}
                 className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
                   activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
                 }`}
               >
-                {cat}
+                {String(cat)}
               </button>
             ))}
           </div>
@@ -157,15 +160,15 @@ function CustomerView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {filteredGarments.map(item => (
               <div 
-                key={item.id} 
-                onClick={() => { if (item.image) setZoomedImage(item.image); }}
+                key={`cust-${item?.id}`} 
+                onClick={() => { if (item?.image) setZoomedImage(item.image); }}
                 className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300"
               >
-                {item.total_pieces === 0 && (
+                {item?.total_pieces === 0 && (
                   <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
                 )}
                 <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
-                  {item.image ? (
+                  {item?.image ? (
                     <>
                       <img 
                         src={item.image} 
@@ -181,22 +184,22 @@ function CustomerView() {
                 </div>
                 <div className="p-5 flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{item.name}</h3>
-                    {item.color && item.color !== 'N/A' && (
+                    <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{String(item?.name || 'Unnamed')}</h3>
+                    {item?.color && item.color !== 'N/A' && (
                       <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                        {item.color}
+                        {String(item.color)}
                       </span>
                     )}
                   </div>
-                  <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
-                  <span className="text-2xl font-black text-pink-600 mb-4">₱{item.selling_price}</span>
+                  <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
+                  <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
                   
                   <div className="mt-auto">
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
                     <div className="flex flex-wrap gap-2">
-                      {parseSafeArray(item.sizes).map(s => (
-                        <span key={s.size} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
-                          {s.size}
+                      {parseSafeArray(item?.sizes).map(s => (
+                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
+                          {String(s?.size || 'N/A')}
                         </span>
                       ))}
                     </div>
@@ -298,7 +301,6 @@ function AdminDashboard() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
-  // LEDGER FILTERS
   const [historyFilterDate, setHistoryFilterDate] = useState('');
   const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
 
@@ -374,19 +376,17 @@ function AdminDashboard() {
     if (!isBackgroundRefresh) setLoading(true);
     setErrorMessage(null);
     try {
-      // Fetch Garments
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
       const formattedGarments = gData.map(g => ({
         ...g,
-        sizes: parseSafeArray(g.sizes),
-        image: formatImageUrl(g.image)
+        sizes: parseSafeArray(g?.sizes),
+        image: formatImageUrl(g?.image)
       }));
       setGarments(formattedGarments);
 
-      // Update Modal silently if open
       if (productModal.show && productModal.garment) {
-        const freshCurrent = formattedGarments.find(g => g.id === productModal.garment.id);
+        const freshCurrent = formattedGarments.find(g => g?.id === productModal.garment.id);
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
       }
 
@@ -414,7 +414,7 @@ function AdminDashboard() {
     try {
       const res = await axios.get(`${API_BASE}expenses/`);
       const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-      setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e.breakdown) })));
+      setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) })));
     } catch (error) {}
   };
 
@@ -428,8 +428,8 @@ function AdminDashboard() {
   useEffect(() => { fetchData(); }, []);
 
   const openProductModal = (item, defaultMode = 'sell') => {
-    const safeSizes = parseSafeArray(item.sizes);
-    const defaultSize = safeSizes.find(s => s.quantity > 0)?.size || 'S';
+    const safeSizes = parseSafeArray(item?.sizes);
+    const defaultSize = safeSizes.find(s => s?.quantity > 0)?.size || 'S';
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
@@ -439,7 +439,7 @@ function AdminDashboard() {
       const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
         size: productModal.size, change: -Math.abs(productModal.quantity), is_sale: true
       });
-      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data.sizes), image: formatImageUrl(response.data.image) };
+      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data?.sizes), image: formatImageUrl(response.data?.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name} (${productModal.size})`);
@@ -455,7 +455,7 @@ function AdminDashboard() {
       const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
         size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
       });
-      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data.sizes), image: formatImageUrl(response.data.image) };
+      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data?.sizes), image: formatImageUrl(response.data?.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal(prev => ({ ...prev, garment: updatedGarment, quantity: 1 }));
       showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${updatedGarment.name} (${productModal.size})`);
@@ -497,9 +497,9 @@ function AdminDashboard() {
         
         const batchName = newBatch.batch_name || 'Uncategorized';
         
-        const existingGarment = garments.find(g => 
-          String(g.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
-          String(g.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim()
+        const existingGarment = (garments || []).find(g => 
+          String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
+          String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim()
         );
 
         const formData = new FormData();
@@ -510,7 +510,7 @@ function AdminDashboard() {
           const mergedSizes = { S: 0, M: 0, L: 0, XL: 0 };
           const currentSizeMap = {};
           
-          parseSafeArray(existingGarment.sizes).forEach(s => { currentSizeMap[s.size] = s.quantity; });
+          parseSafeArray(existingGarment.sizes).forEach(s => { currentSizeMap[s?.size] = s?.quantity; });
           
           ['S', 'M', 'L', 'XL'].forEach(sizeLabel => {
             mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
@@ -569,17 +569,14 @@ function AdminDashboard() {
     }
 
     try {
-      const itemsToUpdate = garments.filter(g => (g.batch_name || 'Uncategorized') === oldName);
-      
+      const itemsToUpdate = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === oldName);
       for (const item of itemsToUpdate) {
         const formData = new FormData();
         formData.append('batch_name', newName.trim());
         await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
       }
 
-      if (selectedBatch === oldName) {
-        setSelectedBatch(newName.trim());
-      }
+      if (selectedBatch === oldName) setSelectedBatch(newName.trim());
 
       setShowRenameBatchModal(false);
       showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
@@ -590,20 +587,14 @@ function AdminDashboard() {
   };
 
   const handleDeleteBatch = async (batchName) => {
-    const itemsToDelete = garments.filter(g => (g.batch_name || 'Uncategorized') === batchName);
-    if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) {
-      return;
-    }
+    const itemsToDelete = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === batchName);
+    if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) return;
 
     try {
       for (const item of itemsToDelete) {
         await axios.delete(`${API_BASE}garments/${item.id}/`);
       }
-
-      if (selectedBatch === batchName) {
-        setSelectedBatch(null);
-      }
-
+      if (selectedBatch === batchName) setSelectedBatch(null);
       showToast(`🗑️ Batch "${batchName}" and all its styles have been removed.`);
       await fetchData(true);
     } catch (error) {
@@ -613,7 +604,7 @@ function AdminDashboard() {
 
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
-    parseSafeArray(item.sizes).forEach(s => { sizeMap[s.size] = s.quantity; });
+    parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
     
     setEditGarment({
       id: item.id, batch_name: item.batch_name || '', name: item.name || '', 
@@ -668,10 +659,10 @@ function AdminDashboard() {
     if (confirmText === 'DELETE') {
       setLoading(true);
       try {
-        for (const g of garments) await axios.delete(`${API_BASE}garments/${g.id}/`);
-        for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p.id}/`);
-        for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e.id}/`);
-        for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s.id}/`);
+        for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`);
+        for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`);
+        for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`);
+        for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
         
         setActiveTab('inventory');
         showToast("🧨 All data has been completely wiped. Fresh start!");
@@ -686,19 +677,19 @@ function AdminDashboard() {
   const handleBreakdownChange = (index, field, value) => {
     const updated = [...newExpense.breakdown];
     updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
     setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const addBreakdownRow = () => setNewExpense({ ...newExpense, breakdown: [...newExpense.breakdown, { name: '', cost: '' }] });
   const removeBreakdownRow = (index) => {
     const updated = newExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
     setNewExpense({ ...newExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const handleCreateExpense = async (e) => {
     e.preventDefault();
     try {
-      const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b.name || '').trim() !== '' && (parseFloat(b.cost) || 0) > 0) : [];
+      const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
       await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
       setShowExpenseModal(false);
       setNewExpense({ title: '', amount: '', date: new Date().toISOString().split('T')[0], isDetailed: false, breakdown: [{ name: '', cost: '' }] });
@@ -708,26 +699,26 @@ function AdminDashboard() {
   };
 
   const openEditExpenseModal = (item) => {
-    const breakdownList = parseSafeArray(item.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
+    const breakdownList = parseSafeArray(item?.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
     setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || new Date().toISOString().split('T')[0], isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
     setShowEditExpenseModal(true);
   };
   const handleEditBreakdownChange = (index, field, value) => {
     const updated = [...editExpense.breakdown];
     updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
     setEditExpense({ ...editExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const addEditBreakdownRow = () => setEditExpense({ ...editExpense, breakdown: [...editExpense.breakdown, { name: '', cost: '' }] });
   const removeEditBreakdownRow = (index) => {
     const updated = editExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
     setEditExpense({ ...editExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const handleUpdateExpense = async (e) => {
     e.preventDefault();
     try {
-      const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b.name || '').trim() !== '' && (parseFloat(b.cost) || 0) > 0) : [];
+      const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
       await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, breakdown: validBreakdown });
       setShowEditExpenseModal(false);
       showToast("✏️ Expense updated!");
@@ -749,15 +740,12 @@ function AdminDashboard() {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color
       };
-
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
-      const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
+      const targetGarment = (garments || []).find(g => g?.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
-          size: newPreOrder.size,
-          change: -1,
-          is_sale: false 
+          size: newPreOrder.size, change: -1, is_sale: false 
         });
       }
 
@@ -771,14 +759,9 @@ function AdminDashboard() {
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ 
       id: item.id, 
-      customer_name: item.customer_name || '', 
-      item_name: item.item_name || '', 
-      size: item.size || '', 
-      color: !item.color || item.color === 'N/A' ? '' : item.color, 
-      price: item.price || '', 
-      down_payment: item.down_payment || '', 
-      is_paid: item.is_paid || false, 
-      balance: item.balance || '' 
+      customer_name: item.customer_name || '', item_name: item.item_name || '', size: item.size || '', 
+      color: !item.color || item.color === 'N/A' ? '' : item.color, price: item.price || '', 
+      down_payment: item.down_payment || '', is_paid: item.is_paid || false, balance: item.balance || '' 
     });
     setShowEditPreOrderModal(true);
   };
@@ -786,16 +769,14 @@ function AdminDashboard() {
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      const oldOrder = preOrders.find(o => o.id === editPreOrder.id);
-      
+      const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
       if (oldOrder) {
         if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
-          const oldGarment = garments.find(g => g.name === oldOrder.item_name);
+          const oldGarment = (garments || []).find(g => g?.name === oldOrder.item_name);
           if (oldGarment && oldOrder.size) {
             await axios.patch(`${API_BASE}garments/${oldGarment.id}/update_stock/`, { size: oldOrder.size, change: 1, is_sale: false });
           }
-
-          const newGarment = garments.find(g => g.name === editPreOrder.item_name);
+          const newGarment = (garments || []).find(g => g?.name === editPreOrder.item_name);
           if (newGarment && editPreOrder.size) {
             await axios.patch(`${API_BASE}garments/${newGarment.id}/update_stock/`, { size: editPreOrder.size, change: -1, is_sale: false });
           }
@@ -825,14 +806,12 @@ function AdminDashboard() {
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
     try {
-      const logToRevert = salesHistory.find(s => s.id === id);
+      const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        const targetGarment = garments.find(g => g.name === logToRevert.garment_name);
+        const targetGarment = (garments || []).find(g => g?.name === logToRevert.garment_name);
         if (targetGarment) {
           await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
-            size: logToRevert.size,
-            change: logToRevert.quantity_sold,
-            is_sale: false
+            size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false
           });
         }
       }
@@ -841,7 +820,7 @@ function AdminDashboard() {
       showToast("🗑️ Sales record deleted & stock restored.");
       await fetchData(true);
     } catch (error) { 
-      alert('Could not delete sales record. Ensure your Django backend allows DELETE on /api/sales/history/<id>/.'); 
+      alert('Could not delete sales record.'); 
     }
   };
 
@@ -849,13 +828,12 @@ function AdminDashboard() {
     if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger?\n\nThis will delete all recorded regular sales and RETURN the sold items back to your stock.")) return;
     setLoading(true);
     try {
-      for (const log of salesHistory) {
-        const targetGarment = garments.find(g => g.name === log.garment_name);
+      for (const log of (salesHistory || [])) {
+        if (!log) continue;
+        const targetGarment = (garments || []).find(g => g?.name === log.garment_name);
         if (targetGarment) {
           await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
-            size: log.size,
-            change: log.quantity_sold,
-            is_sale: false
+            size: log.size, change: log.quantity_sold, is_sale: false
           });
         }
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
@@ -863,17 +841,16 @@ function AdminDashboard() {
       showToast("🗑️ Entire Sales Ledger cleared & stocks restored!");
       await fetchData(true);
     } catch (error) { 
-      alert('Error clearing some records. Ensure your Django backend allows DELETE on /api/sales/history/<id>/.'); 
+      alert('Error clearing some records.'); 
     }
     setLoading(false);
   };
 
-  // HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
     if (isPreOrder) {
-      setPreOrders(prev => prev.map(p => p.id === originalId ? { ...p, status: newStatus } : p));
+      setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p));
     } else {
-      setSalesHistory(prev => prev.map(s => s.id === originalId ? { ...s, status: newStatus } : s));
+      setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s));
     }
 
     try {
@@ -882,7 +859,7 @@ function AdminDashboard() {
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      alert('Error updating status. Please ensure you have added the "status" field to your backend serializers.');
+      alert('Error updating status.');
       await fetchData(true);
     }
   };
@@ -891,75 +868,76 @@ function AdminDashboard() {
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
   // ==========================================
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
-  const mappedPreOrders = (preOrders || []).map(order => {
-    const matchIndex = localSalesHistory.findIndex(s => s.garment_name === order.item_name && s.size === order.size);
+  const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
+    const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === order?.item_name && s.size === order?.size);
     if (matchIndex !== -1) {
       localSalesHistory.splice(matchIndex, 1);
     }
     return { 
-      id: `preorder-${order.id}`, 
-      originalId: order.id,
+      id: `preorder-${order?.id}`, 
+      originalId: order?.id,
       isPreOrder: true, 
-      date: order.order_date, 
-      name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, 
-      size: order.size, 
+      date: String(order?.order_date || ''), 
+      name: `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''})`, 
+      size: String(order?.size || ''), 
       qty: 1, 
-      earned: (parseFloat(order.price) || 0) - (parseFloat(order.balance) || 0),
-      status: order.status || 'Pending' 
+      earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
+      status: String(order?.status || 'Pending')
     };
   });
 
-  const mappedSales = localSalesHistory.map(log => ({
-    id: `sale-${log.id}`,
-    originalId: log.id,
+  const mappedSales = localSalesHistory.filter(s => s).map(log => ({
+    id: `sale-${log?.id}`,
+    originalId: log?.id,
     isPreOrder: false,
-    date: log.sold_at,
-    name: log.garment_name,
-    size: log.size,
-    qty: log.quantity_sold,
-    earned: parseFloat(log.profit_earned) || 0,
-    status: log.status || 'Pending'
+    date: String(log?.sold_at || ''),
+    name: String(log?.garment_name || ''),
+    size: String(log?.size || ''),
+    qty: parseFloat(log?.quantity_sold) || 0,
+    earned: parseFloat(log?.profit_earned) || 0,
+    status: String(log?.status || 'Pending')
   }));
 
-  const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0));
 
-  // APPLIED BOTH DATE AND STATUS FILTERS
   const filteredUnifiedHistory = unifiedHistory.filter(log => {
+    if (!log) return false;
     const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
     const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
     return matchDate && matchStatus;
   });
 
-  const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0);
-  const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+  const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
+  const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
-  const dailyHistory = unifiedHistory.filter(log => log.date === selectedDate);
+  const dailyHistory = unifiedHistory.filter(log => log?.date === selectedDate);
   const dailyStats = { 
-    total_pieces_sold: dailyHistory.reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0), 
-    total_profit_earned: dailyHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0) 
+    total_pieces_sold: dailyHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0), 
+    total_profit_earned: dailyHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0) 
   };
 
-  const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item.total_potential_profit) || 0), 0);
-  const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item.total_pieces) || 0), 0);
+  const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
+  const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
-  // Filter AND sort alphabetically for Admin View
   const filteredGarments = (garments || [])
     .filter(item => {
+      if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       return matchesSearch && matchesCategory;
     })
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-  const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0);
-  const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+  const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
+  const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + (parseFloat(item?.amount) || 0), 0);
   const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
 
   const batchMap = {};
   (garments || []).forEach(g => {
-    const bName = g.batch_name || 'Uncategorized';
+    if (!g) return;
+    const bName = String(g.batch_name || 'Uncategorized');
     if (!batchMap[bName]) {
       batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
     }
@@ -967,16 +945,16 @@ function AdminDashboard() {
     batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
     batchMap[bName].styles_count += 1;
   });
-  const batchTrackerData = Object.values(batchMap).sort((a, b) => b.pieces_left - a.pieces_left);
+  const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
-  const uniqueGarmentNames = Array.from(new Set((garments || []).map(g => g.name || '')));
+  const uniqueGarmentNames = Array.from(new Set((garments || []).filter(g => g).map(g => String(g.name || ''))));
 
   if (errorMessage) {
     return (
       <div className="min-h-screen bg-rose-50 flex flex-col items-center justify-center p-6 text-center font-sans">
         <span className="text-6xl mb-4">🌸</span>
         <h2 className="text-2xl font-bold text-rose-800 mb-2">Connection Error</h2>
-        <p className="text-rose-600 max-w-md mb-6">{errorMessage}</p>
+        <p className="text-rose-600 max-w-md mb-6">{String(errorMessage)}</p>
         <button onClick={() => fetchData(false)} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow">Retry Connection</button>
       </div>
     );
@@ -989,7 +967,7 @@ function AdminDashboard() {
       
       {toastMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-pink-600 text-white px-6 py-3.5 rounded-2xl shadow-2xl font-black text-sm md:text-base border-2 border-pink-400 flex items-center gap-3 animate-bounce">
-          <span>{toastMessage}</span>
+          <span>{String(toastMessage)}</span>
           <button onClick={() => setToastMessage(null)} className="text-white/80 hover:text-white font-bold ml-2">✖</button>
         </div>
       )}
@@ -1105,13 +1083,13 @@ function AdminDashboard() {
               <div className="flex flex-wrap gap-2 mb-6">
                 {categories.map(cat => (
                   <button
-                    key={cat}
+                    key={String(cat)}
                     onClick={() => setActiveCategory(cat)}
                     className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
                       activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300'
                     }`}
                   >
-                    {cat}
+                    {String(cat)}
                   </button>
                 ))}
               </div>
@@ -1164,31 +1142,31 @@ function AdminDashboard() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredGarments.map((item) => (
-                  <div key={item.id} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
+                  <div key={`adm-${item?.id}`} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
                     <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
-                      {item.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
-                      <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item.total_pieces} pcs left</div>
+                      {item?.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+                      <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item?.total_pieces} pcs left</div>
                     </div>
                     <div className="p-5 flex flex-col justify-between flex-1">
                       <div>
                         <div className="flex justify-between items-start mb-1">
-                          <h3 className="font-black text-lg text-stone-900 leading-tight pr-2 group-hover:text-pink-600 transition">{item.name}</h3>
-                          {item.color && item.color !== 'N/A' && (
+                          <h3 className="font-black text-lg text-stone-900 leading-tight pr-2 group-hover:text-pink-600 transition">{String(item?.name || 'Unnamed')}</h3>
+                          {item?.color && item.color !== 'N/A' && (
                             <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                              {item.color}
+                              {String(item.color)}
                             </span>
                           )}
                         </div>
-                        <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
+                        <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
                         <div className="mt-2 flex items-baseline gap-2">
-                          <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
-                          <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
+                          <span className="text-2xl font-black text-stone-900">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
+                          <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(item?.cost_price || 0).toFixed(2)}</span>
                         </div>
-                        <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
+                        <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
                       </div>
                       <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
-                        {parseSafeArray(item.sizes).map((s) => (
-                          <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
+                        {parseSafeArray(item?.sizes).map((s) => (
+                          <div key={`szi-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
                         ))}
                       </div>
                     </div>
@@ -1213,7 +1191,7 @@ function AdminDashboard() {
                     >
                       <span>⬅</span> Back to All Batches
                     </button>
-                    <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {selectedBatch}</h2>
+                    <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {String(selectedBatch)}</h2>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -1240,37 +1218,37 @@ function AdminDashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {(garments || [])
-                    .filter(g => (g.batch_name || 'Uncategorized') === selectedBatch)
-                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+                    .filter(g => g && String(g.batch_name || 'Uncategorized') === String(selectedBatch))
+                    .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')))
                     .map((item) => (
-                    <div key={item.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
+                    <div key={`btch-${item?.id}`} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
                       
                       <div onClick={() => openProductModal(item, 'sell')} className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2 cursor-pointer">
-                        {item.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
-                        <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item.total_pieces} pcs left</div>
+                        {item?.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+                        <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item?.total_pieces} pcs left</div>
                       </div>
 
                       <div className="p-5 flex flex-col justify-between flex-1">
                         <div onClick={() => openProductModal(item, 'sell')} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-1">
-                            <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition pr-2">{item.name}</h3>
-                            {item.color && item.color !== 'N/A' && (
+                            <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition pr-2">{String(item?.name || 'Unnamed')}</h3>
+                            {item?.color && item.color !== 'N/A' && (
                               <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                                {item.color}
+                                {String(item.color)}
                               </span>
                             )}
                           </div>
-                          <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
+                          <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
                           <div className="mt-2 flex items-baseline gap-2">
-                            <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
-                            <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
+                            <span className="text-2xl font-black text-stone-900">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
+                            <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(item?.cost_price || 0).toFixed(2)}</span>
                           </div>
-                          <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
+                          <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
-                          {parseSafeArray(item.sizes).map((s) => (
-                            <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
+                          {parseSafeArray(item?.sizes).map((s) => (
+                            <div key={`bsz-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
                           ))}
                         </div>
 
@@ -1322,26 +1300,26 @@ function AdminDashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {batchTrackerData.map((batch, index) => (
                       <div 
-                        key={index} 
+                        key={`btd-${index}`} 
                         className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group"
                       >
                         <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
-                              {batch.styles_count} Styles Inside
+                              {batch?.styles_count} Styles Inside
                             </span>
-                            {batch.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
+                            {batch?.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
                           </div>
-                          <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{batch.name}</h3>
+                          <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{String(batch?.name || 'Unnamed')}</h3>
                           
                           <div className="space-y-4 mb-6">
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Pieces Remaining</span>
-                              <span className="text-3xl font-black text-stone-900">{batch.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span>
+                              <span className="text-3xl font-black text-stone-900">{batch?.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span>
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
-                              <span className="text-2xl font-black text-pink-600">₱{(batch.potential_profit || 0).toFixed(2)}</span>
+                              <span className="text-2xl font-black text-pink-600">₱{parseFloat(batch?.potential_profit || 0).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -1460,20 +1438,20 @@ function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
                     {filteredUnifiedHistory.map((log) => {
-                      const currentStatus = log.status || 'Pending';
+                      const currentStatus = String(log?.status || 'Pending');
                       return (
-                      <tr key={log.id} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {log.date}</td>
+                      <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
                         <td className="p-4 font-black text-stone-900 text-base">
-                          {log.isPreOrder ? (
-                            <span className="text-pink-600">{log.name}</span>
+                          {log?.isPreOrder ? (
+                            <span className="text-pink-600">{String(log?.name || '')}</span>
                           ) : (
-                            log.name
+                            String(log?.name || '')
                           )}
                         </td>
-                        <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
-                        <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
-                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(log.earned || 0).toFixed(2)}</td>
+                        <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{String(log?.size || '')}</span></td>
+                        <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
                         
                         <td className="p-4 text-center">
                           <select 
@@ -1492,7 +1470,7 @@ function AdminDashboard() {
                         </td>
 
                         <td className="p-4 text-center">
-                          {log.isPreOrder ? (
+                          {log?.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
                           ) : (
                             <button 
@@ -1577,22 +1555,22 @@ function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
                     {expenses.map((item) => (
-                      <tr key={item.id} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {item.date}</td>
+                      <tr key={`exp-${item?.id}`} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(item?.date || 'N/A')}</td>
                         <td className="p-4 align-top">
-                          <div className="font-black text-stone-900 text-base">{item.title}</div>
-                          {parseSafeArray(item.breakdown).length > 0 && (
+                          <div className="font-black text-stone-900 text-base">{String(item?.title || '')}</div>
+                          {parseSafeArray(item?.breakdown).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                              {parseSafeArray(item.breakdown).map((b, idx) => (
-                                <span key={idx} className="text-xs bg-[#f2ece4] text-stone-700 font-bold px-2.5 py-1 rounded-md border border-stone-300 shadow-2xs flex items-center gap-1.5">
-                                  <span>{b.name || 'Item'}:</span>
-                                  <span className="text-rose-600 font-black">₱{(parseFloat(b.cost) || 0).toFixed(2)}</span>
+                              {parseSafeArray(item?.breakdown).map((b, idx) => (
+                                <span key={`exp-b-${idx}`} className="text-xs bg-[#f2ece4] text-stone-700 font-bold px-2.5 py-1 rounded-md border border-stone-300 shadow-2xs flex items-center gap-1.5">
+                                  <span>{String(b?.name || 'Item')}:</span>
+                                  <span className="text-rose-600 font-black">₱{(parseFloat(b?.cost) || 0).toFixed(2)}</span>
                                 </span>
                               ))}
                             </div>
                           )}
                         </td>
-                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{(parseFloat(item.amount) || 0).toFixed(2)}</td>
+                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{(parseFloat(item?.amount) || 0).toFixed(2)}</td>
                         <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
                             <button onClick={() => openEditExpenseModal(item)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit expense record">✏️ Edit</button>
@@ -1651,22 +1629,22 @@ function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
                     {preOrders.map((order) => (
-                      <tr key={order.id} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {order.order_date}</td>
-                        <td className="p-4 font-black text-stone-900 text-base">{order.customer_name}</td>
+                      <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
+                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
+                        <td className="p-4 font-black text-stone-900 text-base">{String(order?.customer_name || 'Unnamed')}</td>
                         <td className="p-4">
-                          <div className="font-bold text-stone-800">{order.item_name}</div>
-                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} {order.color && order.color !== 'N/A' ? `| Color: ${order.color}` : ''}</div>
+                          <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
+                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
                         </td>
                         <td className="p-4 text-center">
-                          {order.is_paid ? (
+                          {order?.is_paid ? (
                             <span className="bg-emerald-100 text-emerald-800 font-black text-xs px-2.5 py-1 rounded-md border border-emerald-200 shadow-2xs">Fully Paid</span>
                           ) : (
                             <span className="bg-rose-50 text-rose-600 font-black text-xs px-2.5 py-1 rounded-md border border-rose-200 shadow-2xs">Pending</span>
                           )}
                         </td>
                         <td className="p-4 text-right font-black text-rose-600 text-base">
-                          {parseFloat(order.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
+                          {parseFloat(order?.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
                         </td>
                         <td className="p-4 text-center">
                           <div className="flex justify-center gap-1.5">
@@ -1753,15 +1731,15 @@ function AdminDashboard() {
                   Fleurette Catalog • Style #{productModal.garment.id}
                 </span>
                 
-                <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{productModal.garment.name}</h2>
+                <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{String(productModal.garment.name || '')}</h2>
                 <div className="mt-3 flex items-baseline gap-3">
-                  <span className="text-3xl font-black text-stone-900">₱{productModal.garment.selling_price}</span>
-                  <span className="text-sm font-bold text-stone-400 line-through">₱{productModal.garment.cost_price}</span>
+                  <span className="text-3xl font-black text-stone-900">₱{parseFloat(productModal.garment.selling_price || 0).toFixed(2)}</span>
+                  <span className="text-sm font-bold text-stone-400 line-through">₱{parseFloat(productModal.garment.cost_price || 0).toFixed(2)}</span>
                 </div>
 
                 <div className="mt-2 flex items-center gap-2">
                   <span className="bg-pink-100 text-pink-800 text-xs font-black px-3 py-1 rounded-lg">
-                    +₱{productModal.garment.profit_per_piece} profit / unit
+                    +₱{parseFloat(productModal.garment.profit_per_piece || 0).toFixed(2)} profit / unit
                   </span>
                 </div>
 
@@ -1793,21 +1771,21 @@ function AdminDashboard() {
                   <div className="grid grid-cols-4 gap-2 mb-6">
                     {parseSafeArray(productModal.garment.sizes).map((s) => (
                       <button
-                        type="button" key={s.size} 
+                        type="button" key={s?.size} 
                         onClick={() => setProductModal({ ...productModal, size: s.size, quantity: 1 })}
-                        disabled={productModal.mode === 'sell' && s.quantity === 0}
+                        disabled={productModal.mode === 'sell' && s?.quantity === 0}
                         className={`py-2.5 rounded-xl font-bold text-xs border flex flex-col items-center transition ${
-                          productModal.size === s.size 
+                          productModal.size === s?.size 
                             ? productModal.mode === 'sell'
                               ? 'bg-pink-600 border-pink-600 text-white shadow-md scale-105 font-black'
                               : 'bg-[#eae4dc] border-[#c2b29a] text-stone-900 shadow-md scale-105 font-black'
-                            : s.quantity > 0 || productModal.mode === 'restock'
+                            : s?.quantity > 0 || productModal.mode === 'restock'
                               ? 'bg-[#f9f6f0] border-stone-300 text-stone-700 hover:bg-stone-200'
                               : 'bg-stone-100 border-stone-200 text-stone-300 cursor-not-allowed'
                         }`}
                       >
-                        <span className="text-sm font-black">{s.size}</span>
-                        <span className="text-[10px] opacity-80">{s.quantity} in stock</span>
+                        <span className="text-sm font-black">{String(s?.size || '')}</span>
+                        <span className="text-[10px] opacity-80">{s?.quantity} in stock</span>
                       </button>
                     ))}
                   </div>
@@ -1924,7 +1902,7 @@ function AdminDashboard() {
                           onChange={(e) => {
                             const val = e.target.value;
                             handleBatchStyleChange(index, 'name', val);
-                            const existing = (garments || []).find(g => String(g.name || '').toLowerCase() === val.toLowerCase());
+                            const existing = (garments || []).find(g => String(g?.name || '').toLowerCase() === String(val || '').toLowerCase());
                             if (existing) {
                               handleBatchStyleChange(index, 'cost_price', existing.cost_price);
                               handleBatchStyleChange(index, 'selling_price', existing.selling_price);
@@ -1934,7 +1912,7 @@ function AdminDashboard() {
                         />
                         <datalist id={`garment-names-${index}`}>
                           {uniqueGarmentNames.map((name, i) => (
-                            <option key={i} value={name} />
+                            <option key={`opt-${i}`} value={name} />
                           ))}
                         </datalist>
                       </div>
@@ -1960,7 +1938,7 @@ function AdminDashboard() {
                         />
                         <datalist id={`batch-category-list-${index}`}>
                           {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                            <option key={cat} value={cat} />
+                            <option key={`cat-${cat}`} value={cat} />
                           ))}
                         </datalist>
                       </div>
@@ -2068,7 +2046,7 @@ function AdminDashboard() {
                   />
                   <datalist id="edit-category-list">
                     {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                      <option key={cat} value={cat} />
+                      <option key={`edit-cat-${cat}`} value={cat} />
                     ))}
                   </datalist>
                 </div>
@@ -2120,7 +2098,7 @@ function AdminDashboard() {
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-2">Update Size Stock Counts</label>
                 <div className="grid grid-cols-4 gap-2 bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
                   {['S', 'M', 'L', 'XL'].map((size) => (
-                    <div key={size} className="text-center">
+                    <div key={`edit-sz-${size}`} className="text-center">
                       <span className="block font-extrabold text-xs text-stone-500 mb-1">{size}</span>
                       <input 
                         type="number" min="0" 
@@ -2198,7 +2176,7 @@ function AdminDashboard() {
                   <div className="space-y-2.5 pt-2 border-t border-stone-300">
                     <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
                     {newExpense.breakdown.map((item, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
+                      <div key={`n-bd-${idx}`} className="flex gap-2 items-center">
                         <input
                           type="text" placeholder="e.g. Freight Shipping" required
                           value={item.name} onChange={(e) => handleBreakdownChange(idx, 'name', e.target.value)}
@@ -2293,7 +2271,7 @@ function AdminDashboard() {
                   <div className="space-y-2.5 pt-2 border-t border-stone-300">
                     <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
                     {editExpense.breakdown.map((item, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
+                      <div key={`e-bd-${idx}`} className="flex gap-2 items-center">
                         <input
                           type="text" placeholder="e.g. Freight Shipping" required
                           value={item.name} onChange={(e) => handleEditBreakdownChange(idx, 'name', e.target.value)}
@@ -2380,7 +2358,7 @@ function AdminDashboard() {
                   required 
                   value={newPreOrder.item_name} 
                   onChange={(e) => {
-                    const selected = (garments || []).find(g => g.name === e.target.value);
+                    const selected = (garments || []).find(g => String(g?.name) === e.target.value);
                     const newPrice = selected ? selected.selling_price : newPreOrder.price;
                     const dp = newPreOrder.down_payment || 0;
                     const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
@@ -2398,7 +2376,7 @@ function AdminDashboard() {
                 >
                   <option value="" disabled>-- Select a Style --</option>
                   {(garments || []).map(g => (
-                    <option key={g.id} value={g.name}>{g.name}</option>
+                    <option key={`po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                   ))}
                 </select>
               </div>
@@ -2414,9 +2392,9 @@ function AdminDashboard() {
                     disabled={!newPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && (garments || []).find(g => g.name === newPreOrder.item_name)?.sizes?.map(s => (
-                      <option key={s.size} value={s.size} disabled={s.quantity <= 0}>
-                        {s.size} {s.quantity <= 0 ? '(Out of Stock)' : ''}
+                    {newPreOrder.item_name && parseSafeArray((garments || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
+                      <option key={`po-sz-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
+                        {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
                       </option>
                     ))}
                   </select>
@@ -2510,7 +2488,7 @@ function AdminDashboard() {
                   required 
                   value={editPreOrder.item_name} 
                   onChange={(e) => {
-                    const selected = (garments || []).find(g => g.name === e.target.value);
+                    const selected = (garments || []).find(g => String(g?.name) === e.target.value);
                     const newPrice = selected ? selected.selling_price : editPreOrder.price;
                     const dp = editPreOrder.down_payment || 0;
                     const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
@@ -2528,7 +2506,7 @@ function AdminDashboard() {
                 >
                   <option value="" disabled>-- Select a Style --</option>
                   {(garments || []).map(g => (
-                    <option key={g.id} value={g.name}>{g.name}</option>
+                    <option key={`edit-po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                   ))}
                 </select>
               </div>
@@ -2544,11 +2522,11 @@ function AdminDashboard() {
                     disabled={!editPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && (garments || []).find(g => g.name === editPreOrder.item_name)?.sizes?.map(s => (
-                      <option key={s.size} value={s.size}>{s.size}</option>
+                    {editPreOrder.item_name && parseSafeArray((garments || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
+                      <option key={`edit-po-sz-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
                     ))}
-                    {editPreOrder.size && !(garments || []).find(g => g.name === editPreOrder.item_name)?.sizes?.find(s => s.size === editPreOrder.size) && (
-                      <option value={editPreOrder.size}>{editPreOrder.size}</option>
+                    {editPreOrder.size && !parseSafeArray((garments || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
+                      <option value={editPreOrder.size}>{String(editPreOrder.size)}</option>
                     )}
                   </select>
                 </div>
