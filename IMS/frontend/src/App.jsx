@@ -782,7 +782,7 @@ function AdminDashboard() {
       showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
+        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
     }
   };
 
@@ -1517,8 +1517,8 @@ function AdminDashboard() {
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
                               <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
                               <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
-                                <span>👤 By: {log?.customer_name || log?.customer || 'Unnamed'}</span>
-                                {!!(log?.recipient_name?.trim() || log?.contact_number?.trim() || log?.address?.trim()) && (
+                                <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
+                                {!!(String(log?.recipient_name || '').trim() || String(log?.contact_number || '').trim() || String(log?.address || '').trim()) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
                                      🔍 Zoom Info
                                    </span>
@@ -1710,7 +1710,7 @@ function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
                     {preOrders.map((order) => {
-                      const hasExtraDetails = !!(order?.recipient_name?.trim() || order?.contact_number?.trim() || order?.address?.trim());
+                      const hasExtraDetails = !!(String(order?.recipient_name || '').trim() || String(order?.contact_number || '').trim() || String(order?.address || '').trim());
                       return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
@@ -1778,22 +1778,22 @@ function AdminDashboard() {
                   </div>
                   <div>
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Recipient Name</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.recipient_name?.trim() ? viewPreOrder.recipient_name : 'Same as Customer'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{String(viewPreOrder.recipient_name || '').trim() ? viewPreOrder.recipient_name : 'Same as Customer'}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Contact Number</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.contact_number?.trim() ? viewPreOrder.contact_number : 'Not provided'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{String(viewPreOrder.contact_number || '').trim() ? viewPreOrder.contact_number : 'Not provided'}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase mb-0.5">Full Delivery Address</span>
-                    <span className="font-black text-stone-800 leading-tight block">{viewPreOrder.address?.trim() ? viewPreOrder.address : 'Not provided'}</span>
+                    <span className="font-black text-stone-800 leading-tight block">{String(viewPreOrder.address || '').trim() ? viewPreOrder.address : 'Not provided'}</span>
                   </div>
                 </div>
               </div>
 
               <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
                 <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
-                <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name).replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
+                <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
                 <div className="flex gap-3 mt-1.5">
                   <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
                   {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
