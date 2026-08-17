@@ -5,16 +5,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } f
 // Prevent infinite hangs on requests if Render goes down (60 sec max to allow cold-starts)
 axios.defaults.timeout = 60000;
 
-// 1. Intelligent Backend URL Resolver (Prevents the port 8000 Vercel infinite hang)
-let BACKEND_URL = import.meta.env.VITE_API_URL;
-if (!BACKEND_URL || BACKEND_URL.includes('vercel.app')) {
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    BACKEND_URL = 'http://localhost:8000';
-  } else {
-    // Hard-fallback to your live Render backend if Vercel ENV is missing
-    BACKEND_URL = 'https://fleurettesdajkdhashjkdasfjadsfa.onrender.com';
-  }
-}
+// 1. Automatically use Vercel's environment variable, or fallback to localhost
+// FIXED: Reverted to your exact working setup to prevent the infinite loading hang
+const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
 
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
@@ -926,21 +919,21 @@ function AdminDashboard() {
       id: `preorder-${order?.id}`, 
       originalId: order?.id,
       isPreOrder: true, 
-      date: String(order?.order_date || ''), 
-      name: String(order?.item_name || ''),
-      customer: String(order?.customer_name || 'Unnamed'),
-      recipient_name: String(order?.recipient_name || ''),
-      contact_number: String(order?.contact_number || ''),
-      address: String(order?.address || ''),
-      size: String(order?.size || ''), 
-      color: String(order?.color || ''), 
+      date: order?.order_date ? String(order.order_date) : '', 
+      name: order?.item_name ? String(order.item_name) : '',
+      customer_name: order?.customer_name ? String(order.customer_name) : 'Unnamed',
+      recipient_name: order?.recipient_name ? String(order.recipient_name) : '',
+      contact_number: order?.contact_number ? String(order.contact_number) : '',
+      address: order?.address ? String(order.address) : '',
+      size: order?.size ? String(order.size) : '', 
+      color: order?.color ? String(order.color) : '', 
       qty: 1, 
       price: parseFloat(order?.price) || 0,
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
       balance: parseFloat(order?.balance) || 0,
       is_paid: order?.is_paid || false,
-      status: String(order?.status || 'Pending')
+      status: order?.status ? String(order.status) : 'Pending'
     };
   });
 
@@ -949,16 +942,16 @@ function AdminDashboard() {
     id: `sale-${log?.id}`,
     originalId: log?.id,
     isPreOrder: false,
-    date: String(log?.sold_at || ''),
-    name: String(log?.garment_name || ''),
-    customer: '',
+    date: log?.sold_at ? String(log.sold_at) : '',
+    name: log?.garment_name ? String(log.garment_name) : '',
+    customer_name: '',
     recipient_name: '',
     contact_number: '',
     address: '',
-    size: String(log?.size || ''),
+    size: log?.size ? String(log.size) : '',
     qty: parseFloat(log?.quantity_sold) || 0,
     earned: parseFloat(log?.profit_earned) || 0,
-    status: String(log?.status || 'Pending')
+    status: log?.status ? String(log.status) : 'Pending'
   }));
 
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => {
@@ -1515,7 +1508,7 @@ function AdminDashboard() {
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
                               <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
                               <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
-                                <span>👤 By: {log?.customer}</span>
+                                <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
                                 {(log?.recipient_name || log?.contact_number || log?.address) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
                                      🔍 Zoom Info
@@ -2503,7 +2496,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
                   <input 
                     type="text" required placeholder="e.g. Dill Doe" 
-                    value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
+                    value={newPreOrder.customer_name || ''} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2511,7 +2504,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={newPreOrder.recipient_name} onChange={(e) => setNewPreOrder({...newPreOrder, recipient_name: e.target.value})}
+                    value={newPreOrder.recipient_name || ''} onChange={(e) => setNewPreOrder({...newPreOrder, recipient_name: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2522,7 +2515,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={newPreOrder.contact_number} onChange={(e) => setNewPreOrder({...newPreOrder, contact_number: e.target.value})}
+                    value={newPreOrder.contact_number || ''} onChange={(e) => setNewPreOrder({...newPreOrder, contact_number: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2530,7 +2523,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={newPreOrder.address} onChange={(e) => setNewPreOrder({...newPreOrder, address: e.target.value})}
+                    value={newPreOrder.address || ''} onChange={(e) => setNewPreOrder({...newPreOrder, address: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2662,7 +2655,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
                   <input 
                     type="text" required 
-                    value={editPreOrder.customer_name} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
+                    value={editPreOrder.customer_name || ''} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2670,7 +2663,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={editPreOrder.recipient_name} onChange={(e) => setEditPreOrder({...editPreOrder, recipient_name: e.target.value})}
+                    value={editPreOrder.recipient_name || ''} onChange={(e) => setEditPreOrder({...editPreOrder, recipient_name: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2681,7 +2674,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={editPreOrder.contact_number} onChange={(e) => setEditPreOrder({...editPreOrder, contact_number: e.target.value})}
+                    value={editPreOrder.contact_number || ''} onChange={(e) => setEditPreOrder({...editPreOrder, contact_number: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
@@ -2689,7 +2682,7 @@ function AdminDashboard() {
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
                   <input 
                     type="text" placeholder="Optional" 
-                    value={editPreOrder.address} onChange={(e) => setEditPreOrder({...editPreOrder, address: e.target.value})}
+                    value={editPreOrder.address || ''} onChange={(e) => setEditPreOrder({...editPreOrder, address: e.target.value})}
                     className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                   />
                 </div>
