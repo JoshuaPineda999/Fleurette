@@ -2028,7 +2028,7 @@ function AdminDashboard() {
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
                 <input 
-                  type="text" required placeholder="e.g. Jane Doe" 
+                  type="text" required placeholder="e.g Dill Doe" 
                   value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 />
