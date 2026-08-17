@@ -2,26 +2,42 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 
-// 1. Automatically use Vercel's environment variable, or fallback to localhost
-const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
+// Prevent infinite hangs on requests if Render goes down (60 sec max to allow cold-starts)
+axios.defaults.timeout = 60000;
+
+// 1. Intelligent Backend URL Resolver (Prevents the port 8000 Vercel infinite hang)
+let BACKEND_URL = import.meta.env.VITE_API_URL;
+if (!BACKEND_URL || BACKEND_URL.includes('vercel.app')) {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    BACKEND_URL = 'http://localhost:8000';
+  } else {
+    // Hard-fallback to your live Render backend if Vercel ENV is missing
+    BACKEND_URL = 'https://fleurettesdajkdhashjkdasfjadsfa.onrender.com';
+  }
+}
 
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
-// 3. Safely format Image URLs
+// 3. Ultra-Safe Image Formatter
 const formatImageUrl = (url) => {
   if (!url) return null;
-  if (typeof url === 'object' && url.url) return String(url.url);
+  if (typeof url === 'object' && url.url) url = String(url.url);
   if (typeof url !== 'string') return null;
-  if (url.startsWith('http') || url.includes('cloudinary')) return url;
-  if (url.startsWith('/')) {
-    const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
-    return `${cleanBase}${url}`;
-  }
-  return url;
+  
+  url = url.trim();
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return `https:${url}`;
+  if (url.includes('res.cloudinary.com')) return `https://${url.replace(/^http(s)?:\/\//, '')}`;
+
+  let hostUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  if (hostUrl.endsWith('/api')) hostUrl = hostUrl.slice(0, -4);
+  
+  if (url.startsWith(hostUrl)) return url;
+  return url.startsWith('/') ? `${hostUrl}${url}` : `${hostUrl}/${url}`;
 };
 
-// 4. Strict JSON Array Parser to prevent .map() crashes
+// 4. Strict JSON Array Parser
 const parseSafeArray = (data) => {
   if (Array.isArray(data)) return data;
   if (typeof data === 'string') {
@@ -55,7 +71,7 @@ class ErrorBoundary extends React.Component {
         <div className="min-h-screen bg-rose-50 flex flex-col items-center justify-center p-6 text-center font-sans">
           <span className="text-6xl mb-4">💥</span>
           <h2 className="text-2xl font-black text-stone-900 mb-2">Display Error Caught</h2>
-          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200">
+          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200 break-all overflow-hidden">
             {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
           <button 
@@ -86,7 +102,8 @@ function CustomerView() {
       try {
         const res = await axios.get(`${API_BASE}garments/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setGarments(gData.map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
+        // Safely map data to prevent mapper crashes
+        setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
       } finally {
@@ -379,7 +396,8 @@ function AdminDashboard() {
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
-      const formattedGarments = gData.map(g => ({
+      // Safely map data to prevent mapper crashes
+      const formattedGarments = (gData || []).map(g => ({
         ...g,
         sizes: parseSafeArray(g?.sizes),
         image: formatImageUrl(g?.image)
@@ -746,8 +764,8 @@ function AdminDashboard() {
       const orderPayload = {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
-        recipient_name: newPreOrder.recipient_name || '',
-        contact_number: newPreOrder.contact_number || '',
+        recipient_name: newPreOrder.recipient_name || '', 
+        contact_number: newPreOrder.contact_number || '', 
         address: newPreOrder.address || ''
       };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
@@ -884,7 +902,7 @@ function AdminDashboard() {
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your serializers.py contains the 'status' field.`);
+      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}`);
       await fetchData(true);
     }
   };
@@ -896,6 +914,8 @@ function AdminDashboard() {
   const categories = ['All', ...new Set((garments || []).map(g => String(g?.category || 'Uncategorized')))];
 
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
+  
+  // SECURE DATA MAPPER FOR PRE-ORDERS
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
     const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === order?.item_name && s.size === order?.size);
     if (matchIndex !== -1) {
@@ -907,7 +927,11 @@ function AdminDashboard() {
       originalId: order?.id,
       isPreOrder: true, 
       date: String(order?.order_date || ''), 
-      name: `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''})`,
+      name: String(order?.item_name || ''),
+      customer: String(order?.customer_name || 'Unnamed'),
+      recipient_name: String(order?.recipient_name || ''),
+      contact_number: String(order?.contact_number || ''),
+      address: String(order?.address || ''),
       size: String(order?.size || ''), 
       color: String(order?.color || ''), 
       qty: 1, 
@@ -916,35 +940,32 @@ function AdminDashboard() {
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
       balance: parseFloat(order?.balance) || 0,
       is_paid: order?.is_paid || false,
-      status: String(order?.status || 'Pending'),
-      
-      // Fields needed for Zoom Details UI
-      customer_name: order?.customer_name || '',
-      recipient_name: order?.recipient_name || '',
-      contact_number: order?.contact_number || '',
-      address: order?.address || '',
-      item_name: order?.item_name || ''
+      status: String(order?.status || 'Pending')
     };
   });
 
+  // SECURE DATA MAPPER FOR NORMAL SALES
   const mappedSales = localSalesHistory.filter(s => s).map(log => ({
     id: `sale-${log?.id}`,
     originalId: log?.id,
     isPreOrder: false,
     date: String(log?.sold_at || ''),
     name: String(log?.garment_name || ''),
-    size: String(log?.size || ''),
-    qty: parseFloat(log?.quantity_sold) || 0,
-    earned: parseFloat(log?.profit_earned) || 0,
-    status: String(log?.status || 'Pending'),
-    customer_name: '',
+    customer: '',
     recipient_name: '',
     contact_number: '',
     address: '',
-    item_name: ''
+    size: String(log?.size || ''),
+    qty: parseFloat(log?.quantity_sold) || 0,
+    earned: parseFloat(log?.profit_earned) || 0,
+    status: String(log?.status || 'Pending')
   }));
 
-  const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0));
+  const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => {
+    const timeA = new Date(a?.date || 0).getTime();
+    const timeB = new Date(b?.date || 0).getTime();
+    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+  });
 
   const filteredUnifiedHistory = unifiedHistory.filter(log => {
     if (!log) return false;
@@ -1001,7 +1022,7 @@ function AdminDashboard() {
         <span className="text-6xl mb-4">🌸</span>
         <h2 className="text-2xl font-bold text-rose-800 mb-2">Connection Error</h2>
         <p className="text-rose-600 max-w-md mb-6">{String(errorMessage)}</p>
-        <button onClick={() => fetchData(false)} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow">Retry Connection</button>
+        <button onClick={() => window.location.reload()} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow">Retry Connection</button>
       </div>
     );
   }
@@ -1492,9 +1513,9 @@ function AdminDashboard() {
                         <td className="p-4 font-black text-stone-900 text-base">
                           {log?.isPreOrder ? (
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
-                              <span className="text-pink-600 group-hover:text-pink-800 transition">{String(log?.name || '')}</span>
+                              <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
                               <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
-                                <span>👤 By: {log?.customer_name || log?.customer || 'Unknown'}</span>
+                                <span>👤 By: {log?.customer}</span>
                                 {(log?.recipient_name || log?.contact_number || log?.address) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
                                      🔍 Zoom Info
