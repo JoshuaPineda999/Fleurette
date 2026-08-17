@@ -8,17 +8,20 @@ const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.ho
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
-// 3. Safely format Image URLs
+// 3. Ultra-Safe Image Formatter (Fixes broken / relative image URLs)
 const formatImageUrl = (url) => {
   if (!url) return null;
-  if (typeof url === 'object' && url.url) return String(url.url);
+  if (typeof url === 'object' && url.url) url = String(url.url);
   if (typeof url !== 'string') return null;
-  if (url.startsWith('http') || url.includes('cloudinary')) return url;
-  if (url.startsWith('/')) {
-    const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
-    return `${cleanBase}${url}`;
-  }
-  return url;
+  
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return `https:${url}`;
+  if (url.includes('cloudinary.com')) return `https://${url}`;
+
+  const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  if (url.startsWith(cleanBase)) return url;
+  
+  return url.startsWith('/') ? `${cleanBase}${url}` : `${cleanBase}/${url}`;
 };
 
 // 4. Strict JSON Array Parser to prevent .map() crashes
@@ -55,7 +58,7 @@ class ErrorBoundary extends React.Component {
         <div className="min-h-screen bg-rose-50 flex flex-col items-center justify-center p-6 text-center font-sans">
           <span className="text-6xl mb-4">💥</span>
           <h2 className="text-2xl font-black text-stone-900 mb-2">Display Error Caught</h2>
-          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200">
+          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200 break-all overflow-hidden">
             {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
           <button 
@@ -344,12 +347,10 @@ function AdminDashboard() {
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
-  // UPDATED: Added address field
   const [newPreOrder, setNewPreOrder] = useState({
     customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
 
-  // UPDATED: Added address field
   const [editPreOrder, setEditPreOrder] = useState({
     id: null, customer_name: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
   });
@@ -741,7 +742,7 @@ function AdminDashboard() {
       const orderPayload = {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
-        address: newPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
+        address: newPreOrder.address || ''
       };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
@@ -795,7 +796,7 @@ function AdminDashboard() {
       const orderPayload = {
         ...editPreOrder,
         color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color,
-        address: editPreOrder.address || '' // NEW ADDRESS FIELD SENT TO BACKEND
+        address: editPreOrder.address || ''
       };
 
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
@@ -857,7 +858,6 @@ function AdminDashboard() {
   };
 
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
-    // 1. Optimistic UI update so the dropdown visually changes instantly
     if (isPreOrder) {
       setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p));
     } else {
@@ -866,14 +866,11 @@ function AdminDashboard() {
 
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
-      // 2. Perform the patch operation
       await axios.patch(endpoint, { status: newStatus });
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      // 3. Catch error with heavy detail!
-      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your serializers.py contains the 'status' field.`);
-      // 4. Force UI to revert back to what the database says
+      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}`);
       await fetchData(true);
     }
   };
@@ -890,18 +887,14 @@ function AdminDashboard() {
     if (matchIndex !== -1) {
       localSalesHistory.splice(matchIndex, 1);
     }
-    
-    // Build PreOrder Name String
-    let poName = `📝 Pre-Order: ${order?.item_name || ''} (For: ${order?.customer_name || ''}`;
-    if (order?.address) poName += `, ${order.address}`;
-    poName += `)`;
-
     return { 
       id: `preorder-${order?.id}`, 
       originalId: order?.id,
       isPreOrder: true, 
       date: String(order?.order_date || ''), 
-      name: poName, 
+      name: String(order?.item_name || ''),
+      customer: String(order?.customer_name || 'Unnamed'),
+      address: String(order?.address || ''),
       size: String(order?.size || ''), 
       qty: 1, 
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
@@ -915,6 +908,8 @@ function AdminDashboard() {
     isPreOrder: false,
     date: String(log?.sold_at || ''),
     name: String(log?.garment_name || ''),
+    customer: '',
+    address: '',
     size: String(log?.size || ''),
     qty: parseFloat(log?.quantity_sold) || 0,
     earned: parseFloat(log?.profit_earned) || 0,
@@ -1465,13 +1460,21 @@ function AdminDashboard() {
                       return (
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
+                        
                         <td className="p-4 font-black text-stone-900 text-base">
                           {log?.isPreOrder ? (
-                            <span className="text-pink-600">{String(log?.name || '')}</span>
+                            <div className="flex flex-col">
+                              <span className="text-pink-600">📝 Pre-Order: {log?.name}</span>
+                              <span className="text-[11px] font-bold text-stone-500 mt-1">
+                                For: {log?.customer}
+                                {log?.address && <span className="ml-1 text-stone-400">| 📍 {log.address}</span>}
+                              </span>
+                            </div>
                           ) : (
-                            String(log?.name || '')
+                            log?.name
                           )}
                         </td>
+
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{String(log?.size || '')}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
                         <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
