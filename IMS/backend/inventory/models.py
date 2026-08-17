@@ -48,6 +48,7 @@ class SaleLog(models.Model):
     quantity_sold = models.PositiveIntegerField(default=1)
     profit_earned = models.DecimalField(max_digits=10, decimal_places=2)
     sold_at = models.DateField(default=timezone.now)
+    status = models.CharField(max_length=50, default='Pending') # <--- ADD THIS
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):
@@ -73,6 +74,7 @@ class PreOrder(models.Model):
     is_paid = models.BooleanField(default=False)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     order_date = models.DateField(auto_now_add=True)
+    status = models.CharField(max_length=50, default='Pending') # <--- ADD THIS
 
     def __str__(self):
         return f"{self.customer_name} - {self.item_name}"

@@ -319,16 +319,15 @@ function AdminDashboard() {
     if (!isBackgroundRefresh) setLoading(true);
     setErrorMessage(null);
     try {
-      // Fetch Garments
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
       const formattedGarments = gData.map(g => ({
         ...g,
         image: formatImageUrl(g.image)
       }));
+
       setGarments(formattedGarments);
 
-      // Update Modal silently if open
       if (productModal.show && productModal.garment) {
         const freshCurrent = formattedGarments.find(g => g.id === productModal.garment.id);
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
@@ -605,9 +604,6 @@ function AdminDashboard() {
     }
   };
 
-  // ==========================================
-  // FACTORY RESET (DELETE ALL DATA)
-  // ==========================================
   const handleFactoryReset = async () => {
     const confirmText = window.prompt('⚠️ WARNING: This will permanently delete ALL data including Batches, Garments, Pre-orders, Expenses, and Sales History.\n\nType "DELETE" to confirm:');
     if (confirmText === 'DELETE') {
@@ -685,7 +681,7 @@ function AdminDashboard() {
   };
   
   // ==========================================
-  // UPDATED PRE-ORDER
+  // PRE-ORDERS
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
@@ -765,7 +761,7 @@ function AdminDashboard() {
   };
 
   // ==========================================
-  // UPDATED: DELETE SALES HISTORY CONTROLS
+  // SALES HISTORY & LEDGER
   // ==========================================
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
@@ -813,8 +809,27 @@ function AdminDashboard() {
     setLoading(false);
   };
 
+  // NEW: HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
+  const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
+    try {
+      const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
+      await axios.patch(endpoint, { status: newStatus });
+      showToast(`📦 Order marked as ${newStatus}!`);
+      
+      // Optimistic UI Update so the dropdown visually changes instantly
+      if (isPreOrder) {
+        setPreOrders(preOrders.map(p => p.id === originalId ? { ...p, status: newStatus } : p));
+      } else {
+        setSalesHistory(salesHistory.map(s => s.id === originalId ? { ...s, status: newStatus } : s));
+      }
+    } catch (error) {
+      alert('Error updating status. Please ensure you have added the "status" field to your backend models and deployed.');
+    }
+  };
+
+
   // ==========================================
-  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING (DEDUPLICATED)
+  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
   // ==========================================
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   const mappedPreOrders = (preOrders || []).map(order => {
@@ -830,7 +845,8 @@ function AdminDashboard() {
       name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, 
       size: order.size, 
       qty: 1, 
-      earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0) 
+      earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0),
+      status: order.status || 'Pending' 
     };
   });
 
@@ -842,7 +858,8 @@ function AdminDashboard() {
     name: log.garment_name,
     size: log.size,
     qty: log.quantity_sold,
-    earned: parseFloat(log.profit_earned || 0)
+    earned: parseFloat(log.profit_earned || 0),
+    status: log.status || 'Pending'
   }));
 
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
@@ -1351,6 +1368,7 @@ function AdminDashboard() {
                       <th className="p-4 text-center">Size</th>
                       <th className="p-4 text-center">Quantity</th>
                       <th className="p-4 text-right">Revenue Collected</th>
+                      <th className="p-4 text-center">Fulfillment Status</th>
                       <th className="p-4 text-center">Actions</th>
                     </tr>
                   </thead>
@@ -1368,6 +1386,23 @@ function AdminDashboard() {
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
                         <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
+                        
+                        <td className="p-4 text-center">
+                          <select 
+                            value={log.status} 
+                            onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
+                            className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer transition shadow-2xs ${
+                              log.status === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              log.status === 'Shipped' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            <option value="Pending" className="text-stone-800 bg-white">PENDING</option>
+                            <option value="Shipped" className="text-stone-800 bg-white">SHIPPED</option>
+                            <option value="Received" className="text-stone-800 bg-white">RECEIVED</option>
+                          </select>
+                        </td>
+
                         <td className="p-4 text-center">
                           {log.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
@@ -1521,7 +1556,7 @@ function AdminDashboard() {
                       <th className="p-4">Order Date</th>
                       <th className="p-4">Customer Name</th>
                       <th className="p-4">Item &amp; Details</th>
-                      <th className="p-4 text-center">Status</th>
+                      <th className="p-4 text-center">Payment Status</th>
                       <th className="p-4 text-right">Balance Due</th>
                       <th className="p-4 text-center">Actions</th>
                     </tr>
