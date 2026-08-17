@@ -47,12 +47,15 @@ function CustomerView() {
 
   const categories = ['All', ...new Set((garments || []).map(g => g.category || 'Uncategorized'))];
 
-  const filteredGarments = (garments || []).filter(item => {
-    const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
-                          (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
-    const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Filter AND sort alphabetically
+  const filteredGarments = (garments || [])
+    .filter(item => {
+      const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
+                            (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+      const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
@@ -245,7 +248,10 @@ function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // LEDGER FILTERS
   const [historyFilterDate, setHistoryFilterDate] = useState('');
+  const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
 
   const [zoomedImage, setZoomedImage] = useState(null);
 
@@ -319,15 +325,16 @@ function AdminDashboard() {
     if (!isBackgroundRefresh) setLoading(true);
     setErrorMessage(null);
     try {
+      // Fetch Garments
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
       const formattedGarments = gData.map(g => ({
         ...g,
         image: formatImageUrl(g.image)
       }));
-
       setGarments(formattedGarments);
 
+      // Update Modal silently if open
       if (productModal.show && productModal.garment) {
         const freshCurrent = formattedGarments.find(g => g.id === productModal.garment.id);
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
@@ -809,7 +816,7 @@ function AdminDashboard() {
     setLoading(false);
   };
 
-  // NEW: HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
+  // HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
@@ -826,7 +833,6 @@ function AdminDashboard() {
       alert('Error updating status. Please ensure you have added the "status" field to your backend models and deployed.');
     }
   };
-
 
   // ==========================================
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
@@ -864,7 +870,13 @@ function AdminDashboard() {
 
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-  const filteredUnifiedHistory = historyFilterDate ? unifiedHistory.filter(log => log.date === historyFilterDate) : unifiedHistory;
+  // APPLIED BOTH DATE AND STATUS FILTERS
+  const filteredUnifiedHistory = unifiedHistory.filter(log => {
+    const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
+    const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
+    return matchDate && matchStatus;
+  });
+
   const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (log.earned || 0), 0);
   const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (log.qty || 0), 0);
 
@@ -877,14 +889,15 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (item.total_pieces || 0), 0);
 
-  const categories = ['All', ...new Set((garments || []).map(g => g.category || 'Uncategorized'))];
-
-  const filteredGarments = (garments || []).filter(item => {
-    const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
-                          (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
-    const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Filter AND sort alphabetically
+  const filteredGarments = (garments || [])
+    .filter(item => {
+      const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
+                            (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+      const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (log.earned || 0), 0);
   const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
@@ -1172,7 +1185,10 @@ function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {(garments || []).filter(g => (g.batch_name || 'Uncategorized') === selectedBatch).map((item) => (
+                  {(garments || [])
+                    .filter(g => (g.batch_name || 'Uncategorized') === selectedBatch)
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((item) => (
                     <div key={item.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
                       
                       <div onClick={() => openProductModal(item, 'sell')} className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2 cursor-pointer">
@@ -1326,10 +1342,26 @@ function AdminDashboard() {
                 >
                   <span>🗑️</span> Clear Ledger
                 </button>
-                <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200">
+                
+                {/* STATUS FILTER DROPDOWN */}
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200 h-[38px]">
+                  <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Status:</span>
+                  <select 
+                    value={historyFilterStatus} 
+                    onChange={(e) => setHistoryFilterStatus(e.target.value)}
+                    className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer"
+                  >
+                    <option value="All">All</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Received">Received</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200 h-[38px]">
                   <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Filter Date:</span>
-                  <input type="date" value={historyFilterDate} onChange={(e) => setHistoryFilterDate(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-3 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500" />
-                  {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-[#e6dece] hover:bg-stone-300 text-stone-800 text-xs font-extrabold px-3 py-2 rounded-lg transition">Show All</button>)}
+                  <input type="date" value={historyFilterDate} onChange={(e) => setHistoryFilterDate(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-3 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                  {historyFilterDate && (<button onClick={() => setHistoryFilterDate('')} className="bg-[#e6dece] hover:bg-stone-300 text-stone-800 text-xs font-extrabold px-3 py-1.5 rounded-lg transition">Show All</button>)}
                 </div>
               </div>
             </div>
@@ -1556,7 +1588,7 @@ function AdminDashboard() {
                       <th className="p-4">Order Date</th>
                       <th className="p-4">Customer Name</th>
                       <th className="p-4">Item &amp; Details</th>
-                      <th className="p-4 text-center">Payment Status</th>
+                      <th className="p-4 text-center">Status</th>
                       <th className="p-4 text-right">Balance Due</th>
                       <th className="p-4 text-center">Actions</th>
                     </tr>
