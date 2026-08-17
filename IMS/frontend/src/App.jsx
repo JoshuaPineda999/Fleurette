@@ -96,7 +96,7 @@ function CustomerView() {
     fetchGarments();
   }, []);
 
-  const categories = ['All', ...new Set((garments || []).map(g => g?.category || 'Uncategorized'))];
+  const categories = ['All', ...new Set((garments || []).map(g => String(g?.category || 'Uncategorized')))];
 
   const filteredGarments = (garments || [])
     .filter(item => {
@@ -867,6 +867,9 @@ function AdminDashboard() {
   // ==========================================
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
   // ==========================================
+  
+  const categories = ['All', ...new Set((garments || []).map(g => String(g?.category || 'Uncategorized')))];
+
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
     const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === order?.item_name && s.size === order?.size);
