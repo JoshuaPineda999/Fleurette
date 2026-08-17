@@ -11,6 +11,7 @@ const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_U
 // 3. Safely format the Image URLs so pictures load from Render
 const formatImageUrl = (url) => {
   if (!url) return null;
+  if (url.startsWith('http') || url.includes('cloudinary')) return url;
   if (url.startsWith('/')) {
     const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
     return `${cleanBase}${url}`;
@@ -24,6 +25,7 @@ const formatImageUrl = (url) => {
 function CustomerView() {
   const [garments, setGarments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
 
@@ -41,10 +43,13 @@ function CustomerView() {
     fetchGarments();
   }, []);
 
-  const filteredGarments = garments.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const categories = ['All', ...new Set(garments.map(g => g.category || 'Uncategorized'))];
+
+  const filteredGarments = garments.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
@@ -61,7 +66,7 @@ function CustomerView() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="text-center max-w-2xl mx-auto mb-12">
+        <div className="text-center max-w-2xl mx-auto mb-8">
           <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
           <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
           <div className="mt-6 relative max-w-md mx-auto">
@@ -73,6 +78,23 @@ function CustomerView() {
             />
           </div>
         </div>
+
+        {/* CUSTOMER CATEGORY TABS */}
+        {!loading && categories.length > 1 && (
+          <div className="flex flex-wrap justify-center gap-2 mb-10">
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
+                  activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center text-stone-500 font-bold py-20">Loading Fleurette Collection...</div>
@@ -103,7 +125,15 @@ function CustomerView() {
                   )}
                 </div>
                 <div className="p-5 flex flex-col flex-1">
-                  <h3 className="font-black text-lg text-stone-900 leading-tight mb-1">{item.name}</h3>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{item.name}</h3>
+                    {item.color && item.color !== 'N/A' && (
+                      <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
+                        {item.color}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
                   <span className="text-2xl font-black text-pink-600 mb-4">₱{item.selling_price}</span>
                   
                   <div className="mt-auto">
@@ -210,6 +240,7 @@ function AdminDashboard() {
   const [toastMessage, setToastMessage] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [historyFilterDate, setHistoryFilterDate] = useState('');
 
@@ -234,12 +265,12 @@ function AdminDashboard() {
   const [newBatch, setNewBatch] = useState({
     batch_name: '',
     styles: [
-      { id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
+      { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
     ]
   });
 
   const [editGarment, setEditGarment] = useState({
-    id: null, batch_name: '', name: '', cost_price: '', selling_price: '', image: null, previewUrl: null,
+    id: null, batch_name: '', name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, previewUrl: null,
     sizes: { S: 0, M: 0, L: 0, XL: 0 }
   });
 
@@ -378,7 +409,7 @@ function AdminDashboard() {
   const addStyleToBatch = () => {
     setNewBatch({
       ...newBatch,
-      styles: [...newBatch.styles, { id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+      styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
     });
   };
 
@@ -414,6 +445,8 @@ function AdminDashboard() {
             mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
           });
 
+          formData.append('category', style.category || existingGarment.category || 'Uncategorized');
+          formData.append('color', style.color || existingGarment.color || 'N/A');
           formData.append('cost_price', style.cost_price || existingGarment.cost_price);
           formData.append('selling_price', style.selling_price || existingGarment.selling_price);
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
@@ -425,6 +458,8 @@ function AdminDashboard() {
           });
 
         } else {
+          formData.append('category', style.category || 'Uncategorized');
+          formData.append('color', style.color || 'N/A');
           formData.append('cost_price', style.cost_price || 0);
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
@@ -439,13 +474,13 @@ function AdminDashboard() {
       setShowAddBatchModal(false);
       setNewBatch({
         batch_name: '',
-        styles: [{ id: Date.now(), name: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+        styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
       });
       
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
     } catch (error) {
-      alert('Error uploading batch. Check your inputs.');
+      alert('Error uploading batch. Ensure the backend database matches the frontend changes.');
     }
   };
 
@@ -510,7 +545,9 @@ function AdminDashboard() {
     item.sizes.forEach(s => { sizeMap[s.size] = s.quantity; });
     
     setEditGarment({
-      id: item.id, batch_name: item.batch_name || '', name: item.name, cost_price: item.cost_price, selling_price: item.selling_price,
+      id: item.id, batch_name: item.batch_name || '', name: item.name, 
+      category: item.category || '', color: item.color || '',
+      cost_price: item.cost_price, selling_price: item.selling_price,
       image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap
     });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
@@ -523,6 +560,8 @@ function AdminDashboard() {
       const formData = new FormData();
       formData.append('batch_name', editGarment.batch_name);
       formData.append('name', editGarment.name);
+      formData.append('category', editGarment.category || 'Uncategorized');
+      formData.append('color', editGarment.color || 'N/A');
       formData.append('cost_price', editGarment.cost_price);
       formData.append('selling_price', editGarment.selling_price);
       formData.append('initial_sizes', JSON.stringify(editGarment.sizes));
@@ -550,6 +589,29 @@ function AdminDashboard() {
       await fetchData(true);
     } catch (error) {
       alert('Could not delete garment. Please try again.');
+    }
+  };
+
+  // ==========================================
+  // FACTORY RESET (DELETE ALL DATA)
+  // ==========================================
+  const handleFactoryReset = async () => {
+    const confirmText = window.prompt('⚠️ WARNING: This will permanently delete ALL data including Batches, Garments, Pre-orders, Expenses, and Sales History.\n\nType "DELETE" to confirm:');
+    if (confirmText === 'DELETE') {
+      setLoading(true);
+      try {
+        for (const g of garments) await axios.delete(`${API_BASE}garments/${g.id}/`);
+        for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p.id}/`);
+        for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e.id}/`);
+        for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s.id}/`);
+        
+        setActiveTab('inventory');
+        showToast("🧨 All data has been completely wiped. Fresh start!");
+        await fetchData(true);
+      } catch (error) {
+        alert('Error wiping data. Check connection.');
+      }
+      setLoading(false);
     }
   };
 
@@ -610,12 +672,11 @@ function AdminDashboard() {
   };
   
   // ==========================================
-  // UPDATED PRE-ORDER: DEDUCTS STOCK (WITH DEDUPLICATION FIX & BLANK COLOR FIX)
+  // UPDATED PRE-ORDER
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      // Create payload. If color is empty, send 'N/A' to pass backend validation
       const orderPayload = {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color
@@ -623,7 +684,6 @@ function AdminDashboard() {
 
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
-      // Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
@@ -658,6 +718,27 @@ function AdminDashboard() {
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
     try {
+      // Find the old order configuration before we update it
+      const oldOrder = preOrders.find(o => o.id === editPreOrder.id);
+      
+      if (oldOrder) {
+        // If the Item Name or the Size changed, revert the old stock and deduct the new stock
+        if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
+          
+          // Revert +1 to the old item/size
+          const oldGarment = garments.find(g => g.name === oldOrder.item_name);
+          if (oldGarment && oldOrder.size) {
+            await axios.patch(`${API_BASE}garments/${oldGarment.id}/update_stock/`, { size: oldOrder.size, change: 1, is_sale: false });
+          }
+
+          // Deduct -1 from the newly selected item/size
+          const newGarment = garments.find(g => g.name === editPreOrder.item_name);
+          if (newGarment && editPreOrder.size) {
+            await axios.patch(`${API_BASE}garments/${newGarment.id}/update_stock/`, { size: editPreOrder.size, change: -1, is_sale: false });
+          }
+        }
+      }
+
       const orderPayload = {
         ...editPreOrder,
         color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color
@@ -665,7 +746,7 @@ function AdminDashboard() {
 
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
-      showToast("✏️ Pre-order updated!");
+      showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
     } catch (error) { alert('Error updating pre-order.'); }
   };
@@ -701,9 +782,7 @@ function AdminDashboard() {
   // ==========================================
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING (DEDUPLICATED)
   // ==========================================
-  
   let localSalesHistory = [...salesHistory];
-  
   const mappedPreOrders = preOrders.map(order => {
     const matchIndex = localSalesHistory.findIndex(s => s.garment_name === order.item_name && s.size === order.size);
     if (matchIndex !== -1) {
@@ -747,7 +826,13 @@ function AdminDashboard() {
   const totalStoreProfit = garments.reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
   const totalStorePieces = garments.reduce((sum, item) => sum + (item.total_pieces || 0), 0);
 
-  const filteredGarments = garments.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const categories = ['All', ...new Set(garments.map(g => g.category || 'Uncategorized'))];
+
+  const filteredGarments = garments.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.batch_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + log.earned, 0);
   const totalBatchExpenses = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
@@ -862,6 +947,14 @@ function AdminDashboard() {
           >
             Log Out
           </button>
+
+          {/* NEW CLEAR ALL / FACTORY RESET BUTTON */}
+          <button 
+            onClick={handleFactoryReset}
+            className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
+          >
+            <span className="text-sm">🧨</span> Factory Reset
+          </button>
         </div>
       </aside>
 
@@ -887,6 +980,23 @@ function AdminDashboard() {
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{filteredGarments.length} Styles</span>
               </div>
             </div>
+
+            {/* ADMIN CATEGORY TABS */}
+            {categories.length > 1 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
+                      activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
               <div className="bg-[#eae4dc] text-stone-900 rounded-3xl p-6 shadow-md border border-[#ddd5cc] relative overflow-hidden flex flex-col justify-between">
@@ -929,8 +1039,8 @@ function AdminDashboard() {
               <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-200 max-w-xl mx-auto my-12 shadow-sm">
                 <span className="text-5xl block mb-3">🌸</span>
                 <h3 className="text-lg font-bold text-stone-800 mb-1">No Styles Found</h3>
-                <p className="text-stone-500 text-sm mb-6">We couldn't find any Fleurette style matching <strong className="text-stone-800">"{searchQuery}"</strong>.</p>
-                <button onClick={() => setSearchQuery('')} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Search</button>
+                <p className="text-stone-500 text-sm mb-6">We couldn't find any Fleurette style matching your search.</p>
+                <button onClick={() => { setSearchQuery(''); setActiveCategory('All'); }} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Search</button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -942,7 +1052,15 @@ function AdminDashboard() {
                     </div>
                     <div className="p-5 flex flex-col justify-between flex-1">
                       <div>
-                        <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
+                        <div className="flex justify-between items-start mb-1">
+                          <h3 className="font-black text-lg text-stone-900 leading-tight pr-2 group-hover:text-pink-600 transition">{item.name}</h3>
+                          {item.color && item.color !== 'N/A' && (
+                            <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
+                              {item.color}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
                         <div className="mt-2 flex items-baseline gap-2">
                           <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
                           <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
@@ -1006,7 +1124,15 @@ function AdminDashboard() {
 
                       <div className="p-5 flex flex-col justify-between flex-1">
                         <div onClick={() => openProductModal(item, 'sell')} className="cursor-pointer">
-                          <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition">{item.name}</h3>
+                          <div className="flex justify-between items-start mb-1">
+                            <h3 className="font-black text-lg text-stone-900 leading-tight group-hover:text-pink-600 transition pr-2">{item.name}</h3>
+                            {item.color && item.color !== 'N/A' && (
+                              <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
+                                {item.color}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-bold text-stone-400 mb-2 block">{item.category || 'Uncategorized'}</span>
                           <div className="mt-2 flex items-baseline gap-2">
                             <span className="text-2xl font-black text-stone-900">₱{item.selling_price}</span>
                             <span className="text-xs font-bold text-stone-400 line-through">₱{item.cost_price}</span>
@@ -1661,6 +1787,25 @@ function AdminDashboard() {
 
                     <div className="grid grid-cols-2 gap-4 mt-3">
                       <div>
+                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Category</label>
+                        <input 
+                          type="text" placeholder="e.g. Tops, Dresses..." 
+                          value={style.category} onChange={(e) => handleBatchStyleChange(index, 'category', e.target.value)}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
+                        <input 
+                          type="text" placeholder="e.g. Rose Pink" 
+                          value={style.color} onChange={(e) => handleBatchStyleChange(index, 'color', e.target.value)}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
                         <input 
                           type="number" step="0.01" required placeholder="350" 
@@ -1740,6 +1885,25 @@ function AdminDashboard() {
                   value={editGarment.name} onChange={(e) => setEditGarment({...editGarment, name: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Category</label>
+                  <input 
+                    type="text" placeholder="e.g. Tops" 
+                    value={editGarment.category} onChange={(e) => setEditGarment({...editGarment, category: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
+                  <input 
+                    type="text" placeholder="e.g. Pink" 
+                    value={editGarment.color} onChange={(e) => setEditGarment({...editGarment, color: e.target.value})}
+                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                  />
+                </div>
               </div>
 
               <div>
@@ -2028,7 +2192,7 @@ function AdminDashboard() {
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
                 <input 
-                  type="text" required placeholder="e.g Dill Doe" 
+                  type="text" required placeholder="e.g. Dill Doe" 
                   value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 />

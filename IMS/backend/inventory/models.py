@@ -2,13 +2,13 @@ from django.db import models
 from django.utils import timezone
 
 class Garment(models.Model):
-    # NEW FIELD:
-    batch_name = models.CharField(max_length=255, default="Uncategorized")
-    
+    batch_name = models.CharField(max_length=255, blank=True, null=True, default="Uncategorized")
     name = models.CharField(max_length=255)
+    category = models.CharField(max_length=100, blank=True, null=True, default="Uncategorized")  # NEW
+    color = models.CharField(max_length=100, blank=True, null=True)                              # NEW
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
-    image = models.ImageField(upload_to='garments/', null=True, blank=True)
+    image = models.ImageField(upload_to='garments/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # ... rest of the code remains exactly the same
