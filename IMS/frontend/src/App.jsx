@@ -8,9 +8,11 @@ const BACKEND_URL = import.meta.env.VITE_API_URL || `http://${window.location.ho
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
-// 3. Safely format the Image URLs so pictures load from Render
+// 3. Safely format Image URLs
 const formatImageUrl = (url) => {
   if (!url) return null;
+  if (typeof url === 'object' && url.url) url = url.url; // Deep fallback
+  if (typeof url !== 'string') return null;
   if (url.startsWith('http') || url.includes('cloudinary')) return url;
   if (url.startsWith('/')) {
     const cleanBase = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
@@ -18,6 +20,54 @@ const formatImageUrl = (url) => {
   }
   return url;
 };
+
+// 4. Strict JSON Array Parser to prevent .map() crashes
+const parseSafeArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+};
+
+// ==========================================
+// ERROR BOUNDARY (PREVENTS WHITE SCREENS)
+// ==========================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, errorInfo: error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-rose-50 flex flex-col items-center justify-center p-6 text-center font-sans">
+          <span className="text-6xl mb-4">💥</span>
+          <h2 className="text-2xl font-black text-stone-900 mb-2">Display Error Caught</h2>
+          <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200">
+            {this.state.errorInfo?.toString() || "An unexpected data error occurred."}
+          </p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-stone-900 hover:bg-black text-white font-black px-6 py-3 rounded-xl shadow transition"
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 
 // ==========================================
 // 1. CUSTOMER CATALOG VIEW (DEFAULT /)
@@ -33,9 +83,8 @@ function CustomerView() {
     const fetchGarments = async () => {
       try {
         const res = await axios.get(`${API_BASE}garments/`);
-        // STRICT FALLBACK: Ensure we always extract the array, even if Django paginates
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setGarments(gData.map(g => ({ ...g, image: formatImageUrl(g.image) })));
+        setGarments(gData.map(g => ({ ...g, sizes: parseSafeArray(g.sizes), image: formatImageUrl(g.image) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
       } finally {
@@ -49,12 +98,13 @@ function CustomerView() {
 
   const filteredGarments = (garments || [])
     .filter(item => {
-      const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
-                            (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+      const searchLower = String(searchQuery || '').toLowerCase();
+      const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
+                            String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       return matchesSearch && matchesCategory;
     })
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
@@ -144,7 +194,7 @@ function CustomerView() {
                   <div className="mt-auto">
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
                     <div className="flex flex-wrap gap-2">
-                      {(item.sizes || []).map(s => (
+                      {parseSafeArray(item.sizes).map(s => (
                         <span key={s.size} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
                           {s.size}
                         </span>
@@ -329,6 +379,7 @@ function AdminDashboard() {
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
       const formattedGarments = gData.map(g => ({
         ...g,
+        sizes: parseSafeArray(g.sizes),
         image: formatImageUrl(g.image)
       }));
       setGarments(formattedGarments);
@@ -362,7 +413,8 @@ function AdminDashboard() {
   const fetchExpenses = async () => {
     try {
       const res = await axios.get(`${API_BASE}expenses/`);
-      setExpenses(Array.isArray(res.data) ? res.data : (res.data?.results || []));
+      const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+      setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e.breakdown) })));
     } catch (error) {}
   };
 
@@ -376,7 +428,8 @@ function AdminDashboard() {
   useEffect(() => { fetchData(); }, []);
 
   const openProductModal = (item, defaultMode = 'sell') => {
-    const defaultSize = (item.sizes || []).find(s => s.quantity > 0)?.size || 'S';
+    const safeSizes = parseSafeArray(item.sizes);
+    const defaultSize = safeSizes.find(s => s.quantity > 0)?.size || 'S';
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
@@ -386,7 +439,7 @@ function AdminDashboard() {
       const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
         size: productModal.size, change: -Math.abs(productModal.quantity), is_sale: true
       });
-      const updatedGarment = { ...response.data, image: formatImageUrl(response.data.image) };
+      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data.sizes), image: formatImageUrl(response.data.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name} (${productModal.size})`);
@@ -402,7 +455,7 @@ function AdminDashboard() {
       const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
         size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
       });
-      const updatedGarment = { ...response.data, image: formatImageUrl(response.data.image) };
+      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data.sizes), image: formatImageUrl(response.data.image) };
       setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
       setProductModal(prev => ({ ...prev, garment: updatedGarment, quantity: 1 }));
       showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${updatedGarment.name} (${productModal.size})`);
@@ -445,8 +498,8 @@ function AdminDashboard() {
         const batchName = newBatch.batch_name || 'Uncategorized';
         
         const existingGarment = garments.find(g => 
-          (g.name || '').toLowerCase().trim() === style.name.toLowerCase().trim() &&
-          (g.batch_name || 'Uncategorized').toLowerCase().trim() === batchName.toLowerCase().trim()
+          String(g.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
+          String(g.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim()
         );
 
         const formData = new FormData();
@@ -457,7 +510,7 @@ function AdminDashboard() {
           const mergedSizes = { S: 0, M: 0, L: 0, XL: 0 };
           const currentSizeMap = {};
           
-          (existingGarment.sizes || []).forEach(s => { currentSizeMap[s.size] = s.quantity; });
+          parseSafeArray(existingGarment.sizes).forEach(s => { currentSizeMap[s.size] = s.quantity; });
           
           ['S', 'M', 'L', 'XL'].forEach(sizeLabel => {
             mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
@@ -560,7 +613,7 @@ function AdminDashboard() {
 
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
-    (item.sizes || []).forEach(s => { sizeMap[s.size] = s.quantity; });
+    parseSafeArray(item.sizes).forEach(s => { sizeMap[s.size] = s.quantity; });
     
     setEditGarment({
       id: item.id, batch_name: item.batch_name || '', name: item.name || '', 
@@ -633,19 +686,19 @@ function AdminDashboard() {
   const handleBreakdownChange = (index, field, value) => {
     const updated = [...newExpense.breakdown];
     updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
     setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const addBreakdownRow = () => setNewExpense({ ...newExpense, breakdown: [...newExpense.breakdown, { name: '', cost: '' }] });
   const removeBreakdownRow = (index) => {
     const updated = newExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
     setNewExpense({ ...newExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const handleCreateExpense = async (e) => {
     e.preventDefault();
     try {
-      const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => (b.name || '').trim() !== '' && parseFloat(b.cost || 0) > 0) : [];
+      const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b.name || '').trim() !== '' && (parseFloat(b.cost) || 0) > 0) : [];
       await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
       setShowExpenseModal(false);
       setNewExpense({ title: '', amount: '', date: new Date().toISOString().split('T')[0], isDetailed: false, breakdown: [{ name: '', cost: '' }] });
@@ -655,26 +708,26 @@ function AdminDashboard() {
   };
 
   const openEditExpenseModal = (item) => {
-    const breakdownList = item.breakdown && item.breakdown.length > 0 ? item.breakdown : [{ name: '', cost: '' }];
-    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || new Date().toISOString().split('T')[0], isDetailed: item.breakdown && item.breakdown.length > 0, breakdown: breakdownList });
+    const breakdownList = parseSafeArray(item.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
+    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || new Date().toISOString().split('T')[0], isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
     setShowEditExpenseModal(true);
   };
   const handleEditBreakdownChange = (index, field, value) => {
     const updated = [...editExpense.breakdown];
     updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
     setEditExpense({ ...editExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const addEditBreakdownRow = () => setEditExpense({ ...editExpense, breakdown: [...editExpense.breakdown, { name: '', cost: '' }] });
   const removeEditBreakdownRow = (index) => {
     const updated = editExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + parseFloat(item.cost || 0), 0);
+    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
     setEditExpense({ ...editExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
   };
   const handleUpdateExpense = async (e) => {
     e.preventDefault();
     try {
-      const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => (b.name || '').trim() !== '' && parseFloat(b.cost || 0) > 0) : [];
+      const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b.name || '').trim() !== '' && (parseFloat(b.cost) || 0) > 0) : [];
       await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, breakdown: validBreakdown });
       setShowEditExpenseModal(false);
       showToast("✏️ Expense updated!");
@@ -817,23 +870,19 @@ function AdminDashboard() {
 
   // HANDLE FULFILLMENT STATUS DROPDOWN CHANGE
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
-    // 1. Optimistically update UI so it snaps immediately
     if (isPreOrder) {
       setPreOrders(prev => prev.map(p => p.id === originalId ? { ...p, status: newStatus } : p));
     } else {
       setSalesHistory(prev => prev.map(s => s.id === originalId ? { ...s, status: newStatus } : s));
     }
 
-    // 2. Perform backend patch
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
       await axios.patch(endpoint, { status: newStatus });
       showToast(`📦 Order marked as ${newStatus}!`);
-      // Force sync with backend to guarantee it saved correctly
       await fetchData(true);
     } catch (error) {
       alert('Error updating status. Please ensure you have added the "status" field to your backend serializers.');
-      // If backend fails, revert UI to match truth
       await fetchData(true);
     }
   };
@@ -855,7 +904,7 @@ function AdminDashboard() {
       name: `📝 Pre-Order: ${order.item_name} (For: ${order.customer_name})`, 
       size: order.size, 
       qty: 1, 
-      earned: parseFloat(order.price || 0) - parseFloat(order.balance || 0),
+      earned: (parseFloat(order.price) || 0) - (parseFloat(order.balance) || 0),
       status: order.status || 'Pending' 
     };
   });
@@ -868,7 +917,7 @@ function AdminDashboard() {
     name: log.garment_name,
     size: log.size,
     qty: log.quantity_sold,
-    earned: parseFloat(log.profit_earned || 0),
+    earned: parseFloat(log.profit_earned) || 0,
     status: log.status || 'Pending'
   }));
 
@@ -881,30 +930,31 @@ function AdminDashboard() {
     return matchDate && matchStatus;
   });
 
-  const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (log.earned || 0), 0);
-  const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (log.qty || 0), 0);
+  const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0);
+  const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
 
   const dailyHistory = unifiedHistory.filter(log => log.date === selectedDate);
   const dailyStats = { 
-    total_pieces_sold: dailyHistory.reduce((sum, log) => sum + (log.qty || 0), 0), 
-    total_profit_earned: dailyHistory.reduce((sum, log) => sum + (log.earned || 0), 0) 
+    total_pieces_sold: dailyHistory.reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0), 
+    total_profit_earned: dailyHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0) 
   };
 
-  const totalStoreProfit = (garments || []).reduce((sum, item) => sum + parseFloat(item.total_potential_profit || 0), 0);
-  const totalStorePieces = (garments || []).reduce((sum, item) => sum + (item.total_pieces || 0), 0);
+  const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item.total_potential_profit) || 0), 0);
+  const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item.total_pieces) || 0), 0);
 
   // Filter AND sort alphabetically for Admin View
   const filteredGarments = (garments || [])
     .filter(item => {
-      const matchesSearch = (item.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
-                            (item.batch_name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+      const searchLower = String(searchQuery || '').toLowerCase();
+      const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
+                            String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       return matchesSearch && matchesCategory;
     })
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
-  const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (log.earned || 0), 0);
-  const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+  const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log.earned) || 0), 0);
+  const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
   const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
 
   const batchMap = {};
@@ -913,8 +963,8 @@ function AdminDashboard() {
     if (!batchMap[bName]) {
       batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
     }
-    batchMap[bName].pieces_left += (g.total_pieces || 0);
-    batchMap[bName].potential_profit += parseFloat(g.total_potential_profit || 0);
+    batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
+    batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
     batchMap[bName].styles_count += 1;
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => b.pieces_left - a.pieces_left);
@@ -1137,7 +1187,7 @@ function AdminDashboard() {
                         <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{item.profit_per_piece} profit / ea</span>
                       </div>
                       <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
-                        {(item.sizes || []).map((s) => (
+                        {parseSafeArray(item.sizes).map((s) => (
                           <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
                         ))}
                       </div>
@@ -1191,7 +1241,7 @@ function AdminDashboard() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {(garments || [])
                     .filter(g => (g.batch_name || 'Uncategorized') === selectedBatch)
-                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
                     .map((item) => (
                     <div key={item.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
                       
@@ -1219,7 +1269,7 @@ function AdminDashboard() {
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
-                          {(item.sizes || []).map((s) => (
+                          {parseSafeArray(item.sizes).map((s) => (
                             <div key={s.size} className={`text-center py-1 rounded border text-[11px] font-black ${s.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{s.size}: {s.quantity}</div>
                           ))}
                         </div>
@@ -1291,7 +1341,7 @@ function AdminDashboard() {
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
-                              <span className="text-2xl font-black text-pink-600">₱{batch.potential_profit.toFixed(2)}</span>
+                              <span className="text-2xl font-black text-pink-600">₱{(batch.potential_profit || 0).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -1381,7 +1431,7 @@ function AdminDashboard() {
               <div className="bg-gradient-to-br from-pink-900 to-[#52453c] text-white rounded-3xl p-5 shadow-xl border border-pink-800 flex justify-between items-center">
                 <div>
                   <span className="text-xs text-pink-300 block uppercase font-extrabold tracking-widest mb-1">{historyFilterDate ? `Revenue Collected on ${historyFilterDate}` : 'Total Revenue (All Time)'}</span>
-                  <span className="text-3xl font-black text-pink-400">₱{historyTotalEarned.toFixed(2)}</span>
+                  <span className="text-3xl font-black text-pink-400">₱{(historyTotalEarned || 0).toFixed(2)}</span>
                 </div>
                 <div className="text-3xl">🌸</div>
               </div>
@@ -1423,7 +1473,7 @@ function AdminDashboard() {
                         </td>
                         <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{log.size}</span></td>
                         <td className="p-4 text-center font-black text-stone-900 text-base">{log.qty} pcs</td>
-                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{log.earned.toFixed(2)}</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(log.earned || 0).toFixed(2)}</td>
                         
                         <td className="p-4 text-center">
                           <select 
@@ -1480,7 +1530,7 @@ function AdminDashboard() {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between">
                 <div>
                   <span className="text-xs font-black text-stone-400 uppercase tracking-widest block mb-1">Gross Revenue (Sales &amp; Pre-Orders)</span>
-                  <span className="text-3xl font-black text-stone-900">₱{totalGrossSalesProfit.toFixed(2)}</span>
+                  <span className="text-3xl font-black text-stone-900">₱{(totalGrossSalesProfit || 0).toFixed(2)}</span>
                 </div>
                 <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-bold text-stone-500"><span>Total cash collected</span><span className="text-lg">🌸</span></div>
               </div>
@@ -1488,7 +1538,7 @@ function AdminDashboard() {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between">
                 <div>
                   <span className="text-xs font-black text-rose-500 uppercase tracking-widest block mb-1">Total Batch Expenses</span>
-                  <span className="text-3xl font-black text-rose-600">-₱{totalBatchExpenses.toFixed(2)}</span>
+                  <span className="text-3xl font-black text-rose-600">-₱{(totalBatchExpenses || 0).toFixed(2)}</span>
                 </div>
                 <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-bold text-stone-500"><span>Shipping, trims &amp; customs</span><span className="text-lg">💸</span></div>
               </div>
@@ -1496,7 +1546,7 @@ function AdminDashboard() {
               <div className={`rounded-3xl p-6 shadow-xl border flex flex-col justify-between text-white ${actualNetProfit >= 0 ? 'bg-gradient-to-br from-pink-900 to-[#52453c] border-pink-800' : 'bg-gradient-to-br from-rose-900 to-[#52453c] border-rose-800'}`}>
                 <div>
                   <span className="text-xs uppercase tracking-widest block mb-1 font-extrabold text-pink-300">Real Net Profit (Cash in Hand)</span>
-                  <span className="text-4xl font-black tracking-tight">₱{actualNetProfit.toFixed(2)}</span>
+                  <span className="text-4xl font-black tracking-tight">₱{(actualNetProfit || 0).toFixed(2)}</span>
                 </div>
                 <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-extrabold text-stone-200"><span>Gross Revenue minus Expenses</span><span className="text-xl">{actualNetProfit >= 0 ? '📈' : '📉'}</span></div>
               </div>
@@ -1531,18 +1581,18 @@ function AdminDashboard() {
                         <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {item.date}</td>
                         <td className="p-4 align-top">
                           <div className="font-black text-stone-900 text-base">{item.title}</div>
-                          {item.breakdown && item.breakdown.length > 0 && (
+                          {parseSafeArray(item.breakdown).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                              {item.breakdown.map((b, idx) => (
+                              {parseSafeArray(item.breakdown).map((b, idx) => (
                                 <span key={idx} className="text-xs bg-[#f2ece4] text-stone-700 font-bold px-2.5 py-1 rounded-md border border-stone-300 shadow-2xs flex items-center gap-1.5">
                                   <span>{b.name || 'Item'}:</span>
-                                  <span className="text-rose-600 font-black">₱{parseFloat(b.cost || 0).toFixed(2)}</span>
+                                  <span className="text-rose-600 font-black">₱{(parseFloat(b.cost) || 0).toFixed(2)}</span>
                                 </span>
                               ))}
                             </div>
                           )}
                         </td>
-                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{parseFloat(item.amount || 0).toFixed(2)}</td>
+                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">-₱{(parseFloat(item.amount) || 0).toFixed(2)}</td>
                         <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
                             <button onClick={() => openEditExpenseModal(item)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit expense record">✏️ Edit</button>
@@ -1616,7 +1666,7 @@ function AdminDashboard() {
                           )}
                         </td>
                         <td className="p-4 text-right font-black text-rose-600 text-base">
-                          {parseFloat(order.balance) > 0 ? `₱${parseFloat(order.balance).toFixed(2)}` : '₱0.00'}
+                          {parseFloat(order.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
                         </td>
                         <td className="p-4 text-center">
                           <div className="flex justify-center gap-1.5">
@@ -1741,7 +1791,7 @@ function AdminDashboard() {
                     1. Select Size ({productModal.mode === 'sell' ? 'To Deduct' : 'Arriving'}):
                   </label>
                   <div className="grid grid-cols-4 gap-2 mb-6">
-                    {(productModal.garment.sizes || []).map((s) => (
+                    {parseSafeArray(productModal.garment.sizes).map((s) => (
                       <button
                         type="button" key={s.size} 
                         onClick={() => setProductModal({ ...productModal, size: s.size, quantity: 1 })}
@@ -1874,7 +1924,7 @@ function AdminDashboard() {
                           onChange={(e) => {
                             const val = e.target.value;
                             handleBatchStyleChange(index, 'name', val);
-                            const existing = (garments || []).find(g => (g.name || '').toLowerCase() === val.toLowerCase());
+                            const existing = (garments || []).find(g => String(g.name || '').toLowerCase() === val.toLowerCase());
                             if (existing) {
                               handleBatchStyleChange(index, 'cost_price', existing.cost_price);
                               handleBatchStyleChange(index, 'selling_price', existing.selling_price);
@@ -2581,16 +2631,18 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<CustomerView />} />
-        <Route path="/login" element={<LoginScreen />} />
-        <Route path="/admin" element={
-          <ProtectedRoute>
-            <AdminDashboard />
-          </ProtectedRoute>
-        } />
-      </Routes>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Routes>
+          <Route path="/" element={<CustomerView />} />
+          <Route path="/login" element={<LoginScreen />} />
+          <Route path="/admin" element={
+            <ProtectedRoute>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 }
