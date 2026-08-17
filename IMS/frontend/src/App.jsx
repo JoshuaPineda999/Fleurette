@@ -302,6 +302,17 @@ function AdminDashboard() {
     navigate('/');
   };
 
+  // Helper to open the batch wizard and optionally pre-fill the batch name
+  const openAddBatchWizard = (prefillBatchName = '') => {
+    setNewBatch({
+      batch_name: prefillBatchName,
+      styles: [
+        { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
+      ]
+    });
+    setShowAddBatchModal(true);
+  };
+
   const fetchData = async (isBackgroundRefresh = false) => {
     if (!isBackgroundRefresh) setLoading(true);
     setErrorMessage(null);
@@ -936,7 +947,7 @@ function AdminDashboard() {
 
         <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-2">
           <button 
-            onClick={() => setShowAddBatchModal(true)}
+            onClick={() => openAddBatchWizard('')}
             className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm"
           >
             <span className="text-lg leading-none">📦</span> Import New Batch
@@ -948,7 +959,7 @@ function AdminDashboard() {
             Log Out
           </button>
 
-          {/* NEW CLEAR ALL / FACTORY RESET BUTTON */}
+          {/* CLEAR ALL / FACTORY RESET BUTTON */}
           <button 
             onClick={handleFactoryReset}
             className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
@@ -1097,10 +1108,16 @@ function AdminDashboard() {
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {selectedBatch}</h2>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      onClick={() => openAddBatchWizard(selectedBatch)}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
+                    >
+                      <span>➕</span> Add New Styles
+                    </button>
                     <button 
                       onClick={() => openRenameBatchModal(selectedBatch)}
-                      className="bg-amber-50 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
+                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
                     >
                       <span>✏️</span> Rename Batch
                     </button>
@@ -1177,7 +1194,7 @@ function AdminDashboard() {
                     <p className="text-stone-500 text-sm mt-1">Click a batch to view its items, or manage and delete batches below</p>
                   </div>
                   <button 
-                    onClick={() => setShowAddBatchModal(true)}
+                    onClick={() => openAddBatchWizard('')}
                     className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
                   >
                     <span className="text-lg leading-none">📦</span> Import New Batch
