@@ -610,21 +610,26 @@ function AdminDashboard() {
   };
   
   // ==========================================
-  // FIXED PRE-ORDER: DEDUCTS STOCK VIA is_sale: false (NO DUPLICATION)
+  // UPDATED PRE-ORDER: DEDUCTS STOCK (WITH DEDUPLICATION FIX & BLANK COLOR FIX)
   // ==========================================
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      // 1. Create Pre-order record
-      await axios.post(`${API_BASE}preorders/`, newPreOrder);
+      // Create payload. If color is empty, send 'N/A' to pass backend validation
+      const orderPayload = {
+        ...newPreOrder,
+        color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color
+      };
 
-      // 2. Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
+      await axios.post(`${API_BASE}preorders/`, orderPayload);
+
+      // Deduct 1 stock from garment size WITHOUT logging a duplicate SalesHistory entry
       const targetGarment = garments.find(g => g.name === newPreOrder.item_name);
       if (targetGarment && newPreOrder.size) {
         await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
           size: newPreOrder.size,
           change: -1,
-          is_sale: false // <--- FALSE prevents duplicate SalesHistory creation
+          is_sale: false 
         });
       }
 
@@ -636,18 +641,35 @@ function AdminDashboard() {
   };
 
   const openEditPreOrderModal = (item) => {
-    setEditPreOrder({ id: item.id, customer_name: item.customer_name, item_name: item.item_name, size: item.size, color: item.color || '', price: item.price || '', down_payment: item.down_payment || '', is_paid: item.is_paid, balance: item.balance });
+    setEditPreOrder({ 
+      id: item.id, 
+      customer_name: item.customer_name, 
+      item_name: item.item_name, 
+      size: item.size, 
+      color: !item.color || item.color === 'N/A' ? '' : item.color, 
+      price: item.price || '', 
+      down_payment: item.down_payment || '', 
+      is_paid: item.is_paid, 
+      balance: item.balance 
+    });
     setShowEditPreOrderModal(true);
   };
+
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, editPreOrder);
+      const orderPayload = {
+        ...editPreOrder,
+        color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color
+      };
+
+      await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order updated!");
       await fetchData(true);
     } catch (error) { alert('Error updating pre-order.'); }
   };
+
   const handleDeletePreOrder = async (id) => {
     if (!window.confirm("Delete this pre-order?")) return;
     try { await axios.delete(`${API_BASE}preorders/${id}/`); showToast("🗑️ Pre-order removed."); await fetchData(true); } catch (error) { alert('Could not delete pre-order.'); }
@@ -960,7 +982,7 @@ function AdminDashboard() {
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => openRenameBatchModal(selectedBatch)}
-                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
+                      className="bg-amber-50 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
                     >
                       <span>✏️</span> Rename Batch
                     </button>
@@ -1344,7 +1366,7 @@ function AdminDashboard() {
                         <td className="p-4 font-black text-stone-900 text-base">{order.customer_name}</td>
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{order.item_name}</div>
-                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} {order.color ? `| Color: ${order.color}` : ''}</div>
+                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {order.size} {order.color && order.color !== 'N/A' ? `| Color: ${order.color}` : ''}</div>
                         </td>
                         <td className="p-4 text-center">
                           {order.is_paid ? (
@@ -2006,7 +2028,7 @@ function AdminDashboard() {
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Customer Name</label>
                 <input 
-                  type="text" required placeholder="e.g. Dill Doe" 
+                  type="text" required placeholder="e.g. Jane Doe" 
                   value={newPreOrder.customer_name} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 />
