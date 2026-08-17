@@ -767,14 +767,13 @@ function AdminDashboard() {
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
     try {
-      // Find the log and return the item to the stock BEFORE deleting the history log
       const logToRevert = salesHistory.find(s => s.id === id);
       if (logToRevert) {
         const targetGarment = garments.find(g => g.name === logToRevert.garment_name);
         if (targetGarment) {
           await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
             size: logToRevert.size,
-            change: logToRevert.quantity_sold, // Give the stock back
+            change: logToRevert.quantity_sold,
             is_sale: false
           });
         }
@@ -793,7 +792,6 @@ function AdminDashboard() {
     setLoading(true);
     try {
       for (const log of salesHistory) {
-        // Return stock before deleting log
         const targetGarment = garments.find(g => g.name === log.garment_name);
         if (targetGarment) {
           await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
