@@ -67,3 +67,9 @@ from .serializers import PreOrderSerializer
 class PreOrderViewSet(viewsets.ModelViewSet):
     queryset = PreOrder.objects.all().order_by('-order_date', '-id')
     serializer_class = PreOrderSerializer
+
+from rest_framework import generics
+
+class SalesHistoryDetail(generics.RetrieveDestroyAPIView):
+    queryset = SalesHistory.objects.all()
+    serializer_class = SalesHistorySerializer

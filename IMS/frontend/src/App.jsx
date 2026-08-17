@@ -302,7 +302,6 @@ function AdminDashboard() {
     navigate('/');
   };
 
-  // Helper to open the batch wizard and optionally pre-fill the batch name
   const openAddBatchWizard = (prefillBatchName = '') => {
     setNewBatch({
       batch_name: prefillBatchName,
@@ -729,20 +728,15 @@ function AdminDashboard() {
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      // Find the old order configuration before we update it
       const oldOrder = preOrders.find(o => o.id === editPreOrder.id);
       
       if (oldOrder) {
-        // If the Item Name or the Size changed, revert the old stock and deduct the new stock
         if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
-          
-          // Revert +1 to the old item/size
           const oldGarment = garments.find(g => g.name === oldOrder.item_name);
           if (oldGarment && oldOrder.size) {
             await axios.patch(`${API_BASE}garments/${oldGarment.id}/update_stock/`, { size: oldOrder.size, change: 1, is_sale: false });
           }
 
-          // Deduct -1 from the newly selected item/size
           const newGarment = garments.find(g => g.name === editPreOrder.item_name);
           if (newGarment && editPreOrder.size) {
             await axios.patch(`${API_BASE}garments/${newGarment.id}/update_stock/`, { size: editPreOrder.size, change: -1, is_sale: false });
@@ -768,26 +762,54 @@ function AdminDashboard() {
   };
 
   // ==========================================
-  // DELETE SALES HISTORY CONTROLS
+  // UPDATED: DELETE SALES HISTORY CONTROLS
   // ==========================================
   const handleDeleteSalesHistory = async (id) => {
-    if (!window.confirm("Delete this specific sales record?")) return;
+    if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
     try {
+      // Find the log and return the item to the stock BEFORE deleting the history log
+      const logToRevert = salesHistory.find(s => s.id === id);
+      if (logToRevert) {
+        const targetGarment = garments.find(g => g.name === logToRevert.garment_name);
+        if (targetGarment) {
+          await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
+            size: logToRevert.size,
+            change: logToRevert.quantity_sold, // Give the stock back
+            is_sale: false
+          });
+        }
+      }
+
       await axios.delete(`${API_BASE}sales/history/${id}/`);
-      showToast("🗑️ Sales record deleted.");
+      showToast("🗑️ Sales record deleted & stock restored.");
       await fetchData(true);
-    } catch (error) { alert('Could not delete sales record.'); }
+    } catch (error) { 
+      alert('Could not delete sales record. Ensure your Django backend allows DELETE on /api/sales/history/<id>/.'); 
+    }
   };
 
   const handleClearAllHistory = async () => {
-    if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger? This will delete all recorded regular sales. (Pre-orders won't be deleted here).")) return;
+    if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger?\n\nThis will delete all recorded regular sales and RETURN the sold items back to your stock.")) return;
+    setLoading(true);
     try {
       for (const log of salesHistory) {
+        // Return stock before deleting log
+        const targetGarment = garments.find(g => g.name === log.garment_name);
+        if (targetGarment) {
+          await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
+            size: log.size,
+            change: log.quantity_sold,
+            is_sale: false
+          });
+        }
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
       }
-      showToast("🗑️ Entire Sales Ledger cleared!");
+      showToast("🗑️ Entire Sales Ledger cleared & stocks restored!");
       await fetchData(true);
-    } catch (error) { alert('Error clearing some records.'); }
+    } catch (error) { 
+      alert('Error clearing some records. Ensure your Django backend allows DELETE on /api/sales/history/<id>/.'); 
+    }
+    setLoading(false);
   };
 
   // ==========================================
