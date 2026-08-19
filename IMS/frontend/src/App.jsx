@@ -26,9 +26,15 @@ const formatImageUrl = (url) => {
   if (typeof url !== 'string') return null;
   
   url = url.trim();
+  
+  // Force Cloudinary to load securely over HTTPS to prevent missing images
+  if (url.includes('cloudinary.com')) {
+    const pureUrl = url.replace(/^https?:\/\//, '').replace(/^\/\//, '');
+    return `https://${pureUrl}`;
+  }
+
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
   if (url.startsWith('//')) return `https:${url}`;
-  if (url.includes('res.cloudinary.com')) return `https://${url.replace(/^http(s)?:\/\//, '')}`;
 
   let hostUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
   if (hostUrl.endsWith('/api')) hostUrl = hostUrl.slice(0, -4);
@@ -427,7 +433,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}sales/history/`);
       setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Sales History.", error);
+      console.error("Failed to load Sales History. Backend might be crashing.", error);
     }
   };
 
@@ -446,7 +452,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}preorders/`);
       setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Pre-orders.", error);
+      console.error("Failed to load Pre-orders. Backend might be crashing.", error);
     }
   };
 
@@ -834,7 +840,7 @@ function AdminDashboard() {
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
+        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
     }
   };
 
@@ -902,7 +908,7 @@ function AdminDashboard() {
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}`);
+      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your serializers.py contains the 'status' field.`);
       await fetchData(true);
     }
   };
@@ -946,22 +952,30 @@ function AdminDashboard() {
   });
 
   // SECURE DATA MAPPER FOR NORMAL SALES
-  const mappedSales = localSalesHistory.filter(s => s).map(log => ({
-    id: `sale-${log?.id}`,
-    originalId: log?.id,
-    isPreOrder: false,
-    date: log?.sold_at ? String(log.sold_at) : '',
-    name: log?.garment_name ? String(log.garment_name) : '',
-    customer_name: '',
-    recipient_name: '',
-    contact_number: '',
-    address: '',
-    item_name: '',
-    size: log?.size ? String(log.size) : '',
-    qty: parseFloat(log?.quantity_sold) || 0,
-    earned: parseFloat(log?.profit_earned) || 0,
-    status: log?.status ? String(log.status) : 'Pending'
-  }));
+  const mappedSales = localSalesHistory.filter(s => s).map(log => {
+    // FIX: Lookup the garment to calculate the Full Amount Collected (Selling Price * Qty) instead of just the profit
+    const matchedGarment = (garments || []).find(g => String(g?.name) === String(log?.garment_name));
+    const sellingPrice = matchedGarment ? parseFloat(matchedGarment.selling_price) : 0;
+    const qty = parseFloat(log?.quantity_sold) || 0;
+    const amountCollected = sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
+
+    return {
+      id: `sale-${log?.id}`,
+      originalId: log?.id,
+      isPreOrder: false,
+      date: log?.sold_at ? String(log.sold_at) : '',
+      name: log?.garment_name ? String(log.garment_name) : '',
+      customer_name: '',
+      recipient_name: '',
+      contact_number: '',
+      address: '',
+      item_name: '',
+      size: log?.size ? String(log.size) : '',
+      qty: qty,
+      earned: amountCollected, // Now shows Total Amount Collected
+      status: log?.status ? String(log.status) : 'Pending'
+    };
+  });
 
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => {
     const timeA = new Date(a?.date || 0).getTime();
