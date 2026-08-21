@@ -66,6 +66,48 @@ const getLocalDate = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// 6. VISUAL MERGER FOR DUPLICATE STYLES ACROSS BATCHES
+const mergeGarments = (garmentsList) => {
+  const mergedMap = {};
+  
+  (garmentsList || []).forEach(g => {
+    const key = `${String(g?.name || '').trim().toLowerCase()}-${String(g?.color || '').trim().toLowerCase()}-${String(g?.category || '').trim().toLowerCase()}`;
+    
+    if (!mergedMap[key]) {
+      mergedMap[key] = {
+        ...g,
+        underlying_garments: [g],
+        total_pieces: 0,
+        total_potential_profit: 0,
+        merged_sizes: { S: 0, M: 0, L: 0, XL: 0 }
+      };
+    } else {
+      mergedMap[key].underlying_garments.push(g);
+      // Fallback image if current has none
+      if (!mergedMap[key].image && g.image) {
+        mergedMap[key].image = g.image;
+      }
+    }
+    
+    mergedMap[key].total_pieces += (parseInt(g.total_pieces) || 0);
+    mergedMap[key].total_potential_profit += (parseFloat(g.total_potential_profit) || 0);
+    
+    parseSafeArray(g.sizes).forEach(s => {
+      mergedMap[key].merged_sizes[s.size] = (mergedMap[key].merged_sizes[s.size] || 0) + (parseInt(s.quantity) || 0);
+    });
+  });
+
+  return Object.values(mergedMap).map(m => {
+    m.sizes = Object.keys(m.merged_sizes).map(size => ({
+      size: size,
+      quantity: m.merged_sizes[size]
+    }));
+    // Sort oldest first for perfect FIFO operations
+    m.underlying_garments.sort((a, b) => a.id - b.id);
+    return m;
+  });
+};
+
 // ==========================================
 // ERROR BOUNDARY (PREVENTS WHITE SCREENS)
 // ==========================================
@@ -117,7 +159,6 @@ function CustomerView() {
       try {
         const res = await axios.get(`${API_BASE}garments/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        // Safely map data to prevent mapper crashes
         setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
@@ -128,9 +169,10 @@ function CustomerView() {
     fetchGarments();
   }, []);
 
-  const categories = ['All', ...new Set((garments || []).map(g => String(g?.category || 'Uncategorized')))];
+  const mergedGarmentsList = mergeGarments(garments);
+  const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
-  const filteredGarments = (garments || [])
+  const filteredGarments = (mergedGarmentsList || [])
     .filter(item => {
       if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
@@ -336,7 +378,6 @@ function AdminDashboard() {
   const [historyFilterDate, setHistoryFilterDate] = useState('');
   const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
   
-  // NEW: Analytics Batch Filter State
   const [analyticsFilterBatch, setAnalyticsFilterBatch] = useState('All');
 
   const [zoomedImage, setZoomedImage] = useState(null);
@@ -414,7 +455,6 @@ function AdminDashboard() {
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
-      // Safely map data to prevent mapper crashes
       const formattedGarments = (gData || []).map(g => ({
         ...g,
         sizes: parseSafeArray(g?.sizes),
@@ -422,8 +462,19 @@ function AdminDashboard() {
       }));
       setGarments(formattedGarments);
 
+      // Re-hydrate the Product Modal specifically looking out for merged updates
       if (productModal.show && productModal.garment) {
-        const freshCurrent = formattedGarments.find(g => g?.id === productModal.garment.id);
+        const mergedList = mergeGarments(formattedGarments);
+        
+        let freshCurrent;
+        if (productModal.garment.underlying_garments) {
+          // It was a merged garment
+          freshCurrent = mergedList.find(g => g.name === productModal.garment.name && g.color === productModal.garment.color);
+        } else {
+          // It was an individual garment from batch tracker
+          freshCurrent = formattedGarments.find(g => g?.id === productModal.garment.id);
+        }
+        
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
       }
 
@@ -476,32 +527,64 @@ function AdminDashboard() {
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
+  // -------------------------------------------------------------
+  // FIFO LOGIC APPLIED TO RECORDING SALES
+  // -------------------------------------------------------------
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
-        size: productModal.size, change: -Math.abs(productModal.quantity), is_sale: true
-      });
-      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data?.sizes), image: formatImageUrl(response.data?.image) };
-      setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
+      const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
+      let remainingToSell = parseInt(productModal.quantity);
+
+      if (isMergedGarment) {
+        // FIFO ROUTING: Sort by ascending ID so older batches are drained first
+        const sortedGarments = [...productModal.garment.underlying_garments].sort((a, b) => a.id - b.id);
+        
+        for (const g of sortedGarments) {
+          if (remainingToSell <= 0) break; // Sale fulfilled
+          
+          const sizeData = parseSafeArray(g.sizes).find(s => s.size === productModal.size);
+          const availableStock = sizeData ? parseInt(sizeData.quantity) : 0;
+          
+          if (availableStock > 0) {
+            const deductAmount = Math.min(availableStock, remainingToSell);
+            await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
+              size: productModal.size, change: -deductAmount, is_sale: true
+            });
+            remainingToSell -= deductAmount;
+          }
+        }
+      } else {
+        // Standard unmerged sale (from Batch Tracker)
+        await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
+          size: productModal.size, change: -remainingToSell, is_sale: true
+        });
+      }
+
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${updatedGarment.name} (${productModal.size})`);
+      showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${productModal.garment.name} (${productModal.size})`);
       await fetchData(true);
     } catch (error) {
-      alert('Could not complete sale. Check stock!');
+      alert('Could not complete sale. Ensure sufficient stock across your batches.');
     }
   };
 
   const handleRestockSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
+      const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
+      
+      // LIFO ROUTING: Restock is mapped to the newest batch
+      const targetGarmentId = isMergedGarment 
+        ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id 
+        : productModal.garment.id;
+
+      await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
         size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
       });
-      const updatedGarment = { ...response.data, sizes: parseSafeArray(response.data?.sizes), image: formatImageUrl(response.data?.image) };
-      setGarments(garments.map(g => g.id === updatedGarment.id ? updatedGarment : g));
-      setProductModal(prev => ({ ...prev, garment: updatedGarment, quantity: 1 }));
-      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${updatedGarment.name} (${productModal.size})`);
+      
+      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${productModal.garment.name} (${productModal.size})`);
+      setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       await fetchData(true);
     } catch (error) {
       alert('Could not restock item.');
@@ -773,9 +856,9 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
   };
   
-  // ==========================================
-  // PRE-ORDERS
-  // ==========================================
+  // -------------------------------------------------------------
+  // FIFO LOGIC APPLIED TO PRE-ORDERS
+  // -------------------------------------------------------------
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
@@ -788,11 +871,24 @@ function AdminDashboard() {
       };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
-      const targetGarment = (garments || []).find(g => g?.name === newPreOrder.item_name);
-      if (targetGarment && newPreOrder.size) {
-        await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
-          size: newPreOrder.size, change: -1, is_sale: false 
-        });
+      // FIFO Pre-order deduction
+      const garmentsToUpdate = (garments || [])
+        .filter(g => String(g?.name) === newPreOrder.item_name)
+        .sort((a, b) => a.id - b.id); // Oldest batches first
+        
+      let remainingToDeduct = 1;
+      
+      for (const g of garmentsToUpdate) {
+        if (remainingToDeduct <= 0) break;
+        const sizeData = parseSafeArray(g.sizes).find(s => s.size === newPreOrder.size);
+        const available = sizeData ? parseInt(sizeData.quantity) : 0;
+        
+        if (available > 0) {
+          await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
+            size: newPreOrder.size, change: -1, is_sale: false 
+          });
+          remainingToDeduct -= 1;
+        }
       }
 
       setShowPreOrderModal(false);
@@ -806,12 +902,12 @@ function AdminDashboard() {
 
   const openEditPreOrderModal = (item) => {
     setEditPreOrder({ 
-      id: item.originalId || item.id, // Grab true database ID directly
+      id: item.originalId || item.id,
       customer_name: item.customer_name || '', 
       recipient_name: item.recipient_name || '', 
       contact_number: item.contact_number || '', 
       address: item.address || '', 
-      item_name: item.item_name || item.name || '', // Safe fallback
+      item_name: item.item_name || item.name || '',
       size: item.size || '', 
       color: !item.color || item.color === 'N/A' ? '' : item.color, 
       price: item.price || '', 
@@ -826,15 +922,37 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
+      
       if (oldOrder) {
         if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
-          const oldGarment = (garments || []).find(g => g?.name === oldOrder.item_name);
-          if (oldGarment && oldOrder.size) {
-            await axios.patch(`${API_BASE}garments/${oldGarment.id}/update_stock/`, { size: oldOrder.size, change: 1, is_sale: false });
+          
+          // LIFO Restore to old garment batch
+          const oldGarments = (garments || [])
+            .filter(g => g?.name === oldOrder.item_name)
+            .sort((a, b) => b.id - a.id); // Newest first
+            
+          if (oldGarments.length > 0 && oldOrder.size) {
+            await axios.patch(`${API_BASE}garments/${oldGarments[0].id}/update_stock/`, { 
+              size: oldOrder.size, change: 1, is_sale: false 
+            });
           }
-          const newGarment = (garments || []).find(g => g?.name === editPreOrder.item_name);
-          if (newGarment && editPreOrder.size) {
-            await axios.patch(`${API_BASE}garments/${newGarment.id}/update_stock/`, { size: editPreOrder.size, change: -1, is_sale: false });
+          
+          // FIFO Deduct from new garment batch
+          const newGarments = (garments || [])
+            .filter(g => g?.name === editPreOrder.item_name)
+            .sort((a, b) => a.id - b.id); // Oldest first
+            
+          let remainingToDeduct = 1;
+          for (const g of newGarments) {
+            if (remainingToDeduct <= 0) break;
+            const sizeData = parseSafeArray(g.sizes).find(s => s.size === editPreOrder.size);
+            const available = sizeData ? parseInt(sizeData.quantity) : 0;
+            if (available > 0 && editPreOrder.size) {
+              await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { 
+                size: editPreOrder.size, change: -1, is_sale: false 
+              });
+              remainingToDeduct -= 1;
+            }
           }
         }
       }
@@ -858,7 +976,11 @@ function AdminDashboard() {
 
   const handleDeletePreOrder = async (id) => {
     if (!window.confirm("Delete this pre-order?")) return;
-    try { await axios.delete(`${API_BASE}preorders/${id}/`); showToast("🗑️ Pre-order removed."); await fetchData(true); } catch (error) { alert('Could not delete pre-order.'); }
+    try { 
+      await axios.delete(`${API_BASE}preorders/${id}/`); 
+      showToast("🗑️ Pre-order removed."); 
+      await fetchData(true); 
+    } catch (error) { alert('Could not delete pre-order.'); }
   };
 
   // ==========================================
@@ -869,9 +991,13 @@ function AdminDashboard() {
     try {
       const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        const targetGarment = (garments || []).find(g => g?.name === logToRevert.garment_name);
-        if (targetGarment) {
-          await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
+        // LIFO Restore to newest matching batch
+        const targetGarments = (garments || [])
+          .filter(g => g?.name === logToRevert.garment_name)
+          .sort((a, b) => b.id - a.id);
+          
+        if (targetGarments.length > 0) {
+          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
             size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false
           });
         }
@@ -891,9 +1017,13 @@ function AdminDashboard() {
     try {
       for (const log of (salesHistory || [])) {
         if (!log) continue;
-        const targetGarment = (garments || []).find(g => g?.name === log.garment_name);
-        if (targetGarment) {
-          await axios.patch(`${API_BASE}garments/${targetGarment.id}/update_stock/`, {
+        // LIFO Restore
+        const targetGarments = (garments || [])
+          .filter(g => g?.name === log.garment_name)
+          .sort((a, b) => b.id - a.id);
+          
+        if (targetGarments.length > 0) {
+          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
             size: log.size, change: log.quantity_sold, is_sale: false
           });
         }
@@ -929,7 +1059,8 @@ function AdminDashboard() {
   // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
   // ==========================================
   
-  const categories = ['All', ...new Set((garments || []).map(g => String(g?.category || 'Uncategorized')))];
+  const mergedGarmentsList = mergeGarments(garments);
+  const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   
@@ -1038,7 +1169,8 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
-  const filteredGarments = (garments || [])
+  // Gallery Tab uses Merged styles
+  const filteredGarments = (mergedGarmentsList || [])
     .filter(item => {
       if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
@@ -1049,6 +1181,7 @@ function AdminDashboard() {
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
+  // Batch Tracker uses Individual styles to keep batch accounting separated
   const batchMap = {};
   (garments || []).forEach(g => {
     if (!g) return;
@@ -1332,6 +1465,7 @@ function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Batch Tracker intentionally queries the unmerged Garments array to keep batch accounting separated visually */}
                   {(garments || [])
                     .filter(g => g && String(g.batch_name || 'Uncategorized') === String(selectedBatch))
                     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')))
@@ -1823,7 +1957,7 @@ function AdminDashboard() {
       {/* ZOOM PRE-ORDER MODAL (NEW)                 */}
       {/* ========================================== */}
       {viewPreOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setViewPreOrder(null)}>
+        <div onClick={() => setViewPreOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-stone-200 relative" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-6 border-b border-stone-100 pb-4">
               <div>
@@ -1950,7 +2084,7 @@ function AdminDashboard() {
             <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col justify-between overflow-y-auto">
               <div>
                 <span className="text-[11px] font-extrabold uppercase tracking-widest text-pink-600 block mb-1">
-                  Fleurette Catalog • Style #{productModal.garment.id}
+                  Fleurette Catalog • Style #{productModal.garment.id || 'MERGED'}
                 </span>
                 
                 <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{String(productModal.garment.name || '')}</h2>
@@ -2059,14 +2193,20 @@ function AdminDashboard() {
               </div>
 
               <div className="mt-8 pt-4 border-t border-stone-100 flex justify-between items-center text-xs text-stone-400 font-semibold">
-                <span>SKU: FLRT-STYLE-{productModal.garment.id}</span>
-                <button 
-                  type="button"
-                  onClick={() => openEditModal(productModal.garment)}
-                  className="text-amber-600 hover:text-amber-700 font-extrabold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 transition"
-                >
-                  <span>✏️</span> Edit Style Details
-                </button>
+                <span>
+                  {productModal.garment.underlying_garments 
+                    ? `MERGED: ${productModal.garment.underlying_garments.length} Batches`
+                    : `BATCH: ${productModal.garment.batch_name || 'Uncategorized'}`}
+                </span>
+                {(!productModal.garment.underlying_garments) && (
+                  <button 
+                    type="button"
+                    onClick={() => openEditModal(productModal.garment)}
+                    className="text-amber-600 hover:text-amber-700 font-extrabold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 transition"
+                  >
+                    <span>✏️</span> Edit Style Details
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2609,7 +2749,7 @@ function AdminDashboard() {
                   required 
                   value={newPreOrder.item_name} 
                   onChange={(e) => {
-                    const selected = (garments || []).find(g => String(g?.name) === e.target.value);
+                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
                     const newPrice = selected ? selected.selling_price : newPreOrder.price;
                     const dp = newPreOrder.down_payment || 0;
                     const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
@@ -2626,7 +2766,7 @@ function AdminDashboard() {
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 >
                   <option value="" disabled>-- Select a Style --</option>
-                  {(garments || []).map(g => (
+                  {(mergedGarmentsList || []).map(g => (
                     <option key={`po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                   ))}
                 </select>
@@ -2643,7 +2783,7 @@ function AdminDashboard() {
                     disabled={!newPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && parseSafeArray((garments || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
+                    {newPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
                       <option key={`po-sz-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
                         {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
                       </option>
@@ -2768,7 +2908,7 @@ function AdminDashboard() {
                   required 
                   value={editPreOrder.item_name} 
                   onChange={(e) => {
-                    const selected = (garments || []).find(g => String(g?.name) === e.target.value);
+                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
                     const newPrice = selected ? selected.selling_price : editPreOrder.price;
                     const dp = editPreOrder.down_payment || 0;
                     const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
@@ -2785,7 +2925,7 @@ function AdminDashboard() {
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                 >
                   <option value="" disabled>-- Select a Style --</option>
-                  {(garments || []).map(g => (
+                  {(mergedGarmentsList || []).map(g => (
                     <option key={`edit-po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                   ))}
                 </select>
@@ -2802,10 +2942,10 @@ function AdminDashboard() {
                     disabled={!editPreOrder.item_name}
                   >
                     <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && parseSafeArray((garments || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
+                    {editPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
                       <option key={`edit-po-sz-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
                     ))}
-                    {editPreOrder.size && !parseSafeArray((garments || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
+                    {editPreOrder.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
                       <option value={editPreOrder.size}>{String(editPreOrder.size)}</option>
                     )}
                   </select>
