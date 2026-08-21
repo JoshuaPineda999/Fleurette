@@ -57,6 +57,15 @@ const parseSafeArray = (data) => {
   return [];
 };
 
+// 5. Get accurate Local Date String (YYYY-MM-DD)
+const getLocalDate = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 // ==========================================
 // ERROR BOUNDARY (PREVENTS WHITE SCREENS)
 // ==========================================
@@ -322,7 +331,7 @@ function AdminDashboard() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getLocalDate());
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
   const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
@@ -359,7 +368,7 @@ function AdminDashboard() {
   });
 
   const [newExpense, setNewExpense] = useState({
-    title: '', amount: '', date: new Date().toISOString().split('T')[0],
+    title: '', amount: '', date: getLocalDate(),
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
@@ -723,7 +732,7 @@ function AdminDashboard() {
       const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
       await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
       setShowExpenseModal(false);
-      setNewExpense({ title: '', amount: '', date: new Date().toISOString().split('T')[0], isDetailed: false, breakdown: [{ name: '', cost: '' }] });
+      setNewExpense({ title: '', amount: '', date: getLocalDate(), isDetailed: false, breakdown: [{ name: '', cost: '' }] });
       showToast("📈 Batch expense recorded!");
       await fetchData(true);
     } catch (error) { alert('Could not save expense.'); }
@@ -731,7 +740,7 @@ function AdminDashboard() {
 
   const openEditExpenseModal = (item) => {
     const breakdownList = parseSafeArray(item?.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
-    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || new Date().toISOString().split('T')[0], isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
+    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || getLocalDate(), isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
     setShowEditExpenseModal(true);
   };
   const handleEditBreakdownChange = (index, field, value) => {
