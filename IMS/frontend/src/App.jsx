@@ -335,6 +335,9 @@ function AdminDashboard() {
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
   const [historyFilterStatus, setHistoryFilterStatus] = useState('All');
+  
+  // NEW: Analytics Batch Filter State
+  const [analyticsFilterBatch, setAnalyticsFilterBatch] = useState('All');
 
   const [zoomedImage, setZoomedImage] = useState(null);
   const [viewPreOrder, setViewPreOrder] = useState(null); 
@@ -442,7 +445,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}sales/history/`);
       setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Sales History. Backend might be crashing.", error);
+      console.error("Failed to load Sales History.", error);
     }
   };
 
@@ -461,7 +464,7 @@ function AdminDashboard() {
       const res = await axios.get(`${API_BASE}preorders/`);
       setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || []));
     } catch (error) {
-      console.error("Failed to load Pre-orders. Backend might be crashing.", error);
+      console.error("Failed to load Pre-orders.", error);
     }
   };
 
@@ -849,7 +852,7 @@ function AdminDashboard() {
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
     }
   };
 
@@ -917,7 +920,7 @@ function AdminDashboard() {
       showToast(`📦 Order marked as ${newStatus}!`);
       await fetchData(true);
     } catch (error) {
-      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your serializers.py contains the 'status' field.`);
+      alert(`Django Backend Error: Could not save status.\n\n${JSON.stringify(error.response?.data || error.message)}`);
       await fetchData(true);
     }
   };
@@ -962,7 +965,6 @@ function AdminDashboard() {
 
   // SECURE DATA MAPPER FOR NORMAL SALES
   const mappedSales = localSalesHistory.filter(s => s).map(log => {
-    // FIX: Lookup the garment to calculate the Full Amount Collected (Selling Price * Qty) instead of just the profit
     const matchedGarment = (garments || []).find(g => String(g?.name) === String(log?.garment_name));
     const sellingPrice = matchedGarment ? parseFloat(matchedGarment.selling_price) : 0;
     const qty = parseFloat(log?.quantity_sold) || 0;
@@ -978,10 +980,10 @@ function AdminDashboard() {
       recipient_name: '',
       contact_number: '',
       address: '',
-      item_name: '',
+      item_name: log?.garment_name ? String(log.garment_name) : '', // Ensure item_name is assigned
       size: log?.size ? String(log.size) : '',
       qty: qty,
-      earned: amountCollected, // Now shows Total Amount Collected
+      earned: amountCollected,
       status: log?.status ? String(log.status) : 'Pending'
     };
   });
@@ -992,15 +994,40 @@ function AdminDashboard() {
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
 
+  // ==========================================
+  // ANALYTICS CALCULATIONS
+  // ==========================================
+  let analyticsSales = unifiedHistory;
+  let analyticsExpenses = expenses || [];
+
+  if (analyticsFilterBatch !== 'All') {
+    const validGarmentNames = garments
+      .filter(g => String(g?.batch_name) === analyticsFilterBatch)
+      .map(g => String(g?.name));
+      
+    analyticsSales = unifiedHistory.filter(log => validGarmentNames.includes(log.item_name));
+    
+    analyticsExpenses = (expenses || []).filter(e => {
+      const expenseTitle = String(e?.title || '').toLowerCase();
+      const batchTitle = analyticsFilterBatch.toLowerCase();
+      return expenseTitle.includes(batchTitle);
+    });
+  }
+
+  const totalGrossSalesProfit = analyticsSales.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
+  const totalBatchExpenses = analyticsExpenses.reduce((sum, item) => sum + (parseFloat(item?.amount) || 0), 0);
+  const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
+
+  // Other general stats
+  const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
+  const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
+
   const filteredUnifiedHistory = unifiedHistory.filter(log => {
     if (!log) return false;
     const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
     const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
     return matchDate && matchStatus;
   });
-
-  const historyTotalEarned = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
-  const historyTotalPieces = filteredUnifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
   const dailyHistory = unifiedHistory.filter(log => log?.date === selectedDate);
   const dailyStats = { 
@@ -1021,10 +1048,6 @@ function AdminDashboard() {
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
-
-  const totalGrossSalesProfit = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
-  const totalBatchExpenses = (expenses || []).reduce((sum, item) => sum + (parseFloat(item?.amount) || 0), 0);
-  const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
 
   const batchMap = {};
   (garments || []).forEach(g => {
@@ -1603,9 +1626,28 @@ function AdminDashboard() {
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Net Profit Analytics</h2>
                 <p className="text-stone-500 text-sm mt-1">Track itemized arrival batch costs to calculate true Fleurette net earnings</p>
               </div>
-              <button onClick={() => setShowExpenseModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
-                <span className="text-lg leading-none">+</span> Record Batch Expense
-              </button>
+              
+              <div className="flex items-center gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200">
+                  <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Batch:</span>
+                  <select 
+                    value={analyticsFilterBatch} 
+                    onChange={(e) => setAnalyticsFilterBatch(e.target.value)}
+                    className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer"
+                  >
+                    <option value="All">All</option>
+                    {Array.from(new Set((garments || []).map(g => String(g?.batch_name || 'Uncategorized'))))
+                      .filter(b => b !== 'Uncategorized' && b.trim() !== '')
+                      .sort()
+                      .map(batch => (
+                        <option key={`filter-analytics-${batch}`} value={batch}>{batch}</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={() => setShowExpenseModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
+                  <span className="text-lg leading-none">+</span> Record Expense
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -1637,10 +1679,10 @@ function AdminDashboard() {
             <div className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden w-full">
               <div className="p-5 border-b border-stone-200 bg-[#f2ece4] flex justify-between items-center">
                 <h3 className="font-black text-stone-900 text-base flex items-center gap-2"><span>📑</span> Recorded Batch Expenses &amp; Shipping Logs</h3>
-                <span className="text-xs font-bold text-stone-600 bg-white px-3 py-1 rounded-lg border border-stone-200">{expenses.length} Records</span>
+                <span className="text-xs font-bold text-stone-600 bg-white px-3 py-1 rounded-lg border border-stone-200">{analyticsExpenses.length} Records</span>
               </div>
 
-              {expenses.length === 0 ? (
+              {analyticsExpenses.length === 0 ? (
                 <div className="p-12 text-center max-w-md mx-auto my-6">
                   <span className="text-5xl block mb-3">📑</span>
                   <h4 className="text-base font-bold text-stone-800 mb-1">No Expenses Logged Yet</h4>
@@ -1658,7 +1700,7 @@ function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-200/80">
-                    {expenses.map((item) => (
+                    {analyticsExpenses.map((item) => (
                       <tr key={`exp-${item?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(item?.date || 'N/A')}</td>
                         <td className="p-4 align-top">
