@@ -159,6 +159,7 @@ function CustomerView() {
       try {
         const res = await axios.get(`${API_BASE}garments/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        // Safely map data to prevent mapper crashes
         setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
@@ -862,33 +863,42 @@ function AdminDashboard() {
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
+      // FIFO Pre-order deduction setup
+      const garmentsToUpdate = (garments || [])
+        .filter(g => String(g?.name) === newPreOrder.item_name)
+        .sort((a, b) => a.id - b.id); // Oldest batches first
+        
+      let deductedGarmentId = null;
+      let deductedBatchName = '';
+      
+      for (const g of garmentsToUpdate) {
+        const sizeData = parseSafeArray(g.sizes).find(s => s.size === newPreOrder.size);
+        const available = sizeData ? parseInt(sizeData.quantity) : 0;
+        
+        if (available > 0) {
+          deductedGarmentId = g.id;
+          deductedBatchName = g.batch_name;
+          break; // Pre-orders only deduct 1 quantity, so break immediately
+        }
+      }
+
       const orderPayload = {
         ...newPreOrder,
         color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
         recipient_name: newPreOrder.recipient_name || '', 
         contact_number: newPreOrder.contact_number || '', 
-        address: newPreOrder.address || ''
+        address: newPreOrder.address || '',
+        garment_id: deductedGarmentId,        // Attach exact backend ID
+        batch_name: deductedBatchName         // Attach exact batch
       };
+      
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
-      // FIFO Pre-order deduction
-      const garmentsToUpdate = (garments || [])
-        .filter(g => String(g?.name) === newPreOrder.item_name)
-        .sort((a, b) => a.id - b.id); // Oldest batches first
-        
-      let remainingToDeduct = 1;
-      
-      for (const g of garmentsToUpdate) {
-        if (remainingToDeduct <= 0) break;
-        const sizeData = parseSafeArray(g.sizes).find(s => s.size === newPreOrder.size);
-        const available = sizeData ? parseInt(sizeData.quantity) : 0;
-        
-        if (available > 0) {
-          await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-            size: newPreOrder.size, change: -1, is_sale: false 
-          });
-          remainingToDeduct -= 1;
-        }
+      // Successfully saved Pre-Order, now apply the deduction to that exact target
+      if (deductedGarmentId) {
+        await axios.patch(`${API_BASE}garments/${deductedGarmentId}/update_stock/`, {
+          size: newPreOrder.size, change: -1, is_sale: false 
+        });
       }
 
       setShowPreOrderModal(false);
@@ -896,7 +906,7 @@ function AdminDashboard() {
       showToast("📝 Pre-order added & stock deducted!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
     }
   };
 
@@ -923,16 +933,27 @@ function AdminDashboard() {
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
       
+      let newGarmentId = null;
+      let newBatchName = '';
+
       if (oldOrder) {
         if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
           
-          // LIFO Restore to old garment batch
-          const oldGarments = (garments || [])
-            .filter(g => g?.name === oldOrder.item_name)
-            .sort((a, b) => b.id - a.id); // Newest first
+          // EXACT BATCH Restore to old garment
+          let oldGarmentId = oldOrder.garment_id;
+          
+          // Fallbacks for older data before the fix
+          if (!oldGarmentId && oldOrder.batch_name) {
+             const g = (garments || []).find(g => g.name === oldOrder.item_name && g.batch_name === oldOrder.batch_name);
+             if (g) oldGarmentId = g.id;
+          }
+          if (!oldGarmentId) {
+             const g = (garments || []).filter(g => g.name === oldOrder.item_name).sort((a,b) => b.id - a.id)[0];
+             if (g) oldGarmentId = g.id;
+          }
             
-          if (oldGarments.length > 0 && oldOrder.size) {
-            await axios.patch(`${API_BASE}garments/${oldGarments[0].id}/update_stock/`, { 
+          if (oldGarmentId && oldOrder.size) {
+            await axios.patch(`${API_BASE}garments/${oldGarmentId}/update_stock/`, { 
               size: oldOrder.size, change: 1, is_sale: false 
             });
           }
@@ -942,16 +963,16 @@ function AdminDashboard() {
             .filter(g => g?.name === editPreOrder.item_name)
             .sort((a, b) => a.id - b.id); // Oldest first
             
-          let remainingToDeduct = 1;
           for (const g of newGarments) {
-            if (remainingToDeduct <= 0) break;
             const sizeData = parseSafeArray(g.sizes).find(s => s.size === editPreOrder.size);
             const available = sizeData ? parseInt(sizeData.quantity) : 0;
             if (available > 0 && editPreOrder.size) {
+              newGarmentId = g.id;
+              newBatchName = g.batch_name;
               await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { 
                 size: editPreOrder.size, change: -1, is_sale: false 
               });
-              remainingToDeduct -= 1;
+              break; // Only deduct 1 for pre-order
             }
           }
         }
@@ -964,6 +985,12 @@ function AdminDashboard() {
         contact_number: editPreOrder.contact_number || '',
         address: editPreOrder.address || ''
       };
+      
+      // Pass the new backend keys if they changed item/size
+      if (newGarmentId) {
+          orderPayload.garment_id = newGarmentId;
+          orderPayload.batch_name = newBatchName;
+      }
 
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
@@ -975,10 +1002,30 @@ function AdminDashboard() {
   };
 
   const handleDeletePreOrder = async (id) => {
-    if (!window.confirm("Delete this pre-order?")) return;
+    if (!window.confirm("Delete this pre-order? Make sure to refund the customer. The item will be returned to its respective batch stock.")) return;
     try { 
+      const orderToRevert = (preOrders || []).find(o => o?.id === id);
+      if (orderToRevert) {
+        // EXACT BATCH Restore logic
+        let targetGarmentId = orderToRevert.garment_id;
+        
+        if (!targetGarmentId && orderToRevert.batch_name) {
+           const g = (garments || []).find(g => g.name === orderToRevert.item_name && g.batch_name === orderToRevert.batch_name);
+           if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+           const g = (garments || []).filter(g => g.name === orderToRevert.item_name).sort((a,b)=>b.id-a.id)[0];
+           if (g) targetGarmentId = g.id;
+        }
+
+        if (targetGarmentId && orderToRevert.size) {
+           await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
+              size: orderToRevert.size, change: 1, is_sale: false
+           });
+        }
+      }
       await axios.delete(`${API_BASE}preorders/${id}/`); 
-      showToast("🗑️ Pre-order removed."); 
+      showToast("🗑️ Pre-order removed & stock restored."); 
       await fetchData(true); 
     } catch (error) { alert('Could not delete pre-order.'); }
   };
@@ -991,13 +1038,20 @@ function AdminDashboard() {
     try {
       const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        // LIFO Restore to newest matching batch
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === logToRevert.garment_name)
-          .sort((a, b) => b.id - a.id);
+        // EXACT BATCH Restore logic
+        let targetGarmentId = logToRevert.garment_id;
+        
+        if (!targetGarmentId && logToRevert.batch_name) {
+            const g = (garments || []).find(g => g.name === logToRevert.garment_name && g.batch_name === logToRevert.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === logToRevert.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
           
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
             size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false
           });
         }
@@ -1017,13 +1071,21 @@ function AdminDashboard() {
     try {
       for (const log of (salesHistory || [])) {
         if (!log) continue;
-        // LIFO Restore
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === log.garment_name)
-          .sort((a, b) => b.id - a.id);
+        
+        // EXACT BATCH Restore logic
+        let targetGarmentId = log.garment_id;
+        
+        if (!targetGarmentId && log.batch_name) {
+            const g = (garments || []).find(g => g.name === log.garment_name && g.batch_name === log.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === log.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
           
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
             size: log.size, change: log.quantity_sold, is_sale: false
           });
         }
@@ -1125,6 +1187,13 @@ function AdminDashboard() {
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
 
+  const filteredUnifiedHistory = unifiedHistory.filter(log => {
+    if (!log) return false;
+    const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
+    const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
+    return matchDate && matchStatus;
+  });
+
   // ==========================================
   // ANALYTICS CALCULATIONS
   // ==========================================
@@ -1152,13 +1221,6 @@ function AdminDashboard() {
   // Other general stats
   const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
   const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
-
-  const filteredUnifiedHistory = unifiedHistory.filter(log => {
-    if (!log) return false;
-    const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
-    const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
-    return matchDate && matchStatus;
-  });
 
   const dailyHistory = unifiedHistory.filter(log => log?.date === selectedDate);
   const dailyStats = { 
@@ -2043,972 +2105,6 @@ function AdminDashboard() {
               <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
                 <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2 rounded-xl shadow text-sm transition">Save Name</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* E-COMMERCE SHOWCASE & POS MODAL            */}
-      {/* ========================================== */}
-      {productModal.show && productModal.garment && (
-        <div className="fixed inset-0 bg-[#3b322f]/70 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] relative border border-stone-200">
-            
-            <button 
-              onClick={() => setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 })} 
-              className="absolute top-4 right-4 z-10 bg-[#f2ece4] hover:bg-stone-300 text-stone-800 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg transition shadow-sm"
-              title="Close window"
-            >
-              ✖
-            </button>
-
-            <div className="w-full md:w-1/2 bg-gradient-to-br from-[#f9f6f0] to-[#e6dece] p-8 flex flex-col items-center justify-center relative min-h-[280px] md:min-h-full border-b md:border-b-0 md:border-r border-stone-200">
-              {productModal.garment.image ? (
-                <img 
-                  src={productModal.garment.image} alt={productModal.garment.name} 
-                  onClick={() => setZoomedImage(productModal.garment.image)}
-                  className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
-                  title="Click to fullscreen zoom" 
-                />
-              ) : (
-                <div className="text-8xl select-none py-12">👗</div>
-              )}
-              
-              <span className="mt-4 text-xs font-bold text-stone-600 bg-white/90 px-3 py-1 rounded-full shadow-2xs border border-stone-200">
-                Fleurette Stock: <strong className="text-stone-900">{productModal.garment.total_pieces} pcs</strong>
-              </span>
-            </div>
-
-            <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col justify-between overflow-y-auto">
-              <div>
-                <span className="text-[11px] font-extrabold uppercase tracking-widest text-pink-600 block mb-1">
-                  Fleurette Catalog • Style #{productModal.garment.id || 'MERGED'}
-                </span>
-                
-                <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{String(productModal.garment.name || '')}</h2>
-                <div className="mt-3 flex items-baseline gap-3">
-                  <span className="text-3xl font-black text-stone-900">₱{parseFloat(productModal.garment.selling_price || 0).toFixed(2)}</span>
-                  <span className="text-sm font-bold text-stone-400 line-through">₱{parseFloat(productModal.garment.cost_price || 0).toFixed(2)}</span>
-                </div>
-
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="bg-pink-100 text-pink-800 text-xs font-black px-3 py-1 rounded-lg">
-                    +₱{parseFloat(productModal.garment.profit_per_piece || 0).toFixed(2)} profit / unit
-                  </span>
-                </div>
-
-                <div className="mt-6 pt-6 border-t border-stone-100">
-                  <div className="flex bg-[#f2ece4] p-1 rounded-xl mb-4">
-                    <button
-                      type="button"
-                      onClick={() => setProductModal({ ...productModal, mode: 'sell' })}
-                      className={`flex-1 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 ${
-                        productModal.mode === 'sell' ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-600 hover:text-stone-900'
-                      }`}
-                    >
-                      <span>🛍️</span> Record Sale
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProductModal({ ...productModal, mode: 'restock' })}
-                      className={`flex-1 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 ${
-                        productModal.mode === 'restock' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-600 hover:text-stone-900'
-                      }`}
-                    >
-                      <span>📦</span> Restock Batch
-                    </button>
-                  </div>
-
-                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    1. Select Size ({productModal.mode === 'sell' ? 'To Deduct' : 'Arriving'}):
-                  </label>
-                  <div className="grid grid-cols-4 gap-2 mb-6">
-                    {parseSafeArray(productModal.garment.sizes).map((s) => (
-                      <button
-                        type="button" key={s?.size} 
-                        onClick={() => setProductModal({ ...productModal, size: s.size, quantity: 1 })}
-                        disabled={productModal.mode === 'sell' && s?.quantity === 0}
-                        className={`py-2.5 rounded-xl font-bold text-xs border flex flex-col items-center transition ${
-                          productModal.size === s?.size 
-                            ? productModal.mode === 'sell'
-                              ? 'bg-pink-600 border-pink-600 text-white shadow-md scale-105 font-black'
-                              : 'bg-[#eae4dc] border-[#c2b29a] text-stone-900 shadow-md scale-105 font-black'
-                            : s?.quantity > 0 || productModal.mode === 'restock'
-                              ? 'bg-[#f9f6f0] border-stone-300 text-stone-700 hover:bg-stone-200'
-                              : 'bg-stone-100 border-stone-200 text-stone-300 cursor-not-allowed'
-                        }`}
-                      >
-                        <span className="text-sm font-black">{String(s?.size || '')}</span>
-                        <span className="text-[10px] opacity-80">{s?.quantity} in stock</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    2. Quantity &amp; Confirm:
-                  </label>
-                  <div className="flex gap-3 items-center">
-                    <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] px-2 py-1 shrink-0">
-                      <button 
-                        type="button"
-                        onClick={() => setProductModal({ ...productModal, quantity: Math.max(1, parseInt(productModal.quantity || 1) - 1) })}
-                        className="w-8 h-10 flex items-center justify-center font-black text-lg text-stone-600 hover:text-stone-900"
-                      >
-                        -
-                      </button>
-                      <input 
-                        type="number" min="1" required 
-                        value={productModal.quantity} 
-                        onChange={(e) => setProductModal({ ...productModal, quantity: e.target.value })}
-                        className="w-12 text-center font-black text-lg bg-transparent focus:outline-none text-stone-900"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setProductModal({ ...productModal, quantity: parseInt(productModal.quantity || 0) + 1 })}
-                        className="w-8 h-10 flex items-center justify-center font-black text-lg text-stone-600 hover:text-stone-900"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    {productModal.mode === 'sell' ? (
-                      <button 
-                        onClick={handleSellSubmit}
-                        className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-black py-3.5 px-6 rounded-xl shadow-lg shadow-pink-500/30 text-base flex items-center justify-center gap-2 transition active:scale-95"
-                      >
-                        <span>🌸</span> Record Sale
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={handleRestockSubmit}
-                        className="flex-1 bg-[#eae4dc] hover:bg-[#ded6cc] text-stone-900 font-black py-3.5 px-6 rounded-xl shadow-md text-base flex items-center justify-center gap-2 transition active:scale-95 border border-[#c2b29a]"
-                      >
-                        <span>📦</span> Add to Stock
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 pt-4 border-t border-stone-100 flex justify-between items-center text-xs text-stone-400 font-semibold">
-                <span>
-                  {productModal.garment.underlying_garments 
-                    ? `MERGED: ${productModal.garment.underlying_garments.length} Batches`
-                    : `BATCH: ${productModal.garment.batch_name || 'Uncategorized'}`}
-                </span>
-                {(!productModal.garment.underlying_garments) && (
-                  <button 
-                    type="button"
-                    onClick={() => openEditModal(productModal.garment)}
-                    className="text-amber-600 hover:text-amber-700 font-extrabold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 transition"
-                  >
-                    <span>✏️</span> Edit Style Details
-                  </button>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* ADD BATCH WIZARD MODAL                     */}
-      {/* ========================================== */}
-      {showAddBatchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl overflow-hidden flex flex-col border border-stone-200 max-h-[90vh]">
-            <div className="flex justify-between items-center border-b pb-4 mb-4 border-stone-100 shrink-0">
-              <div>
-                <h2 className="text-xl font-black text-stone-900">📦 Import New Batch</h2>
-                <p className="text-stone-500 text-xs mt-1">Upload multiple garment styles at once and group them into a single batch.</p>
-              </div>
-              <button onClick={() => setShowAddBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-            
-            <form onSubmit={handleCreateBatch} className="overflow-y-auto pr-2 flex-1 space-y-6 pb-6">
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 shadow-sm sticky top-0 z-10">
-                <label className="block text-xs font-black text-stone-700 uppercase tracking-wider mb-2">Assign Batch Name</label>
-                <input 
-                  type="text" required placeholder="e.g. Batch #1 (Summer Collection)" 
-                  value={newBatch.batch_name} onChange={(e) => setNewBatch({...newBatch, batch_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-3 text-base font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white shadow-inner"
-                />
-              </div>
-
-              <div className="space-y-4">
-                <span className="block text-xs font-black text-stone-500 uppercase tracking-widest border-b border-stone-200 pb-2">Styles Included in this Batch:</span>
-                
-                {newBatch.styles.map((style, index) => (
-                  <div key={style.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm relative group">
-                    {newBatch.styles.length > 1 && (
-                      <button 
-                        type="button" 
-                        onClick={() => removeStyleFromBatch(index)}
-                        className="absolute -top-3 -right-3 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white w-8 h-8 rounded-full font-black shadow-md transition"
-                        title="Remove style from batch"
-                      >
-                        ✖
-                      </button>
-                    )}
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Style Name</label>
-                        <input 
-                          type="text" required placeholder="e.g. Pink Silk Dress" 
-                          list={`garment-names-${index}`}
-                          value={style.name} 
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleBatchStyleChange(index, 'name', val);
-                            const existing = (garments || []).find(g => String(g?.name || '').toLowerCase() === String(val || '').toLowerCase());
-                            if (existing) {
-                              handleBatchStyleChange(index, 'cost_price', existing.cost_price);
-                              handleBatchStyleChange(index, 'selling_price', existing.selling_price);
-                            }
-                          }}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                        <datalist id={`garment-names-${index}`}>
-                          {uniqueGarmentNames.map((name, i) => (
-                            <option key={`opt-${i}`} value={name} />
-                          ))}
-                        </datalist>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Photo (Optional)</label>
-                        <input 
-                          type="file" accept="image/*"
-                          onChange={(e) => handleBatchStyleChange(index, 'image', e.target.files[0])}
-                          className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Category</label>
-                        <input 
-                          type="text" placeholder="e.g. Tops, Dresses..." 
-                          list={`batch-category-list-${index}`}
-                          value={style.category} onChange={(e) => handleBatchStyleChange(index, 'category', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                        <datalist id={`batch-category-list-${index}`}>
-                          {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                            <option key={`cat-${cat}`} value={cat} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
-                        <input 
-                          type="text" placeholder="e.g. Rose Pink" 
-                          value={style.color} onChange={(e) => handleBatchStyleChange(index, 'color', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                        <input 
-                          type="number" step="0.01" required placeholder="350" 
-                          value={style.cost_price} onChange={(e) => handleBatchStyleChange(index, 'cost_price', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
-                        <input 
-                          type="number" step="0.01" required placeholder="799" 
-                          value={style.selling_price} onChange={(e) => handleBatchStyleChange(index, 'selling_price', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-3">
-                      <label className="block text-[10px] font-bold text-stone-600 uppercase mb-2">Initial Stock Count by Size</label>
-                      <div className="grid grid-cols-4 gap-2 bg-[#f9f6f0] p-2.5 rounded-xl border border-stone-200">
-                        {['S', 'M', 'L', 'XL'].map((sizeLabel) => (
-                          <div key={sizeLabel} className="text-center">
-                            <span className="block font-extrabold text-[10px] text-stone-500 mb-1">{sizeLabel}</span>
-                            <input 
-                              type="number" min="0" placeholder="0" 
-                              value={style.sizes[sizeLabel]} 
-                              onChange={(e) => handleBatchSizeChange(index, sizeLabel, e.target.value)}
-                              className="w-full border border-stone-300 rounded-lg p-1.5 text-center font-black text-sm bg-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                <button 
-                  type="button" 
-                  onClick={addStyleToBatch}
-                  className="w-full bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-700 font-black py-4 rounded-2xl border-2 border-dashed border-stone-300 transition shadow-sm flex items-center justify-center gap-2"
-                >
-                  <span className="text-xl leading-none">+</span> Add Another Style to this Batch
-                </button>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-stone-200 shrink-0 sticky bottom-0 bg-white p-3 rounded-xl shadow-up">
-                <button type="button" onClick={() => setShowAddBatchModal(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100 transition">Cancel</button>
-                <button type="submit" className="bg-stone-900 hover:bg-black text-white font-black px-8 py-2.5 rounded-xl shadow-lg transition">Save Entire Batch</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b pb-4 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-xl font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Style Details</h2>
-              <button onClick={() => setShowEditModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-            
-            <form onSubmit={handleUpdateGarment} className="space-y-4 overflow-y-auto pr-1">
-              <div className="bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Batch Assignment</label>
-                <input 
-                  type="text" required 
-                  value={editGarment.batch_name} onChange={(e) => setEditGarment({...editGarment, batch_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Style Name</label>
-                <input 
-                  type="text" required 
-                  value={editGarment.name} onChange={(e) => setEditGarment({...editGarment, name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Category</label>
-                  <input 
-                    type="text" placeholder="e.g. Tops" 
-                    list="edit-category-list"
-                    value={editGarment.category} onChange={(e) => setEditGarment({...editGarment, category: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                  <datalist id="edit-category-list">
-                    {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                      <option key={`edit-cat-${cat}`} value={cat} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
-                  <input 
-                    type="text" placeholder="e.g. Pink" 
-                    value={editGarment.color} onChange={(e) => setEditGarment({...editGarment, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Change Photo (Optional)</label>
-                {editGarment.previewUrl && (
-                  <div className="flex items-center gap-3 mb-2 bg-[#f2ece4] p-2 rounded-xl border border-stone-200">
-                    <img src={editGarment.previewUrl} alt="Current" className="w-12 h-12 object-cover rounded-lg shadow-sm border border-stone-200" />
-                    <span className="text-xs text-stone-600 font-bold">Current photo active</span>
-                  </div>
-                )}
-                <input 
-                  type="file" accept="image/*"
-                  onChange={(e) => setEditGarment({...editGarment, image: e.target.files[0]})}
-                  className="w-full text-xs text-stone-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                  <input 
-                    type="number" step="0.01" required 
-                    value={editGarment.cost_price} onChange={(e) => setEditGarment({...editGarment, cost_price: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
-                  <input 
-                    type="number" step="0.01" required 
-                    value={editGarment.selling_price} onChange={(e) => setEditGarment({...editGarment, selling_price: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-2">Update Size Stock Counts</label>
-                <div className="grid grid-cols-4 gap-2 bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
-                  {['S', 'M', 'L', 'XL'].map((size) => (
-                    <div key={`edit-sz-${size}`} className="text-center">
-                      <span className="block font-extrabold text-xs text-stone-500 mb-1">{size}</span>
-                      <input 
-                        type="number" min="0" 
-                        value={editGarment.sizes[size]} 
-                        onChange={(e) => setEditGarment({
-                          ...editGarment, 
-                          sizes: { ...editGarment.sizes, [size]: e.target.value }
-                        })}
-                        className="w-full border border-stone-300 rounded-lg p-2 text-center font-black text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100 mt-6 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => handleDeleteGarment(editGarment.id)}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-extrabold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5"
-                >
-                  <span>🗑️</span> Delete
-                </button>
-                
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowEditModal(false)} className="px-3 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showExpenseModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>📈</span> Record Batch Expense</h2>
-              <button onClick={() => setShowExpenseModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleCreateExpense} className="space-y-4 overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Expense / Batch Title</label>
-                <input 
-                  type="text" required placeholder="e.g. Batch #1 Arrival Costs" 
-                  value={newExpense.title} onChange={(e) => setNewExpense({...newExpense, title: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
-                  value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-extrabold text-stone-700 uppercase">Cost Calculation Mode</span>
-                  <button
-                    type="button"
-                    onClick={() => setNewExpense({ ...newExpense, isDetailed: !newExpense.isDetailed })}
-                    className="text-xs font-bold text-pink-700 bg-pink-100 hover:bg-pink-200 px-2.5 py-1 rounded-md transition"
-                  >
-                    {newExpense.isDetailed ? 'Switch to Lump Sum' : '📝 Add Itemized Breakdown'}
-                  </button>
-                </div>
-
-                {newExpense.isDetailed ? (
-                  <div className="space-y-2.5 pt-2 border-t border-stone-300">
-                    <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
-                    {newExpense.breakdown.map((item, idx) => (
-                      <div key={`n-bd-${idx}`} className="flex gap-2 items-center">
-                        <input
-                          type="text" placeholder="e.g. Freight Shipping" required
-                          value={item.name} onChange={(e) => handleBreakdownChange(idx, 'name', e.target.value)}
-                          className="flex-1 border border-stone-300 rounded-lg p-2 text-xs font-bold bg-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                        />
-                        <input
-                          type="number" step="0.01" min="0" placeholder="₱0.00" required
-                          value={item.cost} onChange={(e) => handleBreakdownChange(idx, 'cost', e.target.value)}
-                          className="w-24 border border-stone-300 rounded-lg p-2 text-xs font-black text-rose-600 bg-white text-right focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                        />
-                        {newExpense.breakdown.length > 1 && (
-                          <button type="button" onClick={() => removeBreakdownRow(idx)} className="text-rose-500 hover:text-rose-700 font-bold text-base px-1" title="Remove line">✖</button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button" onClick={addBreakdownRow}
-                      className="w-full bg-white hover:bg-stone-100 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-1 transition shadow-2xs"
-                    >
-                      + Add Another Cost Line
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-500 font-medium">Currently inputting a simple lump-sum total below. Switch to detailed mode if you want to track shipping, trims, or customs individually.</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">
-                  {newExpense.isDetailed ? 'Total Calculated Amount (₱)' : 'Total Cost Amount (₱)'}
-                </label>
-                <input 
-                  type="number" step="0.01" required placeholder="1500.00" 
-                  value={newExpense.amount} 
-                  onChange={(e) => !newExpense.isDetailed && setNewExpense({...newExpense, amount: e.target.value})}
-                  readOnly={newExpense.isDetailed}
-                  className={`w-full border border-stone-300 rounded-lg p-2.5 text-lg font-black text-rose-600 focus:outline-none ${
-                    newExpense.isDetailed ? 'bg-stone-200 cursor-not-allowed opacity-80' : 'focus:ring-2 focus:ring-pink-500 bg-[#f9f6f0]'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-stone-100 mt-4 shrink-0">
-                <button type="button" onClick={() => setShowExpenseModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                <button type="submit" className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Expense</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditExpenseModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Batch Expense</h2>
-              <button onClick={() => setShowEditExpenseModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleUpdateExpense} className="space-y-4 overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Expense / Batch Title</label>
-                <input 
-                  type="text" required 
-                  value={editExpense.title} onChange={(e) => setEditExpense({...editExpense, title: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
-                  value={editExpense.date} onChange={(e) => setEditExpense({...editExpense, date: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-extrabold text-stone-700 uppercase">Cost Calculation Mode</span>
-                  <button
-                    type="button"
-                    onClick={() => setEditExpense({ ...editExpense, isDetailed: !editExpense.isDetailed })}
-                    className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-md transition"
-                  >
-                    {editExpense.isDetailed ? 'Switch to Lump Sum' : '📝 Add Itemized Breakdown'}
-                  </button>
-                </div>
-
-                {editExpense.isDetailed ? (
-                  <div className="space-y-2.5 pt-2 border-t border-stone-300">
-                    <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
-                    {editExpense.breakdown.map((item, idx) => (
-                      <div key={`e-bd-${idx}`} className="flex gap-2 items-center">
-                        <input
-                          type="text" placeholder="e.g. Freight Shipping" required
-                          value={item.name} onChange={(e) => handleEditBreakdownChange(idx, 'name', e.target.value)}
-                          className="flex-1 border border-stone-300 rounded-lg p-2 text-xs font-bold bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        />
-                        <input
-                          type="number" step="0.01" min="0" placeholder="₱0.00" required
-                          value={item.cost} onChange={(e) => handleEditBreakdownChange(idx, 'cost', e.target.value)}
-                          className="w-24 border border-stone-300 rounded-lg p-2 text-xs font-black text-rose-600 bg-white text-right focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        />
-                        {editExpense.breakdown.length > 1 && (
-                          <button type="button" onClick={() => removeEditBreakdownRow(idx)} className="text-rose-500 hover:text-rose-700 font-bold text-base px-1" title="Remove line">✖</button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button" onClick={addEditBreakdownRow}
-                      className="w-full bg-white hover:bg-stone-100 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-1 transition shadow-2xs"
-                    >
-                      + Add Another Cost Line
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-500 font-medium">Currently inputting a simple lump-sum total below. Switch to detailed mode if you want to edit itemized fees individually.</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">
-                  {editExpense.isDetailed ? 'Total Calculated Amount (₱)' : 'Total Cost Amount (₱)'}
-                </label>
-                <input 
-                  type="number" step="0.01" required 
-                  value={editExpense.amount} 
-                  onChange={(e) => !editExpense.isDetailed && setEditExpense({...editExpense, amount: e.target.value})}
-                  readOnly={editExpense.isDetailed}
-                  className={`w-full border border-stone-300 rounded-lg p-2.5 text-lg font-black text-rose-600 focus:outline-none ${
-                    editExpense.isDetailed ? 'bg-stone-200 cursor-not-allowed opacity-80' : 'focus:ring-2 focus:ring-amber-500 bg-[#f9f6f0]'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100 mt-4 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => handleDeleteExpense(editExpense.id)}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-extrabold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5"
-                >
-                  <span>🗑️</span> Delete
-                </button>
-
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowEditExpenseModal(false)} className="px-3 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* PRE-ORDER MODALS */}
-      {showPreOrderModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>📝</span> Add Pre-Order</h2>
-              <button onClick={() => setShowPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleCreatePreOrder} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
-                  <input 
-                    type="text" required placeholder="e.g. Dill Doe" 
-                    value={newPreOrder.customer_name || ''} onChange={(e) => setNewPreOrder({...newPreOrder, customer_name: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={newPreOrder.recipient_name || ''} onChange={(e) => setNewPreOrder({...newPreOrder, recipient_name: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={newPreOrder.contact_number || ''} onChange={(e) => setNewPreOrder({...newPreOrder, contact_number: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={newPreOrder.address || ''} onChange={(e) => setNewPreOrder({...newPreOrder, address: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={newPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : newPreOrder.price;
-                    const dp = newPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setNewPreOrder({
-                      ...newPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={newPreOrder.size || ''} 
-                    onChange={(e) => setNewPreOrder({...newPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!newPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`po-sz-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
-                        {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={newPreOrder.color || ''} onChange={(e) => setNewPreOrder({...newPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
-                    <input 
-                      type="number" step="0.01" min="0" placeholder="0.00" required
-                      value={newPreOrder.price} 
-                      onChange={(e) => {
-                        const p = e.target.value;
-                        const dp = newPreOrder.down_payment;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setNewPreOrder({...newPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Down Payment (₱)</label>
-                    <input 
-                      type="number" step="0.01" min="0" placeholder="0.00" required
-                      value={newPreOrder.down_payment} 
-                      onChange={(e) => {
-                        const dp = e.target.value;
-                        const p = newPreOrder.price;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setNewPreOrder({...newPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
-                  <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
-                  <span className={`text-xl font-black ${newPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
-                    ₱{newPreOrder.balance || '0.00'}
-                  </span>
-                </div>
-                
-                {newPreOrder.is_paid && (
-                  <div className="mt-2 text-center text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 py-1.5 rounded-lg border border-emerald-200">
-                    ✅ Fully Paid
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
-                <button type="button" onClick={() => setShowPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                <button type="submit" className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Pre-Order</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditPreOrderModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Pre-Order</h2>
-              <button onClick={() => setShowEditPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleUpdatePreOrder} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
-                  <input 
-                    type="text" required 
-                    value={editPreOrder.customer_name || ''} onChange={(e) => setEditPreOrder({...editPreOrder, customer_name: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Recipient Name</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={editPreOrder.recipient_name || ''} onChange={(e) => setEditPreOrder({...editPreOrder, recipient_name: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Contact Number</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={editPreOrder.contact_number || ''} onChange={(e) => setEditPreOrder({...editPreOrder, contact_number: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Delivery Address</label>
-                  <input 
-                    type="text" placeholder="Optional" 
-                    value={editPreOrder.address || ''} onChange={(e) => setEditPreOrder({...editPreOrder, address: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={editPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : editPreOrder.price;
-                    const dp = editPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setEditPreOrder({
-                      ...editPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`edit-po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={editPreOrder.size || ''} 
-                    onChange={(e) => setEditPreOrder({...editPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!editPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`edit-po-sz-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
-                    ))}
-                    {editPreOrder.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
-                      <option value={editPreOrder.size}>{String(editPreOrder.size)}</option>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={editPreOrder.color || ''} onChange={(e) => setEditPreOrder({...editPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
-                    <input 
-                      type="number" step="0.01" min="0" placeholder="0.00" required
-                      value={editPreOrder.price} 
-                      onChange={(e) => {
-                        const p = e.target.value;
-                        const dp = editPreOrder.down_payment;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setEditPreOrder({...editPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Down Payment (₱)</label>
-                    <input 
-                      type="number" step="0.01" min="0" placeholder="0.00" required
-                      value={editPreOrder.down_payment} 
-                      onChange={(e) => {
-                        const dp = e.target.value;
-                        const p = editPreOrder.price;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setEditPreOrder({...editPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
-                  <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
-                  <span className={`text-xl font-black ${editPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
-                    ₱{editPreOrder.balance || '0.00'}
-                  </span>
-                </div>
-                
-                {editPreOrder.is_paid && (
-                  <div className="mt-2 text-center text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 py-1.5 rounded-lg border border-emerald-200">
-                    ✅ Fully Paid
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
-                <button type="button" onClick={() => setShowEditPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
               </div>
             </form>
           </div>

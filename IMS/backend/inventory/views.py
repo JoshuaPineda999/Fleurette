@@ -30,6 +30,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
                 profit = garment.profit_per_piece * qty_sold
                 SaleLog.objects.create(
                     garment_name=garment.name,
+                    garment_id=garment.id,              # <--- ADD THIS
+                    batch_name=garment.batch_name,
                     size=size_label,
                     quantity_sold=qty_sold,
                     profit_earned=profit,

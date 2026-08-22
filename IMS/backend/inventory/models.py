@@ -47,6 +47,8 @@ class SaleLog(models.Model):
     size = models.CharField(max_length=5)
     quantity_sold = models.PositiveIntegerField(default=1)
     profit_earned = models.DecimalField(max_digits=10, decimal_places=2)
+    garment_id = models.IntegerField(blank=True, null=True)
+    batch_name = models.CharField(max_length=255, blank=True, null=True)
     sold_at = models.DateField(default=timezone.now)
     STATUS_CHOICES = [
     ('Pending', 'Pending'),
@@ -71,6 +73,8 @@ class PreOrder(models.Model):
     item_name = models.CharField(max_length=255)
     size = models.CharField(max_length=50)
     color = models.CharField(max_length=50)
+    garment_id = models.IntegerField(blank=True, null=True)
+    batch_name = models.CharField(max_length=255, blank=True, null=True)
     
     # NEW FIELDS:
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)

@@ -10,7 +10,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
-        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status']
+        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'garment_id', 'batch_name']
 
 class SizeStockSerializer(serializers.ModelSerializer):
     class Meta:
@@ -64,4 +64,4 @@ class GarmentSerializer(serializers.ModelSerializer):
 class PreOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = PreOrder
-        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number']
+        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number', 'garment_id', 'batch_name']
