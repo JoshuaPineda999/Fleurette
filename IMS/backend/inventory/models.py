@@ -71,7 +71,7 @@ class PreOrder(models.Model):
     item_name = models.CharField(max_length=255)
     size = models.CharField(max_length=50)
     color = models.CharField(max_length=50)
-    
+    items = models.JSONField(default=list, blank=True, null=True)
     # NEW FIELDS:
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     down_payment = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)

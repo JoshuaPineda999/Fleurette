@@ -64,4 +64,4 @@ class GarmentSerializer(serializers.ModelSerializer):
 class PreOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = PreOrder
-        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number']
+        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number', 'items']
