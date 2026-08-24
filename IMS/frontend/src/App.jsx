@@ -706,7 +706,10 @@ function AdminDashboard() {
         balance: newPreOrder.balance,
         is_paid: newPreOrder.is_paid,
         items: finalItems,
-        item_name: '', size: '', color: '' 
+        // Send a fallback explicitly to satisfy Django legacy field requirements
+        item_name: finalItems.length === 1 ? finalItems[0].item_name : "Multiple Styles",
+        size: finalItems.length === 1 ? finalItems[0].size : "Mixed",
+        color: finalItems.length === 1 ? (finalItems[0].color || 'N/A') : "Mixed" 
       };
       
       await axios.post(`${API_BASE}preorders/`, orderPayload);
@@ -810,7 +813,9 @@ function AdminDashboard() {
           balance: editPreOrder.balance,
           is_paid: editPreOrder.is_paid,
           items: finalUpdatedItems,
-          item_name: '', size: '', color: '' 
+          item_name: finalUpdatedItems.length === 1 ? finalUpdatedItems[0].item_name : "Multiple Styles",
+          size: finalUpdatedItems.length === 1 ? finalUpdatedItems[0].size : "Mixed",
+          color: finalUpdatedItems.length === 1 ? (finalUpdatedItems[0].color || 'N/A') : "Mixed" 
         };
 
         await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
@@ -1260,6 +1265,7 @@ function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Batch Tracker intentionally queries the unmerged Garments array to keep batch accounting separated visually */}
                   {(garments || [])
                     .filter(g => g && String(g.batch_name || 'Uncategorized') === String(selectedBatch))
                     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')))
@@ -1446,7 +1452,7 @@ function AdminDashboard() {
                       const currentStatus = String(log?.status || 'Pending');
                       return (
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(log?.date || 'N/A')}</td>
+                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
                         
                         <td className="p-4 font-black text-stone-900 text-base align-top">
                           {log?.isPreOrder ? (
@@ -1791,14 +1797,17 @@ function AdminDashboard() {
                 <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
                 <div className="space-y-2">
                   {(viewPreOrder.items && viewPreOrder.items.length > 0 ? viewPreOrder.items : [viewPreOrder]).map((it, i) => (
-                    <div key={i} className="border-b border-stone-100 pb-2 last:border-0 last:pb-0">
-                       <p className="font-black text-sm text-stone-900 leading-tight">{it.item_name || String(it.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
-                       <div className="flex gap-2 mt-1">
-                         <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Size: {it.size}</span>
-                         {it.color && it.color !== 'N/A' && (
-                           <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Color: {it.color}</span>
-                         )}
+                    <div key={i} className="border-b border-stone-100 pb-2 last:border-0 last:pb-0 flex justify-between items-center">
+                       <div>
+                         <p className="font-black text-sm text-stone-900 leading-tight">{it.item_name || String(it.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
+                         <div className="flex gap-2 mt-1">
+                           <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Size: {it.size}</span>
+                           {it.color && it.color !== 'N/A' && (
+                             <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Color: {it.color}</span>
+                           )}
+                         </div>
                        </div>
+                       <span className="text-sm font-black text-pink-600">₱{parseFloat(it.price || 0).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -1822,7 +1831,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* ADD PRE-ORDER MODAL (MULTI-ITEM)           */}
+      {/* ADD PRE-ORDER MODAL                        */}
       {/* ========================================== */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -2017,7 +2026,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* EDIT PRE-ORDER MODAL (MULTI-ITEM)          */}
+      {/* EDIT PRE-ORDER MODAL                       */}
       {/* ========================================== */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
