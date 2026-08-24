@@ -199,7 +199,6 @@ function CustomerView() {
           </div>
         </div>
 
-        {/* CUSTOMER CATEGORY TABS */}
         {!loading && categories.length > 1 && (
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {categories.map(cat => (
@@ -364,7 +363,7 @@ function AdminDashboard() {
   // State for multiple items in Pre-order
   const [newPreOrder, setNewPreOrder] = useState({
     customer_name: '', recipient_name: '', contact_number: '', address: '',
-    items: [], // Array of items
+    items: [],
     price: '', down_payment: '', is_paid: false, balance: ''
   });
   const [poItemInput, setPoItemInput] = useState({ item_name: '', size: '', color: '', price: '' });
@@ -596,7 +595,7 @@ function AdminDashboard() {
     const setOrderState = isEdit ? setEditPreOrder : setNewPreOrder;
     const setInputState = isEdit ? setEditPoItemInput : setPoItemInput;
 
-    if (!inputState.item_name || !inputState.size) return alert("Please select a style and size.");
+    if (!inputState.item_name || !inputState.size) return;
 
     const newItem = { ...inputState };
     const updatedItems = [...(orderState.items || []), newItem];
@@ -617,6 +616,22 @@ function AdminDashboard() {
     });
     
     setInputState({ item_name: '', size: '', color: '', price: '' });
+  };
+
+  const handleConfirmPoItems = (isEdit = false) => {
+    const currentInput = isEdit ? editPoItemInput : poItemInput;
+    const currentOrder = isEdit ? editPreOrder : newPreOrder;
+
+    if (currentInput.item_name && currentInput.size) {
+      handleAddPoItem(isEdit);
+      if (isEdit) setShowEditPoItemForm(false);
+      else setShowAddPoItemForm(false);
+    } else if (currentOrder.items && currentOrder.items.length > 0) {
+      if (isEdit) setShowEditPoItemForm(false);
+      else setShowAddPoItemForm(false);
+    } else {
+      alert("Please add at least one style to the order before confirming.");
+    }
   };
 
   const handleRemovePoItem = (index, isEdit = false) => {
@@ -908,6 +923,9 @@ function AdminDashboard() {
   };
 
   const mergedGarmentsList = mergeGarments(garments);
+  // PRE-SORT MERGED LIST ALPHABETICALLY ONCE
+  const sortedMergedGarmentsList = [...mergedGarmentsList].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
@@ -925,6 +943,7 @@ function AdminDashboard() {
     return { 
       id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
       date: order?.order_date ? String(order.order_date) : '', 
+      itemsArray: safeItems,
       name: safeItems.map(i => i.item_name).join(', '),
       size: safeItems.map(i => i.size).join(', '),
       customer_name: order?.customer_name ? String(order.customer_name) : 'Unnamed',
@@ -949,6 +968,7 @@ function AdminDashboard() {
 
     return {
       id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '',
+      itemsArray: [],
       name: log?.garment_name ? String(log.garment_name) : '',
       customer_name: '', recipient_name: '', contact_number: '', address: '',
       item_name: log?.garment_name ? String(log.garment_name) : '', 
@@ -968,9 +988,8 @@ function AdminDashboard() {
   if (analyticsFilterBatch !== 'All') {
     const validGarmentNames = garments.filter(g => String(g?.batch_name) === analyticsFilterBatch).map(g => String(g?.name));
     analyticsSales = unifiedHistory.filter(log => {
-        if (log.name && log.name.includes(',')) {
-            const splitNames = log.name.split(',').map(n => n.trim());
-            return splitNames.some(sn => validGarmentNames.includes(sn));
+        if (log.isPreOrder && log.itemsArray && log.itemsArray.length > 0) {
+            return log.itemsArray.some(it => validGarmentNames.includes(it.item_name));
         }
         return validGarmentNames.includes(log.name);
     });
@@ -1097,6 +1116,9 @@ function AdminDashboard() {
         </div>
       </aside>
 
+      {/* ========================================== */}
+      {/* 2. MAIN WORKSPACE                          */}
+      {/* ========================================== */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto min-w-0">
         
         {/* TAB 1: PRODUCT GALLERY VIEW */}
@@ -1424,13 +1446,23 @@ function AdminDashboard() {
                       const currentStatus = String(log?.status || 'Pending');
                       return (
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(log?.date || 'N/A')}</td>
                         
-                        <td className="p-4 font-black text-stone-900 text-base">
+                        <td className="p-4 font-black text-stone-900 text-base align-top">
                           {log?.isPreOrder ? (
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
-                              <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
-                              <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
+                              <span className="text-pink-600 group-hover:text-pink-800 transition mb-1">📝 Pre-Order</span>
+                              
+                              {/* Display Individual Items */}
+                              {log.itemsArray && log.itemsArray.length > 0 ? (
+                                log.itemsArray.map((it, i) => (
+                                  <span key={`lo-${i}`} className="text-xs text-stone-800 font-bold block leading-snug">• {it.item_name}</span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-stone-800 font-bold block leading-snug">• {String(log?.name || '')}</span>
+                              )}
+
+                              <span className="text-[11px] font-bold text-stone-500 mt-1.5 flex items-center gap-2">
                                 <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
                                 {!!(String(log?.recipient_name || '').trim() || String(log?.contact_number || '').trim() || String(log?.address || '').trim()) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
@@ -1444,15 +1476,25 @@ function AdminDashboard() {
                           )}
                         </td>
 
-                        <td className="p-4 text-center">
-                          <span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">
-                             {String(log?.size || '').includes(',') ? 'Mixed Sizes' : String(log?.size || '')}
-                          </span>
+                        <td className="p-4 text-center align-top">
+                          {log?.isPreOrder && log.itemsArray && log.itemsArray.length > 0 ? (
+                            <div className="flex flex-col gap-1 items-center mt-6">
+                              {log.itemsArray.map((it, i) => (
+                                <span key={`sz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
+                                  {it.size}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">
+                               {String(log?.size || '').includes(',') ? 'Mixed Sizes' : String(log?.size || '')}
+                            </span>
+                          )}
                         </td>
-                        <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
-                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
+                        <td className="p-4 text-center font-black text-stone-900 text-base align-top">{log?.qty || 0} pcs</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg align-top">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
                         
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           <select 
                             value={currentStatus} 
                             onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
@@ -1468,7 +1510,7 @@ function AdminDashboard() {
                           </select>
                         </td>
 
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           {log?.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
                           ) : (
@@ -1615,7 +1657,7 @@ function AdminDashboard() {
               <button 
                 onClick={() => {
                   setShowPreOrderModal(true);
-                  setShowAddPoItemForm(true); // Ensure form is open when modal opens
+                  setShowAddPoItemForm(true); 
                 }} 
                 className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
               >
@@ -1654,7 +1696,7 @@ function AdminDashboard() {
                       
                       const orderItems = order.items && order.items.length > 0 
                         ? order.items 
-                        : [{ item_name: order.item_name, size: order.size, color: order.color }];
+                        : [{ item_name: order.item_name, size: order.size, color: order.color, price: order.price }];
                       
                       return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
@@ -1672,9 +1714,12 @@ function AdminDashboard() {
                         <td className="p-4 align-top">
                           <div className="space-y-1.5">
                             {orderItems.map((it, idx) => (
-                               <div key={idx} className="bg-stone-50 border border-stone-100 p-2 rounded-lg">
-                                 <div className="font-bold text-stone-800 text-xs leading-none">{it.item_name}</div>
-                                 <div className="text-[10px] font-bold text-stone-500 mt-1">Size: {it.size} {it.color && it.color !== 'N/A' ? `| ${it.color}` : ''}</div>
+                               <div key={idx} className="bg-stone-50 border border-stone-100 p-2 rounded-lg flex justify-between items-center gap-4">
+                                 <div>
+                                   <div className="font-bold text-stone-800 text-xs leading-none">{it.item_name}</div>
+                                   <div className="text-[10px] font-bold text-stone-500 mt-1">Size: {it.size} {it.color && it.color !== 'N/A' ? `| ${it.color}` : ''}</div>
+                                 </div>
+                                 <div className="text-pink-600 font-black text-[11px]">₱{parseFloat(it.price || 0).toFixed(2)}</div>
                                </div>
                             ))}
                           </div>
@@ -1777,7 +1822,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* ADD PRE-ORDER MODAL                        */}
+      {/* ADD PRE-ORDER MODAL (MULTI-ITEM)           */}
       {/* ========================================== */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1840,7 +1885,7 @@ function AdminDashboard() {
                           <div className="text-[10px] font-bold text-stone-400">Size: {item.size} {item.color && item.color !== 'N/A' ? `| ${item.color}` : ''}</div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-pink-600 font-black text-sm">₱{item.price}</span>
+                          <span className="text-pink-600 font-black text-sm">₱{parseFloat(item.price || 0).toFixed(2)}</span>
                           <button type="button" onClick={() => handleRemovePoItem(idx, false)} className="text-rose-500 hover:text-rose-700 font-bold" title="Remove item">✖</button>
                         </div>
                       </div>
@@ -1862,7 +1907,7 @@ function AdminDashboard() {
                         className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                       >
                         <option value="" disabled>-- Select a Style --</option>
-                        {(mergedGarmentsList || []).map(g => (
+                        {sortedMergedGarmentsList.map(g => (
                           <option key={`opt-add-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                         ))}
                       </select>
@@ -1897,14 +1942,11 @@ function AdminDashboard() {
                     
                     <div className="flex gap-2 mt-2">
                       <button type="button" onClick={() => handleAddPoItem(false)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
-                        + Add Style
+                        + Add Style to Order
                       </button>
                       <button 
                         type="button" 
-                        onClick={() => {
-                          if (newPreOrder.items.length === 0) return alert("Please add at least one style to the order before confirming.");
-                          setShowAddPoItemForm(false);
-                        }} 
+                        onClick={() => handleConfirmPoItems(false)} 
                         className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
                       >
                         Confirm
@@ -1975,7 +2017,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* EDIT PRE-ORDER MODAL                       */}
+      {/* EDIT PRE-ORDER MODAL (MULTI-ITEM)          */}
       {/* ========================================== */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -2037,7 +2079,7 @@ function AdminDashboard() {
                           <div className="text-[10px] font-bold text-stone-400">Size: {item.size} {item.color && item.color !== 'N/A' ? `| ${item.color}` : ''}</div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-amber-600 font-black text-sm">₱{item.price}</span>
+                          <span className="text-amber-600 font-black text-sm">₱{parseFloat(item.price || 0).toFixed(2)}</span>
                           <button type="button" onClick={() => handleRemovePoItem(idx, true)} className="text-rose-500 hover:text-rose-700 font-bold" title="Remove item">✖</button>
                         </div>
                       </div>
@@ -2058,7 +2100,7 @@ function AdminDashboard() {
                         className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                       >
                         <option value="" disabled>-- Select a Style --</option>
-                        {(mergedGarmentsList || []).map(g => (
+                        {sortedMergedGarmentsList.map(g => (
                           <option key={`opt-edit-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                         ))}
                       </select>
@@ -2093,14 +2135,11 @@ function AdminDashboard() {
                     
                     <div className="flex gap-2 mt-2">
                       <button type="button" onClick={() => handleAddPoItem(true)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
-                        + Add Style
+                        + Add Style to Order
                       </button>
                       <button 
                         type="button" 
-                        onClick={() => {
-                          if (editPreOrder.items.length === 0) return alert("Please add at least one style to the order before confirming.");
-                          setShowEditPoItemForm(false);
-                        }} 
+                        onClick={() => handleConfirmPoItems(true)} 
                         className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
                       >
                         Confirm
