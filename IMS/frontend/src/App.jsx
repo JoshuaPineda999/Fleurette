@@ -199,6 +199,7 @@ function CustomerView() {
           </div>
         </div>
 
+        {/* CUSTOMER CATEGORY TABS */}
         {!loading && categories.length > 1 && (
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {categories.map(cat => (
@@ -331,8 +332,12 @@ function AdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
+  const [showAddPoItemForm, setShowAddPoItemForm] = useState(true);
+
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
+  const [showEditPoItemForm, setShowEditPoItemForm] = useState(false);
 
   const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
@@ -686,7 +691,6 @@ function AdminDashboard() {
         balance: newPreOrder.balance,
         is_paid: newPreOrder.is_paid,
         items: finalItems,
-        // Legacy fallbacks explicitly blanked for clean db
         item_name: '', size: '', color: '' 
       };
       
@@ -702,7 +706,6 @@ function AdminDashboard() {
   };
 
   const openEditPreOrderModal = (item) => {
-    // If it's a legacy flat record, wrap it in items array for uniform editing
     const hydratedItems = item.items && item.items.length > 0 
       ? item.items 
       : [{ item_name: item.item_name, size: item.size, color: item.color, price: item.price, garment_id: item.garment_id, batch_name: item.batch_name }];
@@ -720,6 +723,7 @@ function AdminDashboard() {
       balance: item.balance || '' 
     });
     setEditPoItemInput({ item_name: '', size: '', color: '', price: '' });
+    setShowEditPoItemForm(false);
     setShowEditPreOrderModal(true);
   };
 
@@ -909,12 +913,10 @@ function AdminDashboard() {
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
-    // If order has a single legacy flat item, fake it array to easily merge logic
     const safeItems = order.items && order.items.length > 0 
       ? order.items 
       : [{ item_name: order.item_name, size: order.size }];
 
-    // Strip out related Sales Ledger logs safely
     safeItems.forEach(si => {
         const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === si.item_name && s.size === si.size);
         if (matchIndex !== -1) localSalesHistory.splice(matchIndex, 1);
@@ -923,16 +925,12 @@ function AdminDashboard() {
     return { 
       id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
       date: order?.order_date ? String(order.order_date) : '', 
-      
-      // Merge multiple items visually for the Ledger Table
       name: safeItems.map(i => i.item_name).join(', '),
       size: safeItems.map(i => i.size).join(', '),
-      
       customer_name: order?.customer_name ? String(order.customer_name) : 'Unnamed',
       recipient_name: order?.recipient_name ? String(order.recipient_name) : '',
       contact_number: order?.contact_number ? String(order.contact_number) : '',
       address: order?.address ? String(order.address) : '',
-      
       qty: safeItems.length, 
       price: parseFloat(order?.price) || 0,
       down_payment: parseFloat(order?.down_payment) || 0,
@@ -970,7 +968,6 @@ function AdminDashboard() {
   if (analyticsFilterBatch !== 'All') {
     const validGarmentNames = garments.filter(g => String(g?.batch_name) === analyticsFilterBatch).map(g => String(g?.name));
     analyticsSales = unifiedHistory.filter(log => {
-        // Safe check for multiple items containing the batch name
         if (log.name && log.name.includes(',')) {
             const splitNames = log.name.split(',').map(n => n.trim());
             return splitNames.some(sn => validGarmentNames.includes(sn));
@@ -1100,9 +1097,6 @@ function AdminDashboard() {
         </div>
       </aside>
 
-      {/* ========================================== */}
-      {/* 2. MAIN WORKSPACE                          */}
-      {/* ========================================== */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto min-w-0">
         
         {/* TAB 1: PRODUCT GALLERY VIEW */}
@@ -1619,7 +1613,10 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Track custom reservations, down payments, and remaining balances</p>
               </div>
               <button 
-                onClick={() => setShowPreOrderModal(true)} 
+                onClick={() => {
+                  setShowPreOrderModal(true);
+                  setShowAddPoItemForm(true); // Ensure form is open when modal opens
+                }} 
                 className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
               >
                 <span className="text-lg leading-none">+</span> Add Pre-Order
@@ -1637,7 +1634,7 @@ function AdminDashboard() {
                   <span className="text-5xl block mb-3">📝</span>
                   <h4 className="text-base font-bold text-stone-800 mb-1">No Pre-orders Found</h4>
                   <p className="text-stone-500 text-sm mb-6">You currently have no active pre-orders or reservations. Click below to add a new customer order.</p>
-                  <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
+                  <button onClick={() => { setShowPreOrderModal(true); setShowAddPoItemForm(true); }} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
@@ -1709,7 +1706,7 @@ function AdminDashboard() {
       </main>
 
       {/* ========================================== */}
-      {/* ZOOM PRE-ORDER MODAL (NEW)                 */}
+      {/* ZOOM PRE-ORDER MODAL                       */}
       {/* ========================================== */}
       {viewPreOrder && (
         <div onClick={() => setViewPreOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1780,7 +1777,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* ADD PRE-ORDER MODAL (MULTI-ITEM)           */}
+      {/* ADD PRE-ORDER MODAL                        */}
       {/* ========================================== */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1851,56 +1848,74 @@ function AdminDashboard() {
                   </div>
                 )}
 
-                {/* INLINE ADD FORM */}
-                <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
-                    <select 
-                      value={poItemInput.item_name} 
-                      onChange={(e) => {
-                        const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                        setPoItemInput({ ...poItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                    >
-                      <option value="" disabled>-- Select a Style --</option>
-                      {(mergedGarmentsList || []).map(g => (
-                        <option key={`opt-add-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
+                {/* INLINE ADD FORM / CONFIRM TOGGLE */}
+                {showAddPoItemForm ? (
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
                     <div>
-                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
                       <select 
-                        value={poItemInput.size} 
-                        onChange={(e) => setPoItemInput({...poItemInput, size: e.target.value})}
+                        value={poItemInput.item_name} 
+                        onChange={(e) => {
+                          const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
+                          setPoItemInput({ ...poItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
+                        }}
                         className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        disabled={!poItemInput.item_name}
                       >
-                        <option value="" disabled>-- Size --</option>
-                        {poItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === poItemInput.item_name)?.sizes).map(s => (
-                          <option key={`sz-add-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
-                            {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
-                          </option>
+                        <option value="" disabled>-- Select a Style --</option>
+                        {(mergedGarmentsList || []).map(g => (
+                          <option key={`opt-add-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
-                      <input 
-                        type="text" placeholder="Optional" 
-                        value={poItemInput.color} onChange={(e) => setPoItemInput({...poItemInput, color: e.target.value})}
-                        className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                      />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                        <select 
+                          value={poItemInput.size} 
+                          onChange={(e) => setPoItemInput({...poItemInput, size: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                          disabled={!poItemInput.item_name}
+                        >
+                          <option value="" disabled>-- Size --</option>
+                          {poItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === poItemInput.item_name)?.sizes).map(s => (
+                            <option key={`sz-add-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
+                              {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
+                        <input 
+                          type="text" placeholder="Optional" 
+                          value={poItemInput.color} onChange={(e) => setPoItemInput({...poItemInput, color: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => handleAddPoItem(false)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
+                        + Add Style
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          if (newPreOrder.items.length === 0) return alert("Please add at least one style to the order before confirming.");
+                          setShowAddPoItemForm(false);
+                        }} 
+                        className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
+                      >
+                        Confirm
+                      </button>
                     </div>
                   </div>
-                  
-                  <button type="button" onClick={() => handleAddPoItem(false)} className="w-full bg-[#f9f6f0] hover:bg-stone-200 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-2 transition">
-                    + Add Style to Order
+                ) : (
+                  <button type="button" onClick={() => setShowAddPoItemForm(true)} className="w-full bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2.5 rounded-lg border border-dashed border-stone-300 transition mt-2">
+                    + Add Another Style
                   </button>
-                </div>
+                )}
               </div>
 
               {/* PAYMENT SECTION */}
@@ -1960,7 +1975,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* EDIT PRE-ORDER MODAL (MULTI-ITEM)          */}
+      {/* EDIT PRE-ORDER MODAL                       */}
       {/* ========================================== */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -2030,55 +2045,73 @@ function AdminDashboard() {
                   </div>
                 )}
 
-                <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
-                    <select 
-                      value={editPoItemInput.item_name} 
-                      onChange={(e) => {
-                        const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                        setEditPoItemInput({ ...editPoItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
-                      }}
-                      className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                    >
-                      <option value="" disabled>-- Select a Style --</option>
-                      {(mergedGarmentsList || []).map(g => (
-                        <option key={`opt-edit-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
+                {showEditPoItemForm ? (
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
                     <div>
-                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
                       <select 
-                        value={editPoItemInput.size} 
-                        onChange={(e) => setEditPoItemInput({...editPoItemInput, size: e.target.value})}
+                        value={editPoItemInput.item_name} 
+                        onChange={(e) => {
+                          const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
+                          setEditPoItemInput({ ...editPoItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
+                        }}
                         className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                        disabled={!editPoItemInput.item_name}
                       >
-                        <option value="" disabled>-- Size --</option>
-                        {editPoItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPoItemInput.item_name)?.sizes).map(s => (
-                          <option key={`sz-edit-${s?.size}`} value={s?.size}>
-                            {String(s?.size)}
-                          </option>
+                        <option value="" disabled>-- Select a Style --</option>
+                        {(mergedGarmentsList || []).map(g => (
+                          <option key={`opt-edit-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
-                      <input 
-                        type="text" placeholder="Optional" 
-                        value={editPoItemInput.color} onChange={(e) => setEditPoItemInput({...editPoItemInput, color: e.target.value})}
-                        className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                      />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                        <select 
+                          value={editPoItemInput.size} 
+                          onChange={(e) => setEditPoItemInput({...editPoItemInput, size: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                          disabled={!editPoItemInput.item_name}
+                        >
+                          <option value="" disabled>-- Size --</option>
+                          {editPoItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPoItemInput.item_name)?.sizes).map(s => (
+                            <option key={`sz-edit-${s?.size}`} value={s?.size}>
+                              {String(s?.size)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
+                        <input 
+                          type="text" placeholder="Optional" 
+                          value={editPoItemInput.color} onChange={(e) => setEditPoItemInput({...editPoItemInput, color: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => handleAddPoItem(true)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
+                        + Add Style
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          if (editPreOrder.items.length === 0) return alert("Please add at least one style to the order before confirming.");
+                          setShowEditPoItemForm(false);
+                        }} 
+                        className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
+                      >
+                        Confirm
+                      </button>
                     </div>
                   </div>
-                  
-                  <button type="button" onClick={() => handleAddPoItem(true)} className="w-full bg-[#f9f6f0] hover:bg-stone-200 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-2 transition">
-                    + Add Style to Order
+                ) : (
+                  <button type="button" onClick={() => setShowEditPoItemForm(true)} className="w-full bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2.5 rounded-lg border border-dashed border-stone-300 transition mt-2">
+                    + Add Another Style
                   </button>
-                </div>
+                )}
               </div>
 
               <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
