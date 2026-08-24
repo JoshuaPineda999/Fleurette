@@ -27,7 +27,6 @@ const formatImageUrl = (url) => {
   
   url = url.trim();
   
-  // Force Cloudinary to load securely over HTTPS to prevent missing images
   if (url.includes('cloudinary.com')) {
     const pureUrl = url.replace(/^https?:\/\//, '').replace(/^\/\//, '');
     return `https://${pureUrl}`;
@@ -83,7 +82,6 @@ const mergeGarments = (garmentsList) => {
       };
     } else {
       mergedMap[key].underlying_garments.push(g);
-      // Fallback image if current has none
       if (!mergedMap[key].image && g.image) {
         mergedMap[key].image = g.image;
       }
@@ -102,15 +100,11 @@ const mergeGarments = (garmentsList) => {
       size: size,
       quantity: m.merged_sizes[size]
     }));
-    // Sort oldest first for perfect FIFO operations
     m.underlying_garments.sort((a, b) => a.id - b.id);
     return m;
   });
 };
 
-// ==========================================
-// ERROR BOUNDARY (PREVENTS WHITE SCREENS)
-// ==========================================
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -131,10 +125,7 @@ class ErrorBoundary extends React.Component {
           <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200 break-all overflow-hidden">
             {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-stone-900 hover:bg-black text-white font-black px-6 py-3 rounded-xl shadow transition"
-          >
+          <button onClick={() => window.location.reload()} className="bg-stone-900 hover:bg-black text-white font-black px-6 py-3 rounded-xl shadow transition">
             Reload Application
           </button>
         </div>
@@ -144,9 +135,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// ==========================================
-// 1. CUSTOMER CATALOG VIEW (DEFAULT /)
-// ==========================================
 function CustomerView() {
   const [garments, setGarments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,17 +199,10 @@ function CustomerView() {
           </div>
         </div>
 
-        {/* CUSTOMER CATEGORY TABS */}
         {!loading && categories.length > 1 && (
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {categories.map(cat => (
-              <button
-                key={String(cat)}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
-                  activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                }`}
-              >
+              <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100' }`}>
                 {String(cat)}
               </button>
             ))}
@@ -233,23 +214,14 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {filteredGarments.map(item => (
-              <div 
-                key={`cust-${item?.id}`} 
-                onClick={() => { if (item?.image) setZoomedImage(item.image); }}
-                className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300"
-              >
+              <div key={`cust-${item?.id}`} onClick={() => { if (item?.image) setZoomedImage(item.image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
                 {item?.total_pieces === 0 && (
                   <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
                 )}
                 <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
                   {item?.image ? (
                     <>
-                      <img 
-                        src={item.image} 
-                        alt={item.name} 
-                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                        className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} 
-                      />
+                      <img src={item.image} alt={item.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />
                       <span className="text-6xl text-stone-300 hidden">👗</span>
                     </>
                   ) : (
@@ -259,11 +231,7 @@ function CustomerView() {
                 <div className="p-5 flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{String(item?.name || 'Unnamed')}</h3>
-                    {item?.color && item.color !== 'N/A' && (
-                      <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                        {String(item.color)}
-                      </span>
-                    )}
+                    {item?.color && item.color !== 'N/A' && (<span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">{String(item.color)}</span>)}
                   </div>
                   <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
                   <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
@@ -272,9 +240,7 @@ function CustomerView() {
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
                     <div className="flex flex-wrap gap-2">
                       {parseSafeArray(item?.sizes).map(s => (
-                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
-                          {String(s?.size || 'N/A')}
-                        </span>
+                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{String(s?.size || 'N/A')}</span>
                       ))}
                     </div>
                   </div>
@@ -297,9 +263,6 @@ function CustomerView() {
   );
 }
 
-// ==========================================
-// 2. LOGIN SCREEN (SECURED VIA .ENV & SHOW/HIDE)
-// ==========================================
 function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -327,27 +290,11 @@ function LoginScreen() {
         
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
-            <input 
-              type={showPassword ? "text" : "password"} 
-              placeholder="Password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required
-              className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition"
-              title={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? '👁️' : '👁️‍🗨️'}
-            </button>
+            <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"/>
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition" title={showPassword ? "Hide password" : "Show password"}>{showPassword ? '👁️' : '👁️‍🗨️'}</button>
           </div>
           {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
-          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
-            Login to Workspace
-          </button>
+          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">Login to Workspace</button>
         </form>
         <div className="mt-6 pt-6 border-t border-stone-100">
           <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
@@ -357,9 +304,6 @@ function LoginScreen() {
   );
 }
 
-// ==========================================
-// 3. ADMIN DASHBOARD
-// ==========================================
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -387,65 +331,55 @@ function AdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
+  const [showAddPoItemForm, setShowAddPoItemForm] = useState(true);
+
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
+  const [showEditPoItemForm, setShowEditPoItemForm] = useState(false);
 
   const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
 
-  const [productModal, setProductModal] = useState({
-    show: false, garment: null, mode: 'sell', size: 'M', quantity: 1
-  });
-
+  const [productModal, setProductModal] = useState({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '',
-    styles: [
-      { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
-    ]
+    batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
-    id: null, batch_name: '', name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, previewUrl: null,
-    sizes: { S: 0, M: 0, L: 0, XL: 0 }
+    id: null, batch_name: '', name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, previewUrl: null, sizes: { S: 0, M: 0, L: 0, XL: 0 }
   });
 
   const [newExpense, setNewExpense] = useState({
-    title: '', amount: '', date: getLocalDate(),
-    isDetailed: false, breakdown: [{ name: '', cost: '' }]
+    title: '', amount: '', date: getLocalDate(), isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
   const [editExpense, setEditExpense] = useState({
-    id: null, title: '', amount: '', date: '',
-    isDetailed: false, breakdown: [{ name: '', cost: '' }]
+    id: null, title: '', amount: '', date: '', isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
+  // State for multiple items in Pre-order
   const [newPreOrder, setNewPreOrder] = useState({
-    customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    customer_name: '', recipient_name: '', contact_number: '', address: '',
+    items: [],
+    price: '', down_payment: '', is_paid: false, balance: ''
   });
+  const [poItemInput, setPoItemInput] = useState({ item_name: '', size: '', color: '', price: '' });
 
   const [editPreOrder, setEditPreOrder] = useState({
-    id: null, customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    id: null, customer_name: '', recipient_name: '', contact_number: '', address: '',
+    items: [],
+    price: '', down_payment: '', is_paid: false, balance: ''
   });
+  const [editPoItemInput, setEditPoItemInput] = useState({ item_name: '', size: '', color: '', price: '' });
 
-  const showToast = (message) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('isAdmin');
-    navigate('/');
-  };
+  const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
+  const handleLogout = () => { localStorage.removeItem('isAdmin'); navigate('/'); };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({
-      batch_name: prefillBatchName,
-      styles: [
-        { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
-      ]
-    });
+    setNewBatch({ batch_name: prefillBatchName, styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -455,26 +389,17 @@ function AdminDashboard() {
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
-      const formattedGarments = (gData || []).map(g => ({
-        ...g,
-        sizes: parseSafeArray(g?.sizes),
-        image: formatImageUrl(g?.image)
-      }));
+      const formattedGarments = (gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) }));
       setGarments(formattedGarments);
 
-      // Re-hydrate the Product Modal specifically looking out for merged updates
       if (productModal.show && productModal.garment) {
         const mergedList = mergeGarments(formattedGarments);
-        
         let freshCurrent;
         if (productModal.garment.underlying_garments) {
-          // It was a merged garment
           freshCurrent = mergedList.find(g => g.name === productModal.garment.name && g.color === productModal.garment.color);
         } else {
-          // It was an individual garment from batch tracker
           freshCurrent = formattedGarments.find(g => g?.id === productModal.garment.id);
         }
-        
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
       }
 
@@ -484,40 +409,13 @@ function AdminDashboard() {
       if (!isBackgroundRefresh) setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
-      if (!isBackgroundRefresh) {
-        setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.');
-        setLoading(false);
-      }
+      if (!isBackgroundRefresh) { setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.'); setLoading(false); }
     }
   };
 
-  const fetchSalesHistory = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}sales/history/`);
-      setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || []));
-    } catch (error) {
-      console.error("Failed to load Sales History.", error);
-    }
-  };
-
-  const fetchExpenses = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}expenses/`);
-      const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-      setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) })));
-    } catch (error) {
-      console.error("Failed to load Expenses.", error);
-    }
-  };
-
-  const fetchPreOrders = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}preorders/`);
-      setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || []));
-    } catch (error) {
-      console.error("Failed to load Pre-orders.", error);
-    }
-  };
+  const fetchSalesHistory = async () => { try { const res = await axios.get(`${API_BASE}sales/history/`); setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
+  const fetchExpenses = async () => { try { const res = await axios.get(`${API_BASE}expenses/`); const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []); setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) }))); } catch (error) {} };
+  const fetchPreOrders = async () => { try { const res = await axios.get(`${API_BASE}preorders/`); setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -527,9 +425,6 @@ function AdminDashboard() {
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
-  // -------------------------------------------------------------
-  // FIFO LOGIC APPLIED TO RECORDING SALES
-  // -------------------------------------------------------------
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -537,123 +432,66 @@ function AdminDashboard() {
       let remainingToSell = parseInt(productModal.quantity);
 
       if (isMergedGarment) {
-        // FIFO ROUTING: Sort by ascending ID so older batches are drained first
         const sortedGarments = [...productModal.garment.underlying_garments].sort((a, b) => a.id - b.id);
-        
         for (const g of sortedGarments) {
-          if (remainingToSell <= 0) break; // Sale fulfilled
-          
+          if (remainingToSell <= 0) break;
           const sizeData = parseSafeArray(g.sizes).find(s => s.size === productModal.size);
           const availableStock = sizeData ? parseInt(sizeData.quantity) : 0;
-          
           if (availableStock > 0) {
             const deductAmount = Math.min(availableStock, remainingToSell);
-            await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-              size: productModal.size, change: -deductAmount, is_sale: true
-            });
+            await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { size: productModal.size, change: -deductAmount, is_sale: true });
             remainingToSell -= deductAmount;
           }
         }
       } else {
-        // Standard unmerged sale (from Batch Tracker)
-        await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
-          size: productModal.size, change: -remainingToSell, is_sale: true
-        });
+        await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, { size: productModal.size, change: -remainingToSell, is_sale: true });
       }
 
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${productModal.garment.name} (${productModal.size})`);
       await fetchData(true);
-    } catch (error) {
-      alert('Could not complete sale. Ensure sufficient stock across your batches.');
-    }
+    } catch (error) { alert('Could not complete sale. Ensure sufficient stock across your batches.'); }
   };
 
   const handleRestockSubmit = async (e) => {
     e.preventDefault();
     try {
       const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
-      
-      // LIFO ROUTING: Restock is mapped to the newest batch
-      const targetGarmentId = isMergedGarment 
-        ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id 
-        : productModal.garment.id;
-
-      await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
-        size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
-      });
-      
+      const targetGarmentId = isMergedGarment ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id : productModal.garment.id;
+      await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false });
       showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${productModal.garment.name} (${productModal.size})`);
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       await fetchData(true);
-    } catch (error) {
-      alert('Could not restock item.');
-    }
+    } catch (error) { alert('Could not restock item.'); }
   };
 
-  const handleBatchStyleChange = (index, field, value) => {
-    const updatedStyles = [...newBatch.styles];
-    updatedStyles[index][field] = value;
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
-
-  const handleBatchSizeChange = (index, size, value) => {
-    const updatedStyles = [...newBatch.styles];
-    updatedStyles[index].sizes[size] = value;
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
-
-  const addStyleToBatch = () => {
-    setNewBatch({
-      ...newBatch,
-      styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
-    });
-  };
-
-  const removeStyleFromBatch = (index) => {
-    const updatedStyles = newBatch.styles.filter((_, i) => i !== index);
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
+  const handleBatchStyleChange = (index, field, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index][field] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+  const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
     try {
       for (const style of newBatch.styles) {
         if (!style.name) continue; 
-        
         const batchName = newBatch.batch_name || 'Uncategorized';
-        
-        const existingGarment = (garments || []).find(g => 
-          String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
-          String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim()
-        );
-
+        const existingGarment = (garments || []).find(g => String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() && String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim());
         const formData = new FormData();
         formData.append('batch_name', batchName);
         formData.append('name', style.name.trim());
-
         if (existingGarment) {
           const mergedSizes = { S: 0, M: 0, L: 0, XL: 0 };
           const currentSizeMap = {};
-          
           parseSafeArray(existingGarment.sizes).forEach(s => { currentSizeMap[s?.size] = s?.quantity; });
-          
-          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => {
-            mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
-          });
-
+          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => { mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0); });
           formData.append('category', style.category || existingGarment.category || 'Uncategorized');
           formData.append('color', style.color || existingGarment.color || 'N/A');
           formData.append('cost_price', style.cost_price || existingGarment.cost_price);
           formData.append('selling_price', style.selling_price || existingGarment.selling_price);
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
-          
           if (style.image) formData.append('image', style.image);
-
-          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
-
+          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           formData.append('category', style.category || 'Uncategorized');
           formData.append('color', style.color || 'N/A');
@@ -661,39 +499,21 @@ function AdminDashboard() {
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
           if (style.image) formData.append('image', style.image);
-
-          await axios.post(`${API_BASE}garments/`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
+          await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         }
       }
-
       setShowAddBatchModal(false);
-      setNewBatch({
-        batch_name: '',
-        styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
-      });
-      
+      setNewBatch({ batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
-    } catch (error) {
-      alert('Error uploading batch. Ensure the backend database matches the frontend changes.');
-    }
+    } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
   };
 
-  const openRenameBatchModal = (oldName) => {
-    setBatchRenameState({ oldName, newName: oldName });
-    setShowRenameBatchModal(true);
-  };
-
+  const openRenameBatchModal = (oldName) => { setBatchRenameState({ oldName, newName: oldName }); setShowRenameBatchModal(true); };
   const handleRenameBatchSubmit = async (e) => {
     e.preventDefault();
     const { oldName, newName } = batchRenameState;
-    if (!newName.trim() || newName.trim() === oldName) {
-      setShowRenameBatchModal(false);
-      return;
-    }
-
+    if (!newName.trim() || newName.trim() === oldName) { setShowRenameBatchModal(false); return; }
     try {
       const itemsToUpdate = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === oldName);
       for (const item of itemsToUpdate) {
@@ -701,43 +521,28 @@ function AdminDashboard() {
         formData.append('batch_name', newName.trim());
         await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
       }
-
       if (selectedBatch === oldName) setSelectedBatch(newName.trim());
-
       setShowRenameBatchModal(false);
       showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
       await fetchData(true);
-    } catch (error) {
-      alert('Could not rename batch. Please try again.');
-    }
+    } catch (error) { alert('Could not rename batch. Please try again.'); }
   };
 
   const handleDeleteBatch = async (batchName) => {
     const itemsToDelete = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === batchName);
     if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) return;
-
     try {
-      for (const item of itemsToDelete) {
-        await axios.delete(`${API_BASE}garments/${item.id}/`);
-      }
+      for (const item of itemsToDelete) { await axios.delete(`${API_BASE}garments/${item.id}/`); }
       if (selectedBatch === batchName) setSelectedBatch(null);
       showToast(`🗑️ Batch "${batchName}" and all its styles have been removed.`);
       await fetchData(true);
-    } catch (error) {
-      alert('Could not delete all items in batch.');
-    }
+    } catch (error) { alert('Could not delete all items in batch.'); }
   };
 
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
-    
-    setEditGarment({
-      id: item.id, batch_name: item.batch_name || '', name: item.name || '', 
-      category: item.category || '', color: item.color || '',
-      cost_price: item.cost_price || '', selling_price: item.selling_price || '',
-      image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap
-    });
+    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -746,38 +551,15 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const formData = new FormData();
-      formData.append('batch_name', editGarment.batch_name);
-      formData.append('name', editGarment.name);
-      formData.append('category', editGarment.category || 'Uncategorized');
-      formData.append('color', editGarment.color || 'N/A');
-      formData.append('cost_price', editGarment.cost_price);
-      formData.append('selling_price', editGarment.selling_price);
-      formData.append('initial_sizes', JSON.stringify(editGarment.sizes));
-      if (editGarment.image) formData.append('image', editGarment.image);
-
-      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      setShowEditModal(false);
-      showToast("✏️ Style details updated!");
-      await fetchData(true);
-    } catch (error) {
-      alert('Error saving changes. Check your inputs.');
-    }
+      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); formData.append('cost_price', editGarment.cost_price); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); if (editGarment.image) formData.append('image', editGarment.image);
+      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setShowEditModal(false); showToast("✏️ Style details updated!"); await fetchData(true);
+    } catch (error) { alert('Error saving changes. Check your inputs.'); }
   };
 
   const handleDeleteGarment = async (id) => {
     if (!window.confirm("Are you sure you want to delete this style? All remaining stock for this item will be removed.")) return;
-    try {
-      await axios.delete(`${API_BASE}garments/${id}/`);
-      setShowEditModal(false);
-      setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast("🗑️ Garment style removed.");
-      await fetchData(true);
-    } catch (error) {
-      alert('Could not delete garment. Please try again.');
-    }
+    try { await axios.delete(`${API_BASE}garments/${id}/`); setShowEditModal(false); setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 }); showToast("🗑️ Garment style removed."); await fetchData(true); } catch (error) { alert('Could not delete garment. Please try again.'); }
   };
 
   const handleFactoryReset = async () => {
@@ -785,187 +567,260 @@ function AdminDashboard() {
     if (confirmText === 'DELETE') {
       setLoading(true);
       try {
-        for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`);
-        for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`);
-        for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`);
-        for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
-        
-        setActiveTab('inventory');
-        showToast("🧨 All data has been completely wiped. Fresh start!");
-        await fetchData(true);
-      } catch (error) {
-        alert('Error wiping data. Check connection.');
-      }
+        for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`); for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`); for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`); for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
+        setActiveTab('inventory'); showToast("🧨 All data has been completely wiped. Fresh start!"); await fetchData(true);
+      } catch (error) { alert('Error wiping data. Check connection.'); }
       setLoading(false);
     }
   };
 
-  const handleBreakdownChange = (index, field, value) => {
-    const updated = [...newExpense.breakdown];
-    updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
-    setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
-  };
+  const handleBreakdownChange = (index, field, value) => { const updated = [...newExpense.breakdown]; updated[index][field] = value; const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0); setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' }); };
   const addBreakdownRow = () => setNewExpense({ ...newExpense, breakdown: [...newExpense.breakdown, { name: '', cost: '' }] });
-  const removeBreakdownRow = (index) => {
-    const updated = newExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
-    setNewExpense({ ...newExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
-  };
-  const handleCreateExpense = async (e) => {
-    e.preventDefault();
-    try {
-      const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
-      await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
-      setShowExpenseModal(false);
-      setNewExpense({ title: '', amount: '', date: getLocalDate(), isDetailed: false, breakdown: [{ name: '', cost: '' }] });
-      showToast("📈 Batch expense recorded!");
-      await fetchData(true);
-    } catch (error) { alert('Could not save expense.'); }
-  };
-
-  const openEditExpenseModal = (item) => {
-    const breakdownList = parseSafeArray(item?.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
-    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || getLocalDate(), isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
-    setShowEditExpenseModal(true);
-  };
-  const handleEditBreakdownChange = (index, field, value) => {
-    const updated = [...editExpense.breakdown];
-    updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
-    setEditExpense({ ...editExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
-  };
+  const removeBreakdownRow = (index) => { const updated = newExpense.breakdown.filter((_, i) => i !== index); const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0); setNewExpense({ ...newExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' }); };
+  const handleCreateExpense = async (e) => { e.preventDefault(); try { const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : []; await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown }); setShowExpenseModal(false); setNewExpense({ title: '', amount: '', date: getLocalDate(), isDetailed: false, breakdown: [{ name: '', cost: '' }] }); showToast("📈 Batch expense recorded!"); await fetchData(true); } catch (error) { alert('Could not save expense.'); } };
+  const openEditExpenseModal = (item) => { const breakdownList = parseSafeArray(item?.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }]; setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || getLocalDate(), isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList }); setShowEditExpenseModal(true); };
+  const handleEditBreakdownChange = (index, field, value) => { const updated = [...editExpense.breakdown]; updated[index][field] = value; const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0); setEditExpense({ ...editExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' }); };
   const addEditBreakdownRow = () => setEditExpense({ ...editExpense, breakdown: [...editExpense.breakdown, { name: '', cost: '' }] });
-  const removeEditBreakdownRow = (index) => {
-    const updated = editExpense.breakdown.filter((_, i) => i !== index);
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
-    setEditExpense({ ...editExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
-  };
-  const handleUpdateExpense = async (e) => {
-    e.preventDefault();
-    try {
-      const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
-      await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, breakdown: validBreakdown });
-      setShowEditExpenseModal(false);
-      showToast("✏️ Expense updated!");
-      await fetchData(true);
-    } catch (error) { alert('Could not update expense.'); }
-  };
-  const handleDeleteExpense = async (id) => {
-    if (!window.confirm("Remove this recorded expense?")) return;
-    try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
-  };
+  const removeEditBreakdownRow = (index) => { const updated = editExpense.breakdown.filter((_, i) => i !== index); const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0); setEditExpense({ ...editExpense, breakdown: updated.length ? updated : [{ name: '', cost: '' }], amount: totalSum > 0 ? totalSum.toFixed(2) : '' }); };
+  const handleUpdateExpense = async (e) => { e.preventDefault(); try { const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : []; await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, breakdown: validBreakdown }); setShowEditExpenseModal(false); showToast("✏️ Expense updated!"); await fetchData(true); } catch (error) { alert('Could not update expense.'); } };
+  const handleDeleteExpense = async (id) => { if (!window.confirm("Remove this recorded expense?")) return; try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); } };
   
   // -------------------------------------------------------------
-  // FIFO LOGIC APPLIED TO PRE-ORDERS
+  // MULTI-STYLE PRE-ORDER LOGIC & FIFO
   // -------------------------------------------------------------
+  
+  const handleAddPoItem = (isEdit = false) => {
+    const inputState = isEdit ? editPoItemInput : poItemInput;
+    const orderState = isEdit ? editPreOrder : newPreOrder;
+    const setOrderState = isEdit ? setEditPreOrder : setNewPreOrder;
+    const setInputState = isEdit ? setEditPoItemInput : setPoItemInput;
+
+    if (!inputState.item_name || !inputState.size) return;
+
+    const newItem = { ...inputState };
+    const updatedItems = [...(orderState.items || []), newItem];
+
+    const currentPrice = parseFloat(orderState.price || 0);
+    const addedPrice = parseFloat(newItem.price || 0);
+    const newTotal = (currentPrice + addedPrice).toFixed(2);
+    
+    const dp = parseFloat(orderState.down_payment || 0);
+    const bal = Math.max(0, newTotal - dp);
+
+    setOrderState({
+      ...orderState,
+      items: updatedItems,
+      price: newTotal,
+      balance: bal.toFixed(2),
+      is_paid: bal <= 0 && newTotal > 0
+    });
+    
+    setInputState({ item_name: '', size: '', color: '', price: '' });
+  };
+
+  const handleConfirmPoItems = (isEdit = false) => {
+    const currentInput = isEdit ? editPoItemInput : poItemInput;
+    const currentOrder = isEdit ? editPreOrder : newPreOrder;
+
+    if (currentInput.item_name && currentInput.size) {
+      handleAddPoItem(isEdit);
+      if (isEdit) setShowEditPoItemForm(false);
+      else setShowAddPoItemForm(false);
+    } else if (currentOrder.items && currentOrder.items.length > 0) {
+      if (isEdit) setShowEditPoItemForm(false);
+      else setShowAddPoItemForm(false);
+    } else {
+      alert("Please add at least one style to the order before confirming.");
+    }
+  };
+
+  const handleRemovePoItem = (index, isEdit = false) => {
+    const orderState = isEdit ? editPreOrder : newPreOrder;
+    const setOrderState = isEdit ? setEditPreOrder : setNewPreOrder;
+
+    const removedItem = orderState.items[index];
+    const updatedItems = orderState.items.filter((_, i) => i !== index);
+
+    const currentPrice = parseFloat(orderState.price || 0);
+    const removedPrice = parseFloat(removedItem.price || 0);
+    const newTotal = Math.max(0, currentPrice - removedPrice).toFixed(2);
+
+    const dp = parseFloat(orderState.down_payment || 0);
+    const bal = Math.max(0, newTotal - dp);
+
+    setOrderState({
+      ...orderState,
+      items: updatedItems,
+      price: newTotal,
+      balance: bal.toFixed(2),
+      is_paid: bal <= 0 && newTotal > 0
+    });
+  };
+
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
-    try {
-      const orderPayload = {
-        ...newPreOrder,
-        color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
-        recipient_name: newPreOrder.recipient_name || '', 
-        contact_number: newPreOrder.contact_number || '', 
-        address: newPreOrder.address || ''
-      };
-      await axios.post(`${API_BASE}preorders/`, orderPayload);
+    if (!newPreOrder.items || newPreOrder.items.length === 0) {
+      return alert("Please add at least one style to the pre-order.");
+    }
 
-      // FIFO Pre-order deduction
-      const garmentsToUpdate = (garments || [])
-        .filter(g => String(g?.name) === newPreOrder.item_name)
-        .sort((a, b) => a.id - b.id); // Oldest batches first
+    try {
+      const finalItems = [];
+
+      for (const orderItem of newPreOrder.items) {
+        const garmentsToUpdate = (garments || [])
+          .filter(g => String(g?.name) === orderItem.item_name)
+          .sort((a, b) => a.id - b.id); // FIFO
+          
+        let deductedGarmentId = null;
+        let deductedBatchName = '';
         
-      let remainingToDeduct = 1;
-      
-      for (const g of garmentsToUpdate) {
-        if (remainingToDeduct <= 0) break;
-        const sizeData = parseSafeArray(g.sizes).find(s => s.size === newPreOrder.size);
-        const available = sizeData ? parseInt(sizeData.quantity) : 0;
-        
-        if (available > 0) {
-          await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-            size: newPreOrder.size, change: -1, is_sale: false 
-          });
-          remainingToDeduct -= 1;
+        for (const g of garmentsToUpdate) {
+          const sizeData = parseSafeArray(g.sizes).find(s => s.size === orderItem.size);
+          const available = sizeData ? parseInt(sizeData.quantity) : 0;
+          
+          if (available > 0) {
+            deductedGarmentId = g.id;
+            deductedBatchName = g.batch_name;
+            await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
+              size: orderItem.size, change: -1, is_sale: false 
+            });
+            break;
+          }
         }
+
+        finalItems.push({
+          ...orderItem,
+          color: !orderItem.color || orderItem.color.trim() === '' ? 'N/A' : orderItem.color,
+          garment_id: deductedGarmentId,
+          batch_name: deductedBatchName
+        });
       }
 
+      const orderPayload = {
+        customer_name: newPreOrder.customer_name,
+        recipient_name: newPreOrder.recipient_name || '', 
+        contact_number: newPreOrder.contact_number || '', 
+        address: newPreOrder.address || '',
+        price: newPreOrder.price,
+        down_payment: newPreOrder.down_payment,
+        balance: newPreOrder.balance,
+        is_paid: newPreOrder.is_paid,
+        items: finalItems,
+        // Send a fallback explicitly to satisfy Django legacy field requirements
+        item_name: finalItems.length === 1 ? finalItems[0].item_name : "Multiple Styles",
+        size: finalItems.length === 1 ? finalItems[0].size : "Mixed",
+        color: finalItems.length === 1 ? (finalItems[0].color || 'N/A') : "Mixed" 
+      };
+      
+      await axios.post(`${API_BASE}preorders/`, orderPayload);
+
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
-      showToast("📝 Pre-order added & stock deducted!");
+      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [], price: '', down_payment: '', is_paid: false, balance: '' });
+      showToast("📝 Pre-order added & stocks deducted!");
       await fetchData(true);
     } catch (error) { 
-        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
     }
   };
 
   const openEditPreOrderModal = (item) => {
+    const hydratedItems = item.items && item.items.length > 0 
+      ? item.items 
+      : [{ item_name: item.item_name, size: item.size, color: item.color, price: item.price, garment_id: item.garment_id, batch_name: item.batch_name }];
+
     setEditPreOrder({ 
       id: item.originalId || item.id,
       customer_name: item.customer_name || '', 
       recipient_name: item.recipient_name || '', 
       contact_number: item.contact_number || '', 
       address: item.address || '', 
-      item_name: item.item_name || item.name || '',
-      size: item.size || '', 
-      color: !item.color || item.color === 'N/A' ? '' : item.color, 
+      items: hydratedItems,
       price: item.price || '', 
       down_payment: item.down_payment || '', 
       is_paid: item.is_paid || false, 
       balance: item.balance || '' 
     });
+    setEditPoItemInput({ item_name: '', size: '', color: '', price: '' });
+    setShowEditPoItemForm(false);
     setShowEditPreOrderModal(true);
   };
 
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
+    if (!editPreOrder.items || editPreOrder.items.length === 0) {
+      return alert("Please add at least one style to the pre-order.");
+    }
+
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
       
       if (oldOrder) {
-        if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
+        // 1. RESTORE EXACT BATCH FOR ALL OLD ITEMS
+        const oldItems = oldOrder.items && oldOrder.items.length > 0 
+          ? oldOrder.items 
+          : [{ item_name: oldOrder.item_name, size: oldOrder.size, garment_id: oldOrder.garment_id, batch_name: oldOrder.batch_name }];
+
+        for (const item of oldItems) {
+          if (!item.item_name || !item.size) continue;
+          let oldGarmentId = item.garment_id;
           
-          // LIFO Restore to old garment batch
-          const oldGarments = (garments || [])
-            .filter(g => g?.name === oldOrder.item_name)
-            .sort((a, b) => b.id - a.id); // Newest first
-            
-          if (oldGarments.length > 0 && oldOrder.size) {
-            await axios.patch(`${API_BASE}garments/${oldGarments[0].id}/update_stock/`, { 
-              size: oldOrder.size, change: 1, is_sale: false 
-            });
+          if (!oldGarmentId && item.batch_name) {
+             const g = (garments || []).find(g => g.name === item.item_name && g.batch_name === item.batch_name);
+             if (g) oldGarmentId = g.id;
           }
-          
-          // FIFO Deduct from new garment batch
-          const newGarments = (garments || [])
-            .filter(g => g?.name === editPreOrder.item_name)
-            .sort((a, b) => a.id - b.id); // Oldest first
+          if (!oldGarmentId) {
+             const g = (garments || []).filter(g => g.name === item.item_name).sort((a,b) => b.id - a.id)[0];
+             if (g) oldGarmentId = g.id;
+          }
             
-          let remainingToDeduct = 1;
-          for (const g of newGarments) {
-            if (remainingToDeduct <= 0) break;
-            const sizeData = parseSafeArray(g.sizes).find(s => s.size === editPreOrder.size);
-            const available = sizeData ? parseInt(sizeData.quantity) : 0;
-            if (available > 0 && editPreOrder.size) {
-              await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { 
-                size: editPreOrder.size, change: -1, is_sale: false 
-              });
-              remainingToDeduct -= 1;
-            }
+          if (oldGarmentId && item.size) {
+            await axios.patch(`${API_BASE}garments/${oldGarmentId}/update_stock/`, { size: item.size, change: 1, is_sale: false });
           }
         }
+          
+        // 2. DEDUCT FIFO BATCH FOR ALL NEW ITEMS
+        const finalUpdatedItems = [];
+        for (const item of editPreOrder.items) {
+          const newGarments = (garments || []).filter(g => g?.name === item.item_name).sort((a, b) => a.id - b.id);
+          let newGarmentId = item.garment_id; 
+          let newBatchName = item.batch_name;
+            
+          for (const g of newGarments) {
+            const sizeData = parseSafeArray(g.sizes).find(s => s.size === item.size);
+            if (sizeData && parseInt(sizeData.quantity) > 0 && item.size) {
+              newGarmentId = g.id;
+              newBatchName = g.batch_name;
+              await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { size: item.size, change: -1, is_sale: false });
+              break; 
+            }
+          }
+
+          finalUpdatedItems.push({
+            ...item,
+            color: !item.color || item.color.trim() === '' ? 'N/A' : item.color,
+            garment_id: newGarmentId,
+            batch_name: newBatchName
+          });
+        }
+
+        const orderPayload = {
+          customer_name: editPreOrder.customer_name,
+          recipient_name: editPreOrder.recipient_name || '',
+          contact_number: editPreOrder.contact_number || '',
+          address: editPreOrder.address || '',
+          price: editPreOrder.price,
+          down_payment: editPreOrder.down_payment,
+          balance: editPreOrder.balance,
+          is_paid: editPreOrder.is_paid,
+          items: finalUpdatedItems,
+          item_name: finalUpdatedItems.length === 1 ? finalUpdatedItems[0].item_name : "Multiple Styles",
+          size: finalUpdatedItems.length === 1 ? finalUpdatedItems[0].size : "Mixed",
+          color: finalUpdatedItems.length === 1 ? (finalUpdatedItems[0].color || 'N/A') : "Mixed" 
+        };
+
+        await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       }
 
-      const orderPayload = {
-        ...editPreOrder,
-        color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color,
-        recipient_name: editPreOrder.recipient_name || '',
-        contact_number: editPreOrder.contact_number || '',
-        address: editPreOrder.address || ''
-      };
-
-      await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
@@ -975,40 +830,61 @@ function AdminDashboard() {
   };
 
   const handleDeletePreOrder = async (id) => {
-    if (!window.confirm("Delete this pre-order?")) return;
+    if (!window.confirm("Delete this pre-order? Make sure to refund the customer. All items will be returned to their respective batch stock.")) return;
     try { 
+      const orderToRevert = (preOrders || []).find(o => o?.id === id);
+      if (orderToRevert) {
+        const itemsToRestore = orderToRevert.items && orderToRevert.items.length > 0 
+          ? orderToRevert.items 
+          : [{ item_name: orderToRevert.item_name, size: orderToRevert.size, garment_id: orderToRevert.garment_id, batch_name: orderToRevert.batch_name }];
+
+        for (const item of itemsToRestore) {
+          if (!item.item_name || !item.size) continue;
+          let targetGarmentId = item.garment_id;
+          
+          if (!targetGarmentId && item.batch_name) {
+             const g = (garments || []).find(g => g.name === item.item_name && g.batch_name === item.batch_name);
+             if (g) targetGarmentId = g.id;
+          }
+          if (!targetGarmentId) {
+             const g = (garments || []).filter(g => g.name === item.item_name).sort((a,b)=>b.id-a.id)[0];
+             if (g) targetGarmentId = g.id;
+          }
+
+          if (targetGarmentId) {
+             await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: item.size, change: 1, is_sale: false });
+          }
+        }
+      }
       await axios.delete(`${API_BASE}preorders/${id}/`); 
-      showToast("🗑️ Pre-order removed."); 
+      showToast("🗑️ Pre-order removed & stock restored."); 
       await fetchData(true); 
     } catch (error) { alert('Could not delete pre-order.'); }
   };
 
-  // ==========================================
-  // SALES HISTORY & LEDGER
-  // ==========================================
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
     try {
       const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        // LIFO Restore to newest matching batch
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === logToRevert.garment_name)
-          .sort((a, b) => b.id - a.id);
+        let targetGarmentId = logToRevert.garment_id;
+        if (!targetGarmentId && logToRevert.batch_name) {
+            const g = (garments || []).find(g => g.name === logToRevert.garment_name && g.batch_name === logToRevert.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === logToRevert.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
           
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
-            size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false
-          });
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false });
         }
       }
-
       await axios.delete(`${API_BASE}sales/history/${id}/`);
       showToast("🗑️ Sales record deleted & stock restored.");
       await fetchData(true);
-    } catch (error) { 
-      alert('Could not delete sales record.'); 
-    }
+    } catch (error) { alert('Could not delete sales record.'); }
   };
 
   const handleClearAllHistory = async () => {
@@ -1017,33 +893,29 @@ function AdminDashboard() {
     try {
       for (const log of (salesHistory || [])) {
         if (!log) continue;
-        // LIFO Restore
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === log.garment_name)
-          .sort((a, b) => b.id - a.id);
-          
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
-            size: log.size, change: log.quantity_sold, is_sale: false
-          });
+        let targetGarmentId = log.garment_id;
+        if (!targetGarmentId && log.batch_name) {
+            const g = (garments || []).find(g => g.name === log.garment_name && g.batch_name === log.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === log.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: log.size, change: log.quantity_sold, is_sale: false });
         }
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
       }
       showToast("🗑️ Entire Sales Ledger cleared & stocks restored!");
       await fetchData(true);
-    } catch (error) { 
-      alert('Error clearing some records.'); 
-    }
+    } catch (error) { alert('Error clearing some records.'); }
     setLoading(false);
   };
 
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
-    if (isPreOrder) {
-      setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p));
-    } else {
-      setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s));
-    }
-
+    if (isPreOrder) { setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p)); } 
+    else { setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s)); }
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
       await axios.patch(endpoint, { status: newStatus });
@@ -1055,36 +927,35 @@ function AdminDashboard() {
     }
   };
 
-  // ==========================================
-  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
-  // ==========================================
-  
   const mergedGarmentsList = mergeGarments(garments);
+  // PRE-SORT MERGED LIST ALPHABETICALLY ONCE
+  const sortedMergedGarmentsList = [...mergedGarmentsList].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   
-  // SECURE DATA MAPPER FOR PRE-ORDERS
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
-    const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === order?.item_name && s.size === order?.size);
-    if (matchIndex !== -1) {
-      localSalesHistory.splice(matchIndex, 1);
-    }
+    const safeItems = order.items && order.items.length > 0 
+      ? order.items 
+      : [{ item_name: order.item_name, size: order.size }];
+
+    safeItems.forEach(si => {
+        const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === si.item_name && s.size === si.size);
+        if (matchIndex !== -1) localSalesHistory.splice(matchIndex, 1);
+    });
     
     return { 
-      id: `preorder-${order?.id}`, 
-      originalId: order?.id,
-      isPreOrder: true, 
+      id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
       date: order?.order_date ? String(order.order_date) : '', 
-      name: order?.item_name ? String(order.item_name) : '',
+      itemsArray: safeItems,
+      name: safeItems.map(i => i.item_name).join(', '),
+      size: safeItems.map(i => i.size).join(', '),
       customer_name: order?.customer_name ? String(order.customer_name) : 'Unnamed',
       recipient_name: order?.recipient_name ? String(order.recipient_name) : '',
       contact_number: order?.contact_number ? String(order.contact_number) : '',
       address: order?.address ? String(order.address) : '',
-      item_name: order?.item_name ? String(order.item_name) : '', 
-      size: order?.size ? String(order.size) : '', 
-      color: order?.color ? String(order.color) : '', 
-      qty: 1, 
+      qty: safeItems.length, 
       price: parseFloat(order?.price) || 0,
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
@@ -1094,7 +965,6 @@ function AdminDashboard() {
     };
   });
 
-  // SECURE DATA MAPPER FOR NORMAL SALES
   const mappedSales = localSalesHistory.filter(s => s).map(log => {
     const matchedGarment = (garments || []).find(g => String(g?.name) === String(log?.garment_name));
     const sellingPrice = matchedGarment ? parseFloat(matchedGarment.selling_price) : 0;
@@ -1102,20 +972,12 @@ function AdminDashboard() {
     const amountCollected = sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
 
     return {
-      id: `sale-${log?.id}`,
-      originalId: log?.id,
-      isPreOrder: false,
-      date: log?.sold_at ? String(log.sold_at) : '',
+      id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '',
+      itemsArray: [],
       name: log?.garment_name ? String(log.garment_name) : '',
-      customer_name: '',
-      recipient_name: '',
-      contact_number: '',
-      address: '',
-      item_name: log?.garment_name ? String(log.garment_name) : '', // Ensure item_name is assigned
-      size: log?.size ? String(log.size) : '',
-      qty: qty,
-      earned: amountCollected,
-      status: log?.status ? String(log.status) : 'Pending'
+      customer_name: '', recipient_name: '', contact_number: '', address: '',
+      item_name: log?.garment_name ? String(log.garment_name) : '', 
+      size: log?.size ? String(log.size) : '', qty: qty, earned: amountCollected, status: log?.status ? String(log.status) : 'Pending'
     };
   });
 
@@ -1125,19 +987,17 @@ function AdminDashboard() {
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
 
-  // ==========================================
-  // ANALYTICS CALCULATIONS
-  // ==========================================
   let analyticsSales = unifiedHistory;
   let analyticsExpenses = expenses || [];
 
   if (analyticsFilterBatch !== 'All') {
-    const validGarmentNames = garments
-      .filter(g => String(g?.batch_name) === analyticsFilterBatch)
-      .map(g => String(g?.name));
-      
-    analyticsSales = unifiedHistory.filter(log => validGarmentNames.includes(log.item_name));
-    
+    const validGarmentNames = garments.filter(g => String(g?.batch_name) === analyticsFilterBatch).map(g => String(g?.name));
+    analyticsSales = unifiedHistory.filter(log => {
+        if (log.isPreOrder && log.itemsArray && log.itemsArray.length > 0) {
+            return log.itemsArray.some(it => validGarmentNames.includes(it.item_name));
+        }
+        return validGarmentNames.includes(log.name);
+    });
     analyticsExpenses = (expenses || []).filter(e => {
       const expenseTitle = String(e?.title || '').toLowerCase();
       const batchTitle = analyticsFilterBatch.toLowerCase();
@@ -1149,7 +1009,6 @@ function AdminDashboard() {
   const totalBatchExpenses = analyticsExpenses.reduce((sum, item) => sum + (parseFloat(item?.amount) || 0), 0);
   const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
 
-  // Other general stats
   const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
   const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
@@ -1169,7 +1028,6 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
-  // Gallery Tab uses Merged styles
   const filteredGarments = (mergedGarmentsList || [])
     .filter(item => {
       if (!item) return false;
@@ -1181,14 +1039,11 @@ function AdminDashboard() {
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-  // Batch Tracker uses Individual styles to keep batch accounting separated
   const batchMap = {};
   (garments || []).forEach(g => {
     if (!g) return;
     const bName = String(g.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) {
-      batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
-    }
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 }; }
     batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
     batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
     batchMap[bName].styles_count += 1;
@@ -1235,69 +1090,32 @@ function AdminDashboard() {
 
           <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-3 px-2">Collection Menu</p>
           <div className="space-y-2">
-            <button
-              onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">🛍️</span> Product Gallery
             </button>
-            <button
-              onClick={() => { setActiveTab('history'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📜</span> Sales Ledger
             </button>
-            <button
-              onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📈</span> Net Profit Analytics
             </button>
-            <button
-              onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📝</span> Custom Pre-Orders
             </button>
-
-            <button
-              onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${
-                activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
               <span className="text-lg">📊</span> Batch Tracker
             </button>
           </div>
         </div>
 
         <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-2">
-          <button 
-            onClick={() => openAddBatchWizard('')}
-            className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm"
-          >
+          <button onClick={() => openAddBatchWizard('')} className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm">
             <span className="text-lg leading-none">📦</span> Import New Batch
           </button>
-          <button 
-            onClick={handleLogout}
-            className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
-          >
+          <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             Log Out
           </button>
-
-          {/* CLEAR ALL / FACTORY RESET BUTTON */}
-          <button 
-            onClick={handleFactoryReset}
-            className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
-          >
+          <button onClick={handleFactoryReset} className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             <span className="text-sm">🧨</span> Factory Reset
           </button>
         </div>
@@ -1330,13 +1148,7 @@ function AdminDashboard() {
             {categories.length > 1 && (
               <div className="flex flex-wrap gap-2 mb-6">
                 {categories.map(cat => (
-                  <button
-                    key={String(cat)}
-                    onClick={() => setActiveCategory(cat)}
-                    className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
-                      activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300'
-                    }`}
-                  >
+                  <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300' }`}>
                     {String(cat)}
                   </button>
                 ))}
@@ -1433,32 +1245,20 @@ function AdminDashboard() {
               <div className="animate-fade-in">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-stone-200">
                   <div>
-                    <button 
-                      onClick={() => setSelectedBatch(null)} 
-                      className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition"
-                    >
+                    <button onClick={() => setSelectedBatch(null)} className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition">
                       <span>⬅</span> Back to All Batches
                     </button>
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {String(selectedBatch)}</h2>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <button 
-                      onClick={() => openAddBatchWizard(selectedBatch)}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => openAddBatchWizard(selectedBatch)} className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5">
                       <span>➕</span> Add New Styles
                     </button>
-                    <button 
-                      onClick={() => openRenameBatchModal(selectedBatch)}
-                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => openRenameBatchModal(selectedBatch)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5">
                       <span>✏️</span> Rename Batch
                     </button>
-                    <button 
-                      onClick={() => handleDeleteBatch(selectedBatch)}
-                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => handleDeleteBatch(selectedBatch)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5">
                       <span>🗑️</span> Delete Entire Batch
                     </button>
                   </div>
@@ -1502,19 +1302,10 @@ function AdminDashboard() {
                         </div>
 
                         <div className="pt-2 border-t border-stone-100 flex gap-2">
-                          <button 
-                            type="button"
-                            onClick={() => openEditModal(item)}
-                            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1"
-                          >
+                          <button onClick={() => openEditModal(item)} className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1">
                             <span>✏️</span> Edit
                           </button>
-                          <button 
-                            type="button"
-                            onClick={() => handleDeleteGarment(item.id)}
-                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center"
-                            title="Delete this style"
-                          >
+                          <button onClick={() => handleDeleteGarment(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center" title="Delete this style">
                             🗑️
                           </button>
                         </div>
@@ -1531,10 +1322,7 @@ function AdminDashboard() {
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Active Batch Tracker</h2>
                     <p className="text-stone-500 text-sm mt-1">Click a batch to view its items, or manage and delete batches below</p>
                   </div>
-                  <button 
-                    onClick={() => openAddBatchWizard('')}
-                    className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
-                  >
+                  <button onClick={() => openAddBatchWizard('')} className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
                     <span className="text-lg leading-none">📦</span> Import New Batch
                   </button>
                 </div>
@@ -1548,10 +1336,7 @@ function AdminDashboard() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {batchTrackerData.map((batch, index) => (
-                      <div 
-                        key={`btd-${index}`} 
-                        className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group"
-                      >
+                      <div key={`btd-${index}`} className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group">
                         <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
@@ -1574,27 +1359,13 @@ function AdminDashboard() {
                         </div>
 
                         <div className="pt-4 border-t border-stone-100 flex gap-2">
-                          <button 
-                            type="button" 
-                            onClick={() => setSelectedBatch(batch.name)}
-                            className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center"
-                          >
+                          <button onClick={() => setSelectedBatch(batch.name)} className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center">
                             👁️ View Items
                           </button>
-                          <button 
-                            type="button" 
-                            onClick={() => openRenameBatchModal(batch.name)}
-                            className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
-                            title="Rename batch"
-                          >
+                          <button onClick={() => openRenameBatchModal(batch.name)} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Rename batch">
                             ✏️
                           </button>
-                          <button 
-                            type="button" 
-                            onClick={() => handleDeleteBatch(batch.name)}
-                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
-                            title="Delete whole batch"
-                          >
+                          <button onClick={() => handleDeleteBatch(batch.name)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Delete whole batch">
                             🗑️
                           </button>
                         </div>
@@ -1607,7 +1378,7 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW (UPDATED) */}
+        {/* TAB 2: SALES HISTORY LOG VIEW */}
         {activeTab === 'history' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
@@ -1616,22 +1387,13 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* CLEAR ALL HISTORY BUTTON */}
-                <button 
-                  onClick={handleClearAllHistory} 
-                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1"
-                >
+                <button onClick={handleClearAllHistory} className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1">
                   <span>🗑️</span> Clear Ledger
                 </button>
                 
-                {/* STATUS FILTER DROPDOWN */}
                 <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200 h-[38px]">
                   <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Status:</span>
-                  <select 
-                    value={historyFilterStatus} 
-                    onChange={(e) => setHistoryFilterStatus(e.target.value)}
-                    className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer"
-                  >
+                  <select value={historyFilterStatus} onChange={(e) => setHistoryFilterStatus(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
                     <option value="All">All</option>
                     <option value="Pending">Pending</option>
                     <option value="Shipped">Shipped</option>
@@ -1678,7 +1440,7 @@ function AdminDashboard() {
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
                       <th className="p-4">Date</th>
                       <th className="p-4">Transaction / Style Name</th>
-                      <th className="p-4 text-center">Size</th>
+                      <th className="p-4 text-center">Details</th>
                       <th className="p-4 text-center">Quantity</th>
                       <th className="p-4 text-right">Revenue Collected</th>
                       <th className="p-4 text-center">Fulfillment Status</th>
@@ -1692,11 +1454,21 @@ function AdminDashboard() {
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
                         
-                        <td className="p-4 font-black text-stone-900 text-base">
+                        <td className="p-4 font-black text-stone-900 text-base align-top">
                           {log?.isPreOrder ? (
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
-                              <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
-                              <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
+                              <span className="text-pink-600 group-hover:text-pink-800 transition mb-1">📝 Pre-Order</span>
+                              
+                              {/* Display Individual Items */}
+                              {log.itemsArray && log.itemsArray.length > 0 ? (
+                                log.itemsArray.map((it, i) => (
+                                  <span key={`lo-${i}`} className="text-xs text-stone-800 font-bold block leading-snug">• {it.item_name}</span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-stone-800 font-bold block leading-snug">• {String(log?.name || '')}</span>
+                              )}
+
+                              <span className="text-[11px] font-bold text-stone-500 mt-1.5 flex items-center gap-2">
                                 <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
                                 {!!(String(log?.recipient_name || '').trim() || String(log?.contact_number || '').trim() || String(log?.address || '').trim()) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
@@ -1710,11 +1482,25 @@ function AdminDashboard() {
                           )}
                         </td>
 
-                        <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{String(log?.size || '')}</span></td>
-                        <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
-                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
+                        <td className="p-4 text-center align-top">
+                          {log?.isPreOrder && log.itemsArray && log.itemsArray.length > 0 ? (
+                            <div className="flex flex-col gap-1 items-center mt-6">
+                              {log.itemsArray.map((it, i) => (
+                                <span key={`sz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
+                                  {it.size}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">
+                               {String(log?.size || '').includes(',') ? 'Mixed Sizes' : String(log?.size || '')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-center font-black text-stone-900 text-base align-top">{log?.qty || 0} pcs</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg align-top">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
                         
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           <select 
                             value={currentStatus} 
                             onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
@@ -1730,7 +1516,7 @@ function AdminDashboard() {
                           </select>
                         </td>
 
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           {log?.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
                           ) : (
@@ -1875,7 +1661,10 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Track custom reservations, down payments, and remaining balances</p>
               </div>
               <button 
-                onClick={() => setShowPreOrderModal(true)} 
+                onClick={() => {
+                  setShowPreOrderModal(true);
+                  setShowAddPoItemForm(true); 
+                }} 
                 className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
               >
                 <span className="text-lg leading-none">+</span> Add Pre-Order
@@ -1893,7 +1682,7 @@ function AdminDashboard() {
                   <span className="text-5xl block mb-3">📝</span>
                   <h4 className="text-base font-bold text-stone-800 mb-1">No Pre-orders Found</h4>
                   <p className="text-stone-500 text-sm mb-6">You currently have no active pre-orders or reservations. Click below to add a new customer order.</p>
-                  <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
+                  <button onClick={() => { setShowPreOrderModal(true); setShowAddPoItemForm(true); }} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
@@ -1901,7 +1690,7 @@ function AdminDashboard() {
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
                       <th className="p-4">Order Date</th>
                       <th className="p-4">Customer Info</th>
-                      <th className="p-4">Item &amp; Details</th>
+                      <th className="p-4">Item(s) &amp; Details</th>
                       <th className="p-4 text-center">Payment Status</th>
                       <th className="p-4 text-right">Balance Due</th>
                       <th className="p-4 text-center">Actions</th>
@@ -1910,11 +1699,16 @@ function AdminDashboard() {
                   <tbody className="divide-y divide-stone-200/80">
                     {preOrders.map((order) => {
                       const hasExtraDetails = !!(String(order?.recipient_name || '').trim() || String(order?.contact_number || '').trim() || String(order?.address || '').trim());
+                      
+                      const orderItems = order.items && order.items.length > 0 
+                        ? order.items 
+                        : [{ item_name: order.item_name, size: order.size, color: order.color, price: order.price }];
+                      
                       return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(order?.order_date || 'N/A')}</td>
                         
-                        <td className="p-4 font-black text-stone-900 text-base cursor-pointer group" onClick={() => setViewPreOrder(order)}>
+                        <td className="p-4 font-black text-stone-900 text-base cursor-pointer group align-top" onClick={() => setViewPreOrder(order)}>
                           <span className="group-hover:text-pink-600 transition block">{String(order?.customer_name || 'Unnamed')}</span>
                           {hasExtraDetails && (
                             <div className="text-[10px] font-bold text-stone-500 mt-1 flex items-center gap-1 uppercase bg-stone-100 px-2 py-0.5 rounded w-fit group-hover:bg-pink-50 group-hover:text-pink-600 transition">
@@ -1923,21 +1717,30 @@ function AdminDashboard() {
                           )}
                         </td>
 
-                        <td className="p-4">
-                          <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
-                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
+                        <td className="p-4 align-top">
+                          <div className="space-y-1.5">
+                            {orderItems.map((it, idx) => (
+                               <div key={idx} className="bg-stone-50 border border-stone-100 p-2 rounded-lg flex justify-between items-center gap-4">
+                                 <div>
+                                   <div className="font-bold text-stone-800 text-xs leading-none">{it.item_name}</div>
+                                   <div className="text-[10px] font-bold text-stone-500 mt-1">Size: {it.size} {it.color && it.color !== 'N/A' ? `| ${it.color}` : ''}</div>
+                                 </div>
+                                 <div className="text-pink-600 font-black text-[11px]">₱{parseFloat(it.price || 0).toFixed(2)}</div>
+                               </div>
+                            ))}
+                          </div>
                         </td>
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           {order?.is_paid ? (
                             <span className="bg-emerald-100 text-emerald-800 font-black text-xs px-2.5 py-1 rounded-md border border-emerald-200 shadow-2xs">Fully Paid</span>
                           ) : (
                             <span className="bg-rose-50 text-rose-600 font-black text-xs px-2.5 py-1 rounded-md border border-rose-200 shadow-2xs">Pending</span>
                           )}
                         </td>
-                        <td className="p-4 text-right font-black text-rose-600 text-base">
+                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">
                           {parseFloat(order?.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
                         </td>
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
                             <button onClick={() => openEditPreOrderModal(order)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit Pre-order">✏️ Edit</button>
                             <button onClick={() => handleDeletePreOrder(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete Pre-order">🗑️ Delete</button>
@@ -1954,7 +1757,7 @@ function AdminDashboard() {
       </main>
 
       {/* ========================================== */}
-      {/* ZOOM PRE-ORDER MODAL (NEW)                 */}
+      {/* ZOOM PRE-ORDER MODAL                       */}
       {/* ========================================== */}
       {viewPreOrder && (
         <div onClick={() => setViewPreOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1990,14 +1793,23 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm max-h-48 overflow-y-auto">
                 <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
-                <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
-                <div className="flex gap-3 mt-1.5">
-                  <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
-                  {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
-                    <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Color: {viewPreOrder.color}</span>
-                  )}
+                <div className="space-y-2">
+                  {(viewPreOrder.items && viewPreOrder.items.length > 0 ? viewPreOrder.items : [viewPreOrder]).map((it, i) => (
+                    <div key={i} className="border-b border-stone-100 pb-2 last:border-0 last:pb-0 flex justify-between items-center">
+                       <div>
+                         <p className="font-black text-sm text-stone-900 leading-tight">{it.item_name || String(it.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
+                         <div className="flex gap-2 mt-1">
+                           <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Size: {it.size}</span>
+                           {it.color && it.color !== 'N/A' && (
+                             <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded">Color: {it.color}</span>
+                           )}
+                         </div>
+                       </div>
+                       <span className="text-sm font-black text-pink-600">₱{parseFloat(it.price || 0).toFixed(2)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2019,692 +1831,17 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* RENAME BATCH MODAL                         */}
+      {/* ADD PRE-ORDER MODAL                        */}
       {/* ========================================== */}
-      {showRenameBatchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Rename Batch</h2>
-              <button onClick={() => setShowRenameBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleRenameBatchSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">New Batch Name</label>
-                <input 
-                  type="text" required 
-                  value={batchRenameState.newName} 
-                  onChange={(e) => setBatchRenameState({ ...batchRenameState, newName: e.target.value })}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
-                <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2 rounded-xl shadow text-sm transition">Save Name</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* E-COMMERCE SHOWCASE & POS MODAL            */}
-      {/* ========================================== */}
-      {productModal.show && productModal.garment && (
-        <div className="fixed inset-0 bg-[#3b322f]/70 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] relative border border-stone-200">
-            
-            <button 
-              onClick={() => setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 })} 
-              className="absolute top-4 right-4 z-10 bg-[#f2ece4] hover:bg-stone-300 text-stone-800 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg transition shadow-sm"
-              title="Close window"
-            >
-              ✖
-            </button>
-
-            <div className="w-full md:w-1/2 bg-gradient-to-br from-[#f9f6f0] to-[#e6dece] p-8 flex flex-col items-center justify-center relative min-h-[280px] md:min-h-full border-b md:border-b-0 md:border-r border-stone-200">
-              {productModal.garment.image ? (
-                <img 
-                  src={productModal.garment.image} alt={productModal.garment.name} 
-                  onClick={() => setZoomedImage(productModal.garment.image)}
-                  className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
-                  title="Click to fullscreen zoom" 
-                />
-              ) : (
-                <div className="text-8xl select-none py-12">👗</div>
-              )}
-              
-              <span className="mt-4 text-xs font-bold text-stone-600 bg-white/90 px-3 py-1 rounded-full shadow-2xs border border-stone-200">
-                Fleurette Stock: <strong className="text-stone-900">{productModal.garment.total_pieces} pcs</strong>
-              </span>
-            </div>
-
-            <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col justify-between overflow-y-auto">
-              <div>
-                <span className="text-[11px] font-extrabold uppercase tracking-widest text-pink-600 block mb-1">
-                  Fleurette Catalog • Style #{productModal.garment.id || 'MERGED'}
-                </span>
-                
-                <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{String(productModal.garment.name || '')}</h2>
-                <div className="mt-3 flex items-baseline gap-3">
-                  <span className="text-3xl font-black text-stone-900">₱{parseFloat(productModal.garment.selling_price || 0).toFixed(2)}</span>
-                  <span className="text-sm font-bold text-stone-400 line-through">₱{parseFloat(productModal.garment.cost_price || 0).toFixed(2)}</span>
-                </div>
-
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="bg-pink-100 text-pink-800 text-xs font-black px-3 py-1 rounded-lg">
-                    +₱{parseFloat(productModal.garment.profit_per_piece || 0).toFixed(2)} profit / unit
-                  </span>
-                </div>
-
-                <div className="mt-6 pt-6 border-t border-stone-100">
-                  <div className="flex bg-[#f2ece4] p-1 rounded-xl mb-4">
-                    <button
-                      type="button"
-                      onClick={() => setProductModal({ ...productModal, mode: 'sell' })}
-                      className={`flex-1 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 ${
-                        productModal.mode === 'sell' ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-600 hover:text-stone-900'
-                      }`}
-                    >
-                      <span>🛍️</span> Record Sale
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProductModal({ ...productModal, mode: 'restock' })}
-                      className={`flex-1 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 ${
-                        productModal.mode === 'restock' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-600 hover:text-stone-900'
-                      }`}
-                    >
-                      <span>📦</span> Restock Batch
-                    </button>
-                  </div>
-
-                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    1. Select Size ({productModal.mode === 'sell' ? 'To Deduct' : 'Arriving'}):
-                  </label>
-                  <div className="grid grid-cols-4 gap-2 mb-6">
-                    {parseSafeArray(productModal.garment.sizes).map((s) => (
-                      <button
-                        type="button" key={s?.size} 
-                        onClick={() => setProductModal({ ...productModal, size: s.size, quantity: 1 })}
-                        disabled={productModal.mode === 'sell' && s?.quantity === 0}
-                        className={`py-2.5 rounded-xl font-bold text-xs border flex flex-col items-center transition ${
-                          productModal.size === s?.size 
-                            ? productModal.mode === 'sell'
-                              ? 'bg-pink-600 border-pink-600 text-white shadow-md scale-105 font-black'
-                              : 'bg-[#eae4dc] border-[#c2b29a] text-stone-900 shadow-md scale-105 font-black'
-                            : s?.quantity > 0 || productModal.mode === 'restock'
-                              ? 'bg-[#f9f6f0] border-stone-300 text-stone-700 hover:bg-stone-200'
-                              : 'bg-stone-100 border-stone-200 text-stone-300 cursor-not-allowed'
-                        }`}
-                      >
-                        <span className="text-sm font-black">{String(s?.size || '')}</span>
-                        <span className="text-[10px] opacity-80">{s?.quantity} in stock</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    2. Quantity &amp; Confirm:
-                  </label>
-                  <div className="flex gap-3 items-center">
-                    <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] px-2 py-1 shrink-0">
-                      <button 
-                        type="button"
-                        onClick={() => setProductModal({ ...productModal, quantity: Math.max(1, parseInt(productModal.quantity || 1) - 1) })}
-                        className="w-8 h-10 flex items-center justify-center font-black text-lg text-stone-600 hover:text-stone-900"
-                      >
-                        -
-                      </button>
-                      <input 
-                        type="number" min="1" required 
-                        value={productModal.quantity} 
-                        onChange={(e) => setProductModal({ ...productModal, quantity: e.target.value })}
-                        className="w-12 text-center font-black text-lg bg-transparent focus:outline-none text-stone-900"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setProductModal({ ...productModal, quantity: parseInt(productModal.quantity || 0) + 1 })}
-                        className="w-8 h-10 flex items-center justify-center font-black text-lg text-stone-600 hover:text-stone-900"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    {productModal.mode === 'sell' ? (
-                      <button 
-                        onClick={handleSellSubmit}
-                        className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-black py-3.5 px-6 rounded-xl shadow-lg shadow-pink-500/30 text-base flex items-center justify-center gap-2 transition active:scale-95"
-                      >
-                        <span>🌸</span> Record Sale
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={handleRestockSubmit}
-                        className="flex-1 bg-[#eae4dc] hover:bg-[#ded6cc] text-stone-900 font-black py-3.5 px-6 rounded-xl shadow-md text-base flex items-center justify-center gap-2 transition active:scale-95 border border-[#c2b29a]"
-                      >
-                        <span>📦</span> Add to Stock
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 pt-4 border-t border-stone-100 flex justify-between items-center text-xs text-stone-400 font-semibold">
-                <span>
-                  {productModal.garment.underlying_garments 
-                    ? `MERGED: ${productModal.garment.underlying_garments.length} Batches`
-                    : `BATCH: ${productModal.garment.batch_name || 'Uncategorized'}`}
-                </span>
-                {(!productModal.garment.underlying_garments) && (
-                  <button 
-                    type="button"
-                    onClick={() => openEditModal(productModal.garment)}
-                    className="text-amber-600 hover:text-amber-700 font-extrabold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 transition"
-                  >
-                    <span>✏️</span> Edit Style Details
-                  </button>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* ADD BATCH WIZARD MODAL                     */}
-      {/* ========================================== */}
-      {showAddBatchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl overflow-hidden flex flex-col border border-stone-200 max-h-[90vh]">
-            <div className="flex justify-between items-center border-b pb-4 mb-4 border-stone-100 shrink-0">
-              <div>
-                <h2 className="text-xl font-black text-stone-900">📦 Import New Batch</h2>
-                <p className="text-stone-500 text-xs mt-1">Upload multiple garment styles at once and group them into a single batch.</p>
-              </div>
-              <button onClick={() => setShowAddBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-            
-            <form onSubmit={handleCreateBatch} className="overflow-y-auto pr-2 flex-1 space-y-6 pb-6">
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 shadow-sm sticky top-0 z-10">
-                <label className="block text-xs font-black text-stone-700 uppercase tracking-wider mb-2">Assign Batch Name</label>
-                <input 
-                  type="text" required placeholder="e.g. Batch #1 (Summer Collection)" 
-                  value={newBatch.batch_name} onChange={(e) => setNewBatch({...newBatch, batch_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-3 text-base font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white shadow-inner"
-                />
-              </div>
-
-              <div className="space-y-4">
-                <span className="block text-xs font-black text-stone-500 uppercase tracking-widest border-b border-stone-200 pb-2">Styles Included in this Batch:</span>
-                
-                {newBatch.styles.map((style, index) => (
-                  <div key={style.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm relative group">
-                    {newBatch.styles.length > 1 && (
-                      <button 
-                        type="button" 
-                        onClick={() => removeStyleFromBatch(index)}
-                        className="absolute -top-3 -right-3 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white w-8 h-8 rounded-full font-black shadow-md transition"
-                        title="Remove style from batch"
-                      >
-                        ✖
-                      </button>
-                    )}
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Style Name</label>
-                        <input 
-                          type="text" required placeholder="e.g. Pink Silk Dress" 
-                          list={`garment-names-${index}`}
-                          value={style.name} 
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleBatchStyleChange(index, 'name', val);
-                            const existing = (garments || []).find(g => String(g?.name || '').toLowerCase() === String(val || '').toLowerCase());
-                            if (existing) {
-                              handleBatchStyleChange(index, 'cost_price', existing.cost_price);
-                              handleBatchStyleChange(index, 'selling_price', existing.selling_price);
-                            }
-                          }}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                        <datalist id={`garment-names-${index}`}>
-                          {uniqueGarmentNames.map((name, i) => (
-                            <option key={`opt-${i}`} value={name} />
-                          ))}
-                        </datalist>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Photo (Optional)</label>
-                        <input 
-                          type="file" accept="image/*"
-                          onChange={(e) => handleBatchStyleChange(index, 'image', e.target.files[0])}
-                          className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Category</label>
-                        <input 
-                          type="text" placeholder="e.g. Tops, Dresses..." 
-                          list={`batch-category-list-${index}`}
-                          value={style.category} onChange={(e) => handleBatchStyleChange(index, 'category', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                        <datalist id={`batch-category-list-${index}`}>
-                          {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                            <option key={`cat-${cat}`} value={cat} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
-                        <input 
-                          type="text" placeholder="e.g. Rose Pink" 
-                          value={style.color} onChange={(e) => handleBatchStyleChange(index, 'color', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                        <input 
-                          type="number" step="0.01" required placeholder="350" 
-                          value={style.cost_price} onChange={(e) => handleBatchStyleChange(index, 'cost_price', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
-                        <input 
-                          type="number" step="0.01" required placeholder="799" 
-                          value={style.selling_price} onChange={(e) => handleBatchStyleChange(index, 'selling_price', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-3">
-                      <label className="block text-[10px] font-bold text-stone-600 uppercase mb-2">Initial Stock Count by Size</label>
-                      <div className="grid grid-cols-4 gap-2 bg-[#f9f6f0] p-2.5 rounded-xl border border-stone-200">
-                        {['S', 'M', 'L', 'XL'].map((sizeLabel) => (
-                          <div key={sizeLabel} className="text-center">
-                            <span className="block font-extrabold text-[10px] text-stone-500 mb-1">{sizeLabel}</span>
-                            <input 
-                              type="number" min="0" placeholder="0" 
-                              value={style.sizes[sizeLabel]} 
-                              onChange={(e) => handleBatchSizeChange(index, sizeLabel, e.target.value)}
-                              className="w-full border border-stone-300 rounded-lg p-1.5 text-center font-black text-sm bg-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                <button 
-                  type="button" 
-                  onClick={addStyleToBatch}
-                  className="w-full bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-700 font-black py-4 rounded-2xl border-2 border-dashed border-stone-300 transition shadow-sm flex items-center justify-center gap-2"
-                >
-                  <span className="text-xl leading-none">+</span> Add Another Style to this Batch
-                </button>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-stone-200 shrink-0 sticky bottom-0 bg-white p-3 rounded-xl shadow-up">
-                <button type="button" onClick={() => setShowAddBatchModal(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100 transition">Cancel</button>
-                <button type="submit" className="bg-stone-900 hover:bg-black text-white font-black px-8 py-2.5 rounded-xl shadow-lg transition">Save Entire Batch</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b pb-4 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-xl font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Style Details</h2>
-              <button onClick={() => setShowEditModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-            
-            <form onSubmit={handleUpdateGarment} className="space-y-4 overflow-y-auto pr-1">
-              <div className="bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Batch Assignment</label>
-                <input 
-                  type="text" required 
-                  value={editGarment.batch_name} onChange={(e) => setEditGarment({...editGarment, batch_name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Style Name</label>
-                <input 
-                  type="text" required 
-                  value={editGarment.name} onChange={(e) => setEditGarment({...editGarment, name: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Category</label>
-                  <input 
-                    type="text" placeholder="e.g. Tops" 
-                    list="edit-category-list"
-                    value={editGarment.category} onChange={(e) => setEditGarment({...editGarment, category: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                  <datalist id="edit-category-list">
-                    {categories.filter(c => c !== 'All' && c !== 'Uncategorized').map(cat => (
-                      <option key={`edit-cat-${cat}`} value={cat} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color (Optional)</label>
-                  <input 
-                    type="text" placeholder="e.g. Pink" 
-                    value={editGarment.color} onChange={(e) => setEditGarment({...editGarment, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Change Photo (Optional)</label>
-                {editGarment.previewUrl && (
-                  <div className="flex items-center gap-3 mb-2 bg-[#f2ece4] p-2 rounded-xl border border-stone-200">
-                    <img src={editGarment.previewUrl} alt="Current" className="w-12 h-12 object-cover rounded-lg shadow-sm border border-stone-200" />
-                    <span className="text-xs text-stone-600 font-bold">Current photo active</span>
-                  </div>
-                )}
-                <input 
-                  type="file" accept="image/*"
-                  onChange={(e) => setEditGarment({...editGarment, image: e.target.files[0]})}
-                  className="w-full text-xs text-stone-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                  <input 
-                    type="number" step="0.01" required 
-                    value={editGarment.cost_price} onChange={(e) => setEditGarment({...editGarment, cost_price: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
-                  <input 
-                    type="number" step="0.01" required 
-                    value={editGarment.selling_price} onChange={(e) => setEditGarment({...editGarment, selling_price: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-2">Update Size Stock Counts</label>
-                <div className="grid grid-cols-4 gap-2 bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
-                  {['S', 'M', 'L', 'XL'].map((size) => (
-                    <div key={`edit-sz-${size}`} className="text-center">
-                      <span className="block font-extrabold text-xs text-stone-500 mb-1">{size}</span>
-                      <input 
-                        type="number" min="0" 
-                        value={editGarment.sizes[size]} 
-                        onChange={(e) => setEditGarment({
-                          ...editGarment, 
-                          sizes: { ...editGarment.sizes, [size]: e.target.value }
-                        })}
-                        className="w-full border border-stone-300 rounded-lg p-2 text-center font-black text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100 mt-6 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => handleDeleteGarment(editGarment.id)}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-extrabold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5"
-                >
-                  <span>🗑️</span> Delete
-                </button>
-                
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowEditModal(false)} className="px-3 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showExpenseModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>📈</span> Record Batch Expense</h2>
-              <button onClick={() => setShowExpenseModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleCreateExpense} className="space-y-4 overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Expense / Batch Title</label>
-                <input 
-                  type="text" required placeholder="e.g. Batch #1 Arrival Costs" 
-                  value={newExpense.title} onChange={(e) => setNewExpense({...newExpense, title: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
-                  value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-extrabold text-stone-700 uppercase">Cost Calculation Mode</span>
-                  <button
-                    type="button"
-                    onClick={() => setNewExpense({ ...newExpense, isDetailed: !newExpense.isDetailed })}
-                    className="text-xs font-bold text-pink-700 bg-pink-100 hover:bg-pink-200 px-2.5 py-1 rounded-md transition"
-                  >
-                    {newExpense.isDetailed ? 'Switch to Lump Sum' : '📝 Add Itemized Breakdown'}
-                  </button>
-                </div>
-
-                {newExpense.isDetailed ? (
-                  <div className="space-y-2.5 pt-2 border-t border-stone-300">
-                    <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
-                    {newExpense.breakdown.map((item, idx) => (
-                      <div key={`n-bd-${idx}`} className="flex gap-2 items-center">
-                        <input
-                          type="text" placeholder="e.g. Freight Shipping" required
-                          value={item.name} onChange={(e) => handleBreakdownChange(idx, 'name', e.target.value)}
-                          className="flex-1 border border-stone-300 rounded-lg p-2 text-xs font-bold bg-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                        />
-                        <input
-                          type="number" step="0.01" min="0" placeholder="₱0.00" required
-                          value={item.cost} onChange={(e) => handleBreakdownChange(idx, 'cost', e.target.value)}
-                          className="w-24 border border-stone-300 rounded-lg p-2 text-xs font-black text-rose-600 bg-white text-right focus:ring-2 focus:ring-pink-500 focus:outline-none"
-                        />
-                        {newExpense.breakdown.length > 1 && (
-                          <button type="button" onClick={() => removeBreakdownRow(idx)} className="text-rose-500 hover:text-rose-700 font-bold text-base px-1" title="Remove line">✖</button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button" onClick={addBreakdownRow}
-                      className="w-full bg-white hover:bg-stone-100 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-1 transition shadow-2xs"
-                    >
-                      + Add Another Cost Line
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-500 font-medium">Currently inputting a simple lump-sum total below. Switch to detailed mode if you want to track shipping, trims, or customs individually.</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">
-                  {newExpense.isDetailed ? 'Total Calculated Amount (₱)' : 'Total Cost Amount (₱)'}
-                </label>
-                <input 
-                  type="number" step="0.01" required placeholder="1500.00" 
-                  value={newExpense.amount} 
-                  onChange={(e) => !newExpense.isDetailed && setNewExpense({...newExpense, amount: e.target.value})}
-                  readOnly={newExpense.isDetailed}
-                  className={`w-full border border-stone-300 rounded-lg p-2.5 text-lg font-black text-rose-600 focus:outline-none ${
-                    newExpense.isDetailed ? 'bg-stone-200 cursor-not-allowed opacity-80' : 'focus:ring-2 focus:ring-pink-500 bg-[#f9f6f0]'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-stone-100 mt-4 shrink-0">
-                <button type="button" onClick={() => setShowExpenseModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                <button type="submit" className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Expense</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditExpenseModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-stone-200">
-            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
-              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Batch Expense</h2>
-              <button onClick={() => setShowEditExpenseModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
-            </div>
-
-            <form onSubmit={handleUpdateExpense} className="space-y-4 overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Expense / Batch Title</label>
-                <input 
-                  type="text" required 
-                  value={editExpense.title} onChange={(e) => setEditExpense({...editExpense, title: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
-                  value={editExpense.date} onChange={(e) => setEditExpense({...editExpense, date: e.target.value})}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                />
-              </div>
-
-              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-extrabold text-stone-700 uppercase">Cost Calculation Mode</span>
-                  <button
-                    type="button"
-                    onClick={() => setEditExpense({ ...editExpense, isDetailed: !editExpense.isDetailed })}
-                    className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-md transition"
-                  >
-                    {editExpense.isDetailed ? 'Switch to Lump Sum' : '📝 Add Itemized Breakdown'}
-                  </button>
-                </div>
-
-                {editExpense.isDetailed ? (
-                  <div className="space-y-2.5 pt-2 border-t border-stone-300">
-                    <span className="text-[11px] font-bold text-stone-500 block">Itemized Cost Lines (Auto-calculates total):</span>
-                    {editExpense.breakdown.map((item, idx) => (
-                      <div key={`e-bd-${idx}`} className="flex gap-2 items-center">
-                        <input
-                          type="text" placeholder="e.g. Freight Shipping" required
-                          value={item.name} onChange={(e) => handleEditBreakdownChange(idx, 'name', e.target.value)}
-                          className="flex-1 border border-stone-300 rounded-lg p-2 text-xs font-bold bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        />
-                        <input
-                          type="number" step="0.01" min="0" placeholder="₱0.00" required
-                          value={item.cost} onChange={(e) => handleEditBreakdownChange(idx, 'cost', e.target.value)}
-                          className="w-24 border border-stone-300 rounded-lg p-2 text-xs font-black text-rose-600 bg-white text-right focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        />
-                        {editExpense.breakdown.length > 1 && (
-                          <button type="button" onClick={() => removeEditBreakdownRow(idx)} className="text-rose-500 hover:text-rose-700 font-bold text-base px-1" title="Remove line">✖</button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button" onClick={addEditBreakdownRow}
-                      className="w-full bg-white hover:bg-stone-100 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 mt-1 transition shadow-2xs"
-                    >
-                      + Add Another Cost Line
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-500 font-medium">Currently inputting a simple lump-sum total below. Switch to detailed mode if you want to edit itemized fees individually.</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">
-                  {editExpense.isDetailed ? 'Total Calculated Amount (₱)' : 'Total Cost Amount (₱)'}
-                </label>
-                <input 
-                  type="number" step="0.01" required 
-                  value={editExpense.amount} 
-                  onChange={(e) => !editExpense.isDetailed && setEditExpense({...editExpense, amount: e.target.value})}
-                  readOnly={editExpense.isDetailed}
-                  className={`w-full border border-stone-300 rounded-lg p-2.5 text-lg font-black text-rose-600 focus:outline-none ${
-                    editExpense.isDetailed ? 'bg-stone-200 cursor-not-allowed opacity-80' : 'focus:ring-2 focus:ring-amber-500 bg-[#f9f6f0]'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100 mt-4 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => handleDeleteExpense(editExpense.id)}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-extrabold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5"
-                >
-                  <span>🗑️</span> Delete
-                </button>
-
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowEditExpenseModal(false)} className="px-3 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* PRE-ORDER MODALS */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[95vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
               <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>📝</span> Add Pre-Order</h2>
               <button onClick={() => setShowPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
             </div>
 
-            <form onSubmit={handleCreatePreOrder} className="space-y-4">
+            <form onSubmit={handleCreatePreOrder} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
@@ -2743,64 +1880,97 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={newPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : newPreOrder.price;
-                    const dp = newPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setNewPreOrder({
-                      ...newPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={newPreOrder.size || ''} 
-                    onChange={(e) => setNewPreOrder({...newPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!newPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`po-sz-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
-                        {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
-                      </option>
+              {/* STYLES SECTION */}
+              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300 mt-2">
+                <span className="text-[10px] font-extrabold text-stone-700 uppercase block mb-2">Order Items</span>
+                
+                {/* LIST OF ADDED ITEMS */}
+                {newPreOrder.items && newPreOrder.items.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {newPreOrder.items.map((item, idx) => (
+                      <div key={`po-item-${idx}`} className="flex justify-between items-center bg-white p-2 rounded-lg border border-stone-200">
+                        <div>
+                          <div className="font-bold text-stone-800 text-xs">{item.item_name}</div>
+                          <div className="text-[10px] font-bold text-stone-400">Size: {item.size} {item.color && item.color !== 'N/A' ? `| ${item.color}` : ''}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-pink-600 font-black text-sm">₱{parseFloat(item.price || 0).toFixed(2)}</span>
+                          <button type="button" onClick={() => handleRemovePoItem(idx, false)} className="text-rose-500 hover:text-rose-700 font-bold" title="Remove item">✖</button>
+                        </div>
+                      </div>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={newPreOrder.color || ''} onChange={(e) => setNewPreOrder({...newPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
+                  </div>
+                )}
+
+                {/* INLINE ADD FORM / CONFIRM TOGGLE */}
+                {showAddPoItemForm ? (
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
+                      <select 
+                        value={poItemInput.item_name} 
+                        onChange={(e) => {
+                          const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
+                          setPoItemInput({ ...poItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
+                        }}
+                        className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                      >
+                        <option value="" disabled>-- Select a Style --</option>
+                        {sortedMergedGarmentsList.map(g => (
+                          <option key={`opt-add-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                        <select 
+                          value={poItemInput.size} 
+                          onChange={(e) => setPoItemInput({...poItemInput, size: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                          disabled={!poItemInput.item_name}
+                        >
+                          <option value="" disabled>-- Size --</option>
+                          {poItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === poItemInput.item_name)?.sizes).map(s => (
+                            <option key={`sz-add-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
+                              {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
+                        <input 
+                          type="text" placeholder="Optional" 
+                          value={poItemInput.color} onChange={(e) => setPoItemInput({...poItemInput, color: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => handleAddPoItem(false)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
+                        + Add Style to Order
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => handleConfirmPoItems(false)} 
+                        className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setShowAddPoItemForm(true)} className="w-full bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2.5 rounded-lg border border-dashed border-stone-300 transition mt-2">
+                    + Add Another Style
+                  </button>
+                )}
               </div>
 
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
+              {/* PAYMENT SECTION */}
+              <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
@@ -2813,7 +1983,7 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setNewPreOrder({...newPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                   <div>
@@ -2827,12 +1997,12 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setNewPreOrder({...newPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
+                <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
                   <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
                   <span className={`text-xl font-black ${newPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
                     ₱{newPreOrder.balance || '0.00'}
@@ -2846,7 +2016,7 @@ function AdminDashboard() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 shrink-0">
                 <button type="button" onClick={() => setShowPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
                 <button type="submit" className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Pre-Order</button>
               </div>
@@ -2855,15 +2025,18 @@ function AdminDashboard() {
         </div>
       )}
 
+      {/* ========================================== */}
+      {/* EDIT PRE-ORDER MODAL                       */}
+      {/* ========================================== */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[95vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
               <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Pre-Order</h2>
               <button onClick={() => setShowEditPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
             </div>
 
-            <form onSubmit={handleUpdatePreOrder} className="space-y-4">
+            <form onSubmit={handleUpdatePreOrder} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
@@ -2902,65 +2075,94 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={editPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : editPreOrder.price;
-                    const dp = editPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setEditPreOrder({
-                      ...editPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`edit-po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={editPreOrder.size || ''} 
-                    onChange={(e) => setEditPreOrder({...editPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!editPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`edit-po-sz-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
+              {/* STYLES SECTION (EDIT) */}
+              <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300 mt-2">
+                <span className="text-[10px] font-extrabold text-stone-700 uppercase block mb-2">Order Items</span>
+                
+                {editPreOrder.items && editPreOrder.items.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {editPreOrder.items.map((item, idx) => (
+                      <div key={`po-item-edit-${idx}`} className="flex justify-between items-center bg-white p-2 rounded-lg border border-stone-200">
+                        <div>
+                          <div className="font-bold text-stone-800 text-xs">{item.item_name}</div>
+                          <div className="text-[10px] font-bold text-stone-400">Size: {item.size} {item.color && item.color !== 'N/A' ? `| ${item.color}` : ''}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-amber-600 font-black text-sm">₱{parseFloat(item.price || 0).toFixed(2)}</span>
+                          <button type="button" onClick={() => handleRemovePoItem(idx, true)} className="text-rose-500 hover:text-rose-700 font-bold" title="Remove item">✖</button>
+                        </div>
+                      </div>
                     ))}
-                    {editPreOrder.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
-                      <option value={editPreOrder.size}>{String(editPreOrder.size)}</option>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={editPreOrder.color || ''} onChange={(e) => setEditPreOrder({...editPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
+                  </div>
+                )}
+
+                {showEditPoItemForm ? (
+                  <div className="bg-white p-3 rounded-lg border border-stone-200 shadow-sm space-y-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Select Garment Style</label>
+                      <select 
+                        value={editPoItemInput.item_name} 
+                        onChange={(e) => {
+                          const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
+                          setEditPoItemInput({ ...editPoItemInput, item_name: e.target.value, price: selected ? selected.selling_price : '', size: '' });
+                        }}
+                        className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                      >
+                        <option value="" disabled>-- Select a Style --</option>
+                        {sortedMergedGarmentsList.map(g => (
+                          <option key={`opt-edit-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Size</label>
+                        <select 
+                          value={editPoItemInput.size} 
+                          onChange={(e) => setEditPoItemInput({...editPoItemInput, size: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                          disabled={!editPoItemInput.item_name}
+                        >
+                          <option value="" disabled>-- Size --</option>
+                          {editPoItemInput.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPoItemInput.item_name)?.sizes).map(s => (
+                            <option key={`sz-edit-${s?.size}`} value={s?.size}>
+                              {String(s?.size)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Color</label>
+                        <input 
+                          type="text" placeholder="Optional" 
+                          value={editPoItemInput.color} onChange={(e) => setEditPoItemInput({...editPoItemInput, color: e.target.value})}
+                          className="w-full border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => handleAddPoItem(true)} className="flex-1 bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2 rounded-lg border border-stone-300 transition shadow-sm">
+                        + Add Style to Order
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => handleConfirmPoItems(true)} 
+                        className="flex-1 bg-stone-800 hover:bg-black text-white font-extrabold text-xs py-2 rounded-lg shadow-sm transition"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setShowEditPoItemForm(true)} className="w-full bg-white hover:bg-stone-50 text-stone-700 font-extrabold text-xs py-2.5 rounded-lg border border-dashed border-stone-300 transition mt-2">
+                    + Add Another Style
+                  </button>
+                )}
               </div>
 
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
+              <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
@@ -2973,7 +2175,7 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setEditPreOrder({...editPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                   <div>
@@ -2987,12 +2189,12 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setEditPreOrder({...editPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
+                <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
                   <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
                   <span className={`text-xl font-black ${editPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
                     ₱{editPreOrder.balance || '0.00'}
@@ -3006,9 +2208,38 @@ function AdminDashboard() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 shrink-0">
                 <button type="button" onClick={() => setShowEditPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
                 <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RENAME BATCH MODAL */}
+      {showRenameBatchModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200">
+            <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100">
+              <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Rename Batch</h2>
+              <button onClick={() => setShowRenameBatchModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
+            </div>
+
+            <form onSubmit={handleRenameBatchSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">New Batch Name</label>
+                <input 
+                  type="text" required 
+                  value={batchRenameState.newName} 
+                  onChange={(e) => setBatchRenameState({ ...batchRenameState, newName: e.target.value })}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+                <button type="button" onClick={() => setShowRenameBatchModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
+                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2 rounded-xl shadow text-sm transition">Save Name</button>
               </div>
             </form>
           </div>
@@ -3019,9 +2250,6 @@ function AdminDashboard() {
   );
 }
 
-// ==========================================
-// 4. ROUTER WRAPPER
-// ==========================================
 function ProtectedRoute({ children }) {
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   return isAdmin ? children : <Navigate to="/login" replace />;
@@ -3034,11 +2262,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<CustomerView />} />
           <Route path="/login" element={<LoginScreen />} />
-          <Route path="/admin" element={
-            <ProtectedRoute>
-              <AdminDashboard />
-            </ProtectedRoute>
-          } />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         </Routes>
       </Router>
     </ErrorBoundary>
