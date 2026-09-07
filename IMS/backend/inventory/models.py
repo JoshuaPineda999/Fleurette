@@ -54,6 +54,8 @@ class SaleLog(models.Model):
     ('Received', 'Received'),
 ]
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending')
+    # Batch the sold garment came from, captured at sale time for accurate batch analytics
+    batch_name = models.CharField(max_length=255, blank=True, null=True)
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):
@@ -62,6 +64,8 @@ class Expense(models.Model):
     date = models.DateField(default=timezone.now)
     # NEW: Saves line-by-line itemized breakdown as JSON array
     breakdown = models.JSONField(default=list, blank=True, null=True)
+    # Batch this expense is attributed to, for batch-scoped analytics
+    batch_name = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"{self.title} - ₱{self.amount}"

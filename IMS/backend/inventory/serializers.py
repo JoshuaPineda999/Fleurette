@@ -5,12 +5,12 @@ from .models import Garment, SizeStock, SaleLog, Expense, PreOrder
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Expense
-        fields = ['id', 'title', 'amount', 'date', 'breakdown']
+        fields = ['id', 'title', 'amount', 'date', 'breakdown', 'batch_name']
 
 class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
-        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status']
+        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name']
 
 class SizeStockSerializer(serializers.ModelSerializer):
     class Meta:

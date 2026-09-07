@@ -108,6 +108,29 @@ const mergeGarments = (garmentsList) => {
   });
 };
 
+// 7. ATOMIC FIFO/LIFO STOCK HELPERS (server-side, transactional — see GarmentViewSet.fifo_deduct/fifo_restore)
+// strict=true (sales): fails as a whole if total stock across batches can't cover the request.
+// strict=false (pre-order reservations): deducts whatever is available, even zero, and never errors.
+const fifoDeduct = ({ name, color, category, size, quantity, is_sale = false, strict = true }) =>
+  axios.post(`${API_BASE}garments/fifo-deduct/`, { name, color, category, size, quantity, is_sale, strict }).then(r => r.data);
+
+const fifoRestore = ({ name, color, category, size, quantity }) =>
+  axios.post(`${API_BASE}garments/fifo-restore/`, { name, color, category, size, quantity }).then(r => r.data);
+
+// 8. One line item within a (possibly multi-item) pre-order
+const emptyPreOrderItem = () => ({ item_name: '', size: '', color: '', quantity: 1 });
+
+// A legacy pre-order (created before multi-item support) only has flat item_name/size/color/quantity.
+// Newer ones carry an `items` array — this normalizes either shape to an array for display/logic.
+const preOrderItemList = (order) => {
+  const items = parseSafeArray(order?.items);
+  if (items.length > 0) return items;
+  if (order?.item_name) {
+    return [{ item_name: order.item_name, size: order.size, color: order.color, quantity: order.quantity || 1 }];
+  }
+  return [];
+};
+
 // ==========================================
 // ERROR BOUNDARY (PREVENTS WHITE SCREENS)
 // ==========================================
@@ -412,21 +435,23 @@ function AdminDashboard() {
   });
 
   const [newExpense, setNewExpense] = useState({
-    title: '', amount: '', date: getLocalDate(),
+    title: '', amount: '', date: getLocalDate(), batch_name: '',
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
   const [editExpense, setEditExpense] = useState({
-    id: null, title: '', amount: '', date: '',
+    id: null, title: '', amount: '', date: '', batch_name: '',
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
   const [newPreOrder, setNewPreOrder] = useState({
-    customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    customer_name: '', recipient_name: '', contact_number: '', address: '',
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
   });
 
   const [editPreOrder, setEditPreOrder] = useState({
-    id: null, customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: ''
+    id: null, customer_name: '', recipient_name: '', contact_number: '', address: '',
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
   });
 
   const showToast = (message) => {
@@ -533,39 +558,34 @@ function AdminDashboard() {
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
-      const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
-      let remainingToSell = parseInt(productModal.quantity);
+      const g = productModal.garment;
+      const isMergedGarment = g.underlying_garments && g.underlying_garments.length > 0;
+      const quantity = parseInt(productModal.quantity);
 
       if (isMergedGarment) {
-        // FIFO ROUTING: Sort by ascending ID so older batches are drained first
-        const sortedGarments = [...productModal.garment.underlying_garments].sort((a, b) => a.id - b.id);
-        
-        for (const g of sortedGarments) {
-          if (remainingToSell <= 0) break; // Sale fulfilled
-          
-          const sizeData = parseSafeArray(g.sizes).find(s => s.size === productModal.size);
-          const availableStock = sizeData ? parseInt(sizeData.quantity) : 0;
-          
-          if (availableStock > 0) {
-            const deductAmount = Math.min(availableStock, remainingToSell);
-            await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-              size: productModal.size, change: -deductAmount, is_sale: true
-            });
-            remainingToSell -= deductAmount;
-          }
-        }
+        // Atomic FIFO deduction across all batches sharing this name+color+category.
+        // strict:true means this either fully succeeds or nothing is deducted.
+        await fifoDeduct({
+          name: g.name, color: g.color, category: g.category,
+          size: productModal.size, quantity, is_sale: true, strict: true
+        });
       } else {
-        // Standard unmerged sale (from Batch Tracker)
-        await axios.patch(`${API_BASE}garments/${productModal.garment.id}/update_stock/`, {
-          size: productModal.size, change: -remainingToSell, is_sale: true
+        // Standard unmerged sale (from Batch Tracker) — targets this exact batch only.
+        await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
+          size: productModal.size, change: -quantity, is_sale: true
         });
       }
 
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${productModal.quantity} pc(s) of ${productModal.garment.name} (${productModal.size})`);
+      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${productModal.size})`);
       await fetchData(true);
     } catch (error) {
-      alert('Could not complete sale. Ensure sufficient stock across your batches.');
+      const available = error.response?.data?.available;
+      if (available !== undefined) {
+        alert(`Not enough stock: requested ${error.response.data.requested}, only ${available} available across all batches.`);
+      } else {
+        alert('Could not complete sale. Ensure sufficient stock across your batches.');
+      }
     }
   };
 
@@ -623,9 +643,11 @@ function AdminDashboard() {
         
         const batchName = newBatch.batch_name || 'Uncategorized';
         
-        const existingGarment = (garments || []).find(g => 
+        const existingGarment = (garments || []).find(g =>
           String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
-          String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim()
+          String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim() &&
+          String(g?.color || '').toLowerCase().trim() === String(style.color || '').toLowerCase().trim() &&
+          String(g?.category || '').toLowerCase().trim() === String(style.category || '').toLowerCase().trim()
         );
 
         const formData = new FormData();
@@ -816,9 +838,9 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const validBreakdown = newExpense.isDetailed ? newExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
-      await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, breakdown: validBreakdown });
+      await axios.post(`${API_BASE}expenses/`, { title: newExpense.title, amount: newExpense.amount, date: newExpense.date, batch_name: newExpense.batch_name || '', breakdown: validBreakdown });
       setShowExpenseModal(false);
-      setNewExpense({ title: '', amount: '', date: getLocalDate(), isDetailed: false, breakdown: [{ name: '', cost: '' }] });
+      setNewExpense({ title: '', amount: '', date: getLocalDate(), batch_name: '', isDetailed: false, breakdown: [{ name: '', cost: '' }] });
       showToast("📈 Batch expense recorded!");
       await fetchData(true);
     } catch (error) { alert('Could not save expense.'); }
@@ -826,7 +848,7 @@ function AdminDashboard() {
 
   const openEditExpenseModal = (item) => {
     const breakdownList = parseSafeArray(item?.breakdown).length > 0 ? parseSafeArray(item.breakdown) : [{ name: '', cost: '' }];
-    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || getLocalDate(), isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
+    setEditExpense({ id: item.id, title: item.title || '', amount: item.amount || '', date: item.date || getLocalDate(), batch_name: item.batch_name || '', isDetailed: parseSafeArray(item.breakdown).length > 0, breakdown: breakdownList });
     setShowEditExpenseModal(true);
   };
   const handleEditBreakdownChange = (index, field, value) => {
@@ -845,7 +867,7 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const validBreakdown = editExpense.isDetailed ? editExpense.breakdown.filter(b => String(b?.name || '').trim() !== '' && (parseFloat(b?.cost) || 0) > 0) : [];
-      await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, breakdown: validBreakdown });
+      await axios.patch(`${API_BASE}expenses/${editExpense.id}/`, { title: editExpense.title, amount: editExpense.amount, date: editExpense.date, batch_name: editExpense.batch_name || '', breakdown: validBreakdown });
       setShowEditExpenseModal(false);
       showToast("✏️ Expense updated!");
       await fetchData(true);
@@ -859,61 +881,146 @@ function AdminDashboard() {
   // -------------------------------------------------------------
   // FIFO LOGIC APPLIED TO PRE-ORDERS
   // -------------------------------------------------------------
+  // Sum of (matched garment's selling price * quantity) across an item list — used to
+  // auto-suggest the order's total price whenever items/quantities change.
+  const suggestedPreOrderPrice = (items) => (items || []).reduce((sum, it) => {
+    const g = (mergedGarmentsList || []).find(mg => String(mg?.name) === it.item_name);
+    const unit = g ? parseFloat(g.selling_price || 0) : 0;
+    return sum + unit * (parseInt(it.quantity) || 0);
+  }, 0);
+
+  const recalcPreOrderPricing = (items, downPayment) => {
+    const total = suggestedPreOrderPrice(items);
+    const bal = Math.max(0, total - parseFloat(downPayment || 0));
+    return { price: total.toFixed(2), balance: bal.toFixed(2), is_paid: bal <= 0 && total > 0 };
+  };
+
+  const updateNewPreOrderItem = (index, field, value) => {
+    const items = newPreOrder.items.map((it, i) => i === index ? { ...it, [field]: value, ...(field === 'item_name' ? { size: '' } : {}) } : it);
+    setNewPreOrder({ ...newPreOrder, items, ...recalcPreOrderPricing(items, newPreOrder.down_payment) });
+  };
+  const addNewPreOrderItemRow = () => setNewPreOrder({ ...newPreOrder, items: [...newPreOrder.items, emptyPreOrderItem()] });
+  const removeNewPreOrderItemRow = (index) => {
+    const items = newPreOrder.items.filter((_, i) => i !== index);
+    setNewPreOrder({ ...newPreOrder, items, ...recalcPreOrderPricing(items, newPreOrder.down_payment) });
+  };
+
+  const updateEditPreOrderItem = (index, field, value) => {
+    const items = editPreOrder.items.map((it, i) => i === index ? { ...it, [field]: value, ...(field === 'item_name' ? { size: '' } : {}) } : it);
+    setEditPreOrder({ ...editPreOrder, items, ...recalcPreOrderPricing(items, editPreOrder.down_payment) });
+  };
+  const addEditPreOrderItemRow = () => setEditPreOrder({ ...editPreOrder, items: [...editPreOrder.items, emptyPreOrderItem()] });
+  const removeEditPreOrderItemRow = (index) => {
+    const items = editPreOrder.items.filter((_, i) => i !== index);
+    setEditPreOrder({ ...editPreOrder, items, ...recalcPreOrderPricing(items, editPreOrder.down_payment) });
+  };
+
+  // Reserves stock for each line item via the atomic FIFO endpoint. Deliberately
+  // best-effort (strict:false) — a pre-order may legitimately reserve against
+  // stock that isn't fully available yet, so a shortfall shouldn't block the order.
+  // Reserves stock for each item and returns the items annotated with how much was
+  // ACTUALLY reserved (`reserved`), which can be less than `quantity` since reservation
+  // is best-effort (strict:false). Storing that on the order is what lets restore give
+  // back exactly what was taken instead of over-crediting stock that was never deducted.
+  const reservePreOrderItems = async (items) => {
+    const results = [];
+    for (const it of items) {
+      let reserved = 0;
+      try {
+        const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+        const res = await fifoDeduct({
+          name: it.item_name, color: it.color, category: garmentMeta?.category,
+          size: it.size, quantity: parseInt(it.quantity) || 1, is_sale: false, strict: false
+        });
+        reserved = res?.deducted || 0;
+      } catch (err) {
+        console.error('Stock reservation failed for', it.item_name, err);
+      }
+      results.push({ ...it, reserved });
+    }
+    return results;
+  };
+
+  const restorePreOrderItems = async (items) => {
+    for (const it of items) {
+      if (!it.item_name || !it.size) continue;
+      // Legacy records (created before reservation tracking) have no `reserved`
+      // field — fall back to the requested quantity for those.
+      const qty = parseInt(it.reserved != null ? it.reserved : it.quantity) || 0;
+      if (qty <= 0) continue;
+      try {
+        const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+        await fifoRestore({
+          name: it.item_name, color: it.color, category: garmentMeta?.category,
+          size: it.size, quantity: qty
+        });
+      } catch (err) {
+        console.error('Stock restore failed for', it.item_name, err);
+      }
+    }
+  };
+
+  const buildPreOrderPayload = (form) => {
+    const validItems = (form.items || [])
+      .filter(it => it.item_name && it.size && parseInt(it.quantity) > 0)
+      .map(it => ({
+        item_name: it.item_name, size: it.size,
+        color: !it.color || it.color.trim() === '' ? 'N/A' : it.color,
+        quantity: parseInt(it.quantity) || 1
+      }));
+    if (validItems.length === 0) return null;
+
+    const primary = validItems[0];
+    return {
+      items: validItems,
+      customer_name: form.customer_name,
+      recipient_name: form.recipient_name || '',
+      contact_number: form.contact_number || '',
+      address: form.address || '',
+      item_name: validItems.length > 1 ? `${primary.item_name} +${validItems.length - 1} more` : primary.item_name,
+      size: primary.size,
+      color: primary.color,
+      price: form.price, down_payment: form.down_payment, is_paid: form.is_paid, balance: form.balance
+    };
+  };
+
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
     try {
-      const orderPayload = {
-        ...newPreOrder,
-        color: !newPreOrder.color || newPreOrder.color.trim() === '' ? 'N/A' : newPreOrder.color,
-        recipient_name: newPreOrder.recipient_name || '', 
-        contact_number: newPreOrder.contact_number || '', 
-        address: newPreOrder.address || ''
-      };
+      const draftPayload = buildPreOrderPayload(newPreOrder);
+      if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
+
+      // Reserve first so the saved order records exactly how much stock it actually holds.
+      const reservedItems = await reservePreOrderItems(draftPayload.items);
+      const orderPayload = { ...draftPayload, items: reservedItems };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
 
-      // FIFO Pre-order deduction
-      const garmentsToUpdate = (garments || [])
-        .filter(g => String(g?.name) === newPreOrder.item_name)
-        .sort((a, b) => a.id - b.id); // Oldest batches first
-        
-      let remainingToDeduct = 1;
-      
-      for (const g of garmentsToUpdate) {
-        if (remainingToDeduct <= 0) break;
-        const sizeData = parseSafeArray(g.sizes).find(s => s.size === newPreOrder.size);
-        const available = sizeData ? parseInt(sizeData.quantity) : 0;
-        
-        if (available > 0) {
-          await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-            size: newPreOrder.size, change: -1, is_sale: false 
-          });
-          remainingToDeduct -= 1;
-        }
-      }
-
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', item_name: '', size: '', color: '', price: '', down_payment: '', is_paid: false, balance: '' });
-      showToast("📝 Pre-order added & stock deducted!");
+      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '' });
+      showToast("📝 Pre-order added & stock reserved!");
       await fetchData(true);
-    } catch (error) { 
-        alert(`Django Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}\n\nPlease ensure your models.py AND serializers.py both have recipient_name and contact_number.`); 
+    } catch (error) {
+        alert(`Error creating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`);
     }
   };
 
   const openEditPreOrderModal = (item) => {
-    setEditPreOrder({ 
+    const items = preOrderItemList(item).map(it => ({
+      item_name: it.item_name || '', size: it.size || '',
+      color: !it.color || it.color === 'N/A' ? '' : it.color,
+      quantity: it.quantity || 1
+    }));
+    setEditPreOrder({
       id: item.originalId || item.id,
-      customer_name: item.customer_name || '', 
-      recipient_name: item.recipient_name || '', 
-      contact_number: item.contact_number || '', 
-      address: item.address || '', 
-      item_name: item.item_name || item.name || '',
-      size: item.size || '', 
-      color: !item.color || item.color === 'N/A' ? '' : item.color, 
-      price: item.price || '', 
-      down_payment: item.down_payment || '', 
-      is_paid: item.is_paid || false, 
-      balance: item.balance || '' 
+      customer_name: item.customer_name || '',
+      recipient_name: item.recipient_name || '',
+      contact_number: item.contact_number || '',
+      address: item.address || '',
+      items: items.length > 0 ? items : [emptyPreOrderItem()],
+      price: item.price || '',
+      down_payment: item.down_payment || '',
+      is_paid: item.is_paid || false,
+      balance: item.balance || ''
     });
     setShowEditPreOrderModal(true);
   };
@@ -922,64 +1029,36 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
-      
+      const draftPayload = buildPreOrderPayload(editPreOrder);
+      if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
+
+      let finalItems = draftPayload.items;
       if (oldOrder) {
-        if (oldOrder.item_name !== editPreOrder.item_name || oldOrder.size !== editPreOrder.size) {
-          
-          // LIFO Restore to old garment batch
-          const oldGarments = (garments || [])
-            .filter(g => g?.name === oldOrder.item_name)
-            .sort((a, b) => b.id - a.id); // Newest first
-            
-          if (oldGarments.length > 0 && oldOrder.size) {
-            await axios.patch(`${API_BASE}garments/${oldGarments[0].id}/update_stock/`, { 
-              size: oldOrder.size, change: 1, is_sale: false 
-            });
-          }
-          
-          // FIFO Deduct from new garment batch
-          const newGarments = (garments || [])
-            .filter(g => g?.name === editPreOrder.item_name)
-            .sort((a, b) => a.id - b.id); // Oldest first
-            
-          let remainingToDeduct = 1;
-          for (const g of newGarments) {
-            if (remainingToDeduct <= 0) break;
-            const sizeData = parseSafeArray(g.sizes).find(s => s.size === editPreOrder.size);
-            const available = sizeData ? parseInt(sizeData.quantity) : 0;
-            if (available > 0 && editPreOrder.size) {
-              await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, { 
-                size: editPreOrder.size, change: -1, is_sale: false 
-              });
-              remainingToDeduct -= 1;
-            }
-          }
-        }
+        // Restore exactly what the old version of this order had actually reserved, then
+        // re-reserve for the new item list — simpler and safer than diffing item-by-item.
+        await restorePreOrderItems(preOrderItemList(oldOrder));
+        finalItems = await reservePreOrderItems(draftPayload.items);
       }
 
-      const orderPayload = {
-        ...editPreOrder,
-        color: !editPreOrder.color || editPreOrder.color.trim() === '' ? 'N/A' : editPreOrder.color,
-        recipient_name: editPreOrder.recipient_name || '',
-        contact_number: editPreOrder.contact_number || '',
-        address: editPreOrder.address || ''
-      };
-
+      const orderPayload = { ...draftPayload, items: finalItems };
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
-    } catch (error) { 
-        alert(`Django Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`); 
+    } catch (error) {
+        alert(`Error updating pre-order:\n${JSON.stringify(error.response?.data || error.message)}`);
     }
   };
 
   const handleDeletePreOrder = async (id) => {
-    if (!window.confirm("Delete this pre-order?")) return;
-    try { 
-      await axios.delete(`${API_BASE}preorders/${id}/`); 
-      showToast("🗑️ Pre-order removed."); 
-      await fetchData(true); 
+    if (!window.confirm("Delete this pre-order? This will restore the reserved stock.")) return;
+    try {
+      const order = (preOrders || []).find(o => o?.id === id);
+      if (order) await restorePreOrderItems(preOrderItemList(order));
+
+      await axios.delete(`${API_BASE}preorders/${id}/`);
+      showToast("🗑️ Pre-order removed & stock restored.");
+      await fetchData(true);
     } catch (error) { alert('Could not delete pre-order.'); }
   };
 
@@ -1115,7 +1194,8 @@ function AdminDashboard() {
       size: log?.size ? String(log.size) : '',
       qty: qty,
       earned: amountCollected,
-      status: log?.status ? String(log.status) : 'Pending'
+      status: log?.status ? String(log.status) : 'Pending',
+      batch_name: log?.batch_name ? String(log.batch_name) : ''
     };
   });
 
@@ -1135,10 +1215,17 @@ function AdminDashboard() {
     const validGarmentNames = garments
       .filter(g => String(g?.batch_name) === analyticsFilterBatch)
       .map(g => String(g?.name));
-      
-    analyticsSales = unifiedHistory.filter(log => validGarmentNames.includes(log.item_name));
-    
+
+    analyticsSales = unifiedHistory.filter(log => {
+      // Exact batch attribution when available (completed sales carry the batch
+      // they were actually deducted from); otherwise fall back to matching by
+      // product name — used for pre-orders and any pre-batch-tracking record.
+      if (log?.batch_name) return log.batch_name === analyticsFilterBatch;
+      return validGarmentNames.includes(log.item_name);
+    });
+
     analyticsExpenses = (expenses || []).filter(e => {
+      if (e?.batch_name) return e.batch_name === analyticsFilterBatch;
       const expenseTitle = String(e?.title || '').toLowerCase();
       const batchTitle = analyticsFilterBatch.toLowerCase();
       return expenseTitle.includes(batchTitle);
@@ -1926,6 +2013,9 @@ function AdminDashboard() {
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
                           <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
+                          {parseSafeArray(order?.items).length > 1 && (
+                            <div className="text-[10px] font-black text-pink-600 mt-0.5">{parseSafeArray(order.items).length} items — click to view</div>
+                          )}
                         </td>
                         <td className="p-4 text-center">
                           {order?.is_paid ? (
@@ -1992,13 +2082,32 @@ function AdminDashboard() {
 
               <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
                 <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
-                <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
-                <div className="flex gap-3 mt-1.5">
-                  <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
-                  {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
-                    <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Color: {viewPreOrder.color}</span>
-                  )}
-                </div>
+                {parseSafeArray(viewPreOrder.items).length > 0 ? (
+                  <div className="space-y-2">
+                    {parseSafeArray(viewPreOrder.items).map((it, idx) => (
+                      <div key={`view-po-item-${idx}`} className="flex items-center justify-between border-b border-stone-100 last:border-0 pb-2 last:pb-0">
+                        <p className="font-black text-sm text-stone-900 leading-tight">{it?.item_name}</p>
+                        <div className="flex gap-1.5 shrink-0">
+                          <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">x{it?.quantity || 1}</span>
+                          <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">{it?.size}</span>
+                          {it?.color && it.color !== 'N/A' && (
+                            <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">{it.color}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
+                    <div className="flex gap-3 mt-1.5">
+                      <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
+                      {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
+                        <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Color: {viewPreOrder.color}</span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2">
@@ -2515,11 +2624,27 @@ function AdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
+                <input
+                  type="date" required
                   value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Attribute to Batch (Optional)</label>
+                <select
+                  value={newExpense.batch_name || ''} onChange={(e) => setNewExpense({...newExpense, batch_name: e.target.value})}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
+                >
+                  <option value="">-- General / Not Batch-Specific --</option>
+                  {Array.from(new Set((garments || []).map(g => String(g?.batch_name || 'Uncategorized'))))
+                    .filter(b => b !== 'Uncategorized' && b.trim() !== '')
+                    .sort()
+                    .map(batch => (
+                      <option key={`new-exp-batch-${batch}`} value={batch}>{batch}</option>
+                    ))}
+                </select>
               </div>
 
               <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
@@ -2610,11 +2735,27 @@ function AdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Date Incurred</label>
-                <input 
-                  type="date" required 
+                <input
+                  type="date" required
                   value={editExpense.date} onChange={(e) => setEditExpense({...editExpense, date: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Attribute to Batch (Optional)</label>
+                <select
+                  value={editExpense.batch_name || ''} onChange={(e) => setEditExpense({...editExpense, batch_name: e.target.value})}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                >
+                  <option value="">-- General / Not Batch-Specific --</option>
+                  {Array.from(new Set((garments || []).map(g => String(g?.batch_name || 'Uncategorized'))))
+                    .filter(b => b !== 'Uncategorized' && b.trim() !== '')
+                    .sort()
+                    .map(batch => (
+                      <option key={`edit-exp-batch-${batch}`} value={batch}>{batch}</option>
+                    ))}
+                </select>
               </div>
 
               <div className="bg-[#f2ece4] p-3.5 rounded-xl border border-stone-300">
@@ -2744,59 +2885,57 @@ function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={newPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : newPreOrder.price;
-                    const dp = newPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setNewPreOrder({
-                      ...newPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={newPreOrder.size || ''} 
-                    onChange={(e) => setNewPreOrder({...newPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!newPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {newPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === newPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`po-sz-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
-                        {String(s?.size)} {s?.quantity <= 0 ? '(Out of Stock)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-stone-600 uppercase">Items</label>
+                  <button type="button" onClick={addNewPreOrderItemRow} className="text-[10px] font-black text-pink-600 hover:text-pink-700 uppercase">+ Add Item</button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={newPreOrder.color || ''} onChange={(e) => setNewPreOrder({...newPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                  />
+                <div className="space-y-2">
+                  {newPreOrder.items.map((it, idx) => (
+                    <div key={`new-po-item-${idx}`} className="bg-[#f9f6f0] p-3 rounded-xl border border-stone-200 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          required
+                          value={it.item_name}
+                          onChange={(e) => updateNewPreOrderItem(idx, 'item_name', e.target.value)}
+                          className="flex-1 border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                        >
+                          <option value="" disabled>-- Select a Style --</option>
+                          {(mergedGarmentsList || []).map(g => (
+                            <option key={`po-opt-${idx}-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                          ))}
+                        </select>
+                        {newPreOrder.items.length > 1 && (
+                          <button type="button" onClick={() => removeNewPreOrderItemRow(idx)} className="text-rose-500 hover:text-rose-700 font-black text-lg leading-none px-1" title="Remove item">&times;</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          required
+                          value={it.size || ''}
+                          onChange={(e) => updateNewPreOrderItem(idx, 'size', e.target.value)}
+                          disabled={!it.item_name}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                        >
+                          <option value="" disabled>Size</option>
+                          {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
+                            <option key={`po-sz-${idx}-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
+                              {String(s?.size)} {s?.quantity <= 0 ? '(Out)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text" placeholder="Color"
+                          value={it.color || ''} onChange={(e) => updateNewPreOrderItem(idx, 'color', e.target.value)}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                        />
+                        <input
+                          type="number" min="1" placeholder="Qty" required
+                          value={it.quantity} onChange={(e) => updateNewPreOrderItem(idx, 'quantity', e.target.value)}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2903,60 +3042,58 @@ function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Garment Style</label>
-                <select 
-                  required 
-                  value={editPreOrder.item_name} 
-                  onChange={(e) => {
-                    const selected = (mergedGarmentsList || []).find(g => String(g?.name) === e.target.value);
-                    const newPrice = selected ? selected.selling_price : editPreOrder.price;
-                    const dp = editPreOrder.down_payment || 0;
-                    const bal = Math.max(0, parseFloat(newPrice || 0) - parseFloat(dp));
-                    
-                    setEditPreOrder({
-                      ...editPreOrder, 
-                      item_name: e.target.value,
-                      price: newPrice,
-                      balance: bal.toFixed(2),
-                      is_paid: bal <= 0 && parseFloat(newPrice || 0) > 0,
-                      size: ''
-                    });
-                  }}
-                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                >
-                  <option value="" disabled>-- Select a Style --</option>
-                  {(mergedGarmentsList || []).map(g => (
-                    <option key={`edit-po-opt-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Size</label>
-                  <select 
-                    required 
-                    value={editPreOrder.size || ''} 
-                    onChange={(e) => setEditPreOrder({...editPreOrder, size: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                    disabled={!editPreOrder.item_name}
-                  >
-                    <option value="" disabled>-- Size --</option>
-                    {editPreOrder.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).map(s => (
-                      <option key={`edit-po-sz-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
-                    ))}
-                    {editPreOrder.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === editPreOrder.item_name)?.sizes).find(s => String(s?.size) === editPreOrder.size) && (
-                      <option value={editPreOrder.size}>{String(editPreOrder.size)}</option>
-                    )}
-                  </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-stone-600 uppercase">Items</label>
+                  <button type="button" onClick={addEditPreOrderItemRow} className="text-[10px] font-black text-amber-600 hover:text-amber-700 uppercase">+ Add Item</button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Color</label>
-                  <input 
-                    type="text" placeholder="Color (Optional)" 
-                    value={editPreOrder.color || ''} onChange={(e) => setEditPreOrder({...editPreOrder, color: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
+                <div className="space-y-2">
+                  {editPreOrder.items.map((it, idx) => (
+                    <div key={`edit-po-item-${idx}`} className="bg-[#f9f6f0] p-3 rounded-xl border border-stone-200 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          required
+                          value={it.item_name}
+                          onChange={(e) => updateEditPreOrderItem(idx, 'item_name', e.target.value)}
+                          className="flex-1 border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          <option value="" disabled>-- Select a Style --</option>
+                          {(mergedGarmentsList || []).map(g => (
+                            <option key={`edit-po-opt-${idx}-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                          ))}
+                        </select>
+                        {editPreOrder.items.length > 1 && (
+                          <button type="button" onClick={() => removeEditPreOrderItemRow(idx)} className="text-rose-500 hover:text-rose-700 font-black text-lg leading-none px-1" title="Remove item">&times;</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          required
+                          value={it.size || ''}
+                          onChange={(e) => updateEditPreOrderItem(idx, 'size', e.target.value)}
+                          disabled={!it.item_name}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          <option value="" disabled>Size</option>
+                          {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
+                            <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
+                          ))}
+                          {it.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).find(s => String(s?.size) === it.size) && (
+                            <option value={it.size}>{String(it.size)}</option>
+                          )}
+                        </select>
+                        <input
+                          type="text" placeholder="Color"
+                          value={it.color || ''} onChange={(e) => updateEditPreOrderItem(idx, 'color', e.target.value)}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        />
+                        <input
+                          type="number" min="1" placeholder="Qty" required
+                          value={it.quantity} onChange={(e) => updateEditPreOrderItem(idx, 'quantity', e.target.value)}
+                          className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
