@@ -27,7 +27,6 @@ const formatImageUrl = (url) => {
   
   url = url.trim();
   
-  // Force Cloudinary to load securely over HTTPS to prevent missing images
   if (url.includes('cloudinary.com')) {
     const pureUrl = url.replace(/^https?:\/\//, '').replace(/^\/\//, '');
     return `https://${pureUrl}`;
@@ -83,7 +82,6 @@ const mergeGarments = (garmentsList) => {
       };
     } else {
       mergedMap[key].underlying_garments.push(g);
-      // Fallback image if current has none
       if (!mergedMap[key].image && g.image) {
         mergedMap[key].image = g.image;
       }
@@ -102,7 +100,6 @@ const mergeGarments = (garmentsList) => {
       size: size,
       quantity: m.merged_sizes[size]
     }));
-    // Sort oldest first for perfect FIFO operations
     m.underlying_garments.sort((a, b) => a.id - b.id);
     return m;
   });
@@ -154,10 +151,7 @@ class ErrorBoundary extends React.Component {
           <p className="text-stone-600 max-w-md mb-6 text-sm font-bold bg-white p-4 rounded-xl border border-stone-200 break-all overflow-hidden">
             {this.state.error?.message || "An unexpected rendering error occurred."}
           </p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-stone-900 hover:bg-black text-white font-black px-6 py-3 rounded-xl shadow transition"
-          >
+          <button onClick={() => window.location.reload()} className="bg-stone-900 hover:bg-black text-white font-black px-6 py-3 rounded-xl shadow transition">
             Reload Application
           </button>
         </div>
@@ -167,9 +161,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// ==========================================
-// 1. CUSTOMER CATALOG VIEW (DEFAULT /)
-// ==========================================
 function CustomerView() {
   const [garments, setGarments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -234,17 +225,10 @@ function CustomerView() {
           </div>
         </div>
 
-        {/* CUSTOMER CATEGORY TABS */}
         {!loading && categories.length > 1 && (
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {categories.map(cat => (
-              <button
-                key={String(cat)}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
-                  activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                }`}
-              >
+              <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100' }`}>
                 {String(cat)}
               </button>
             ))}
@@ -256,23 +240,14 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {filteredGarments.map(item => (
-              <div 
-                key={`cust-${item?.id}`} 
-                onClick={() => { if (item?.image) setZoomedImage(item.image); }}
-                className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300"
-              >
+              <div key={`cust-${item?.id}`} onClick={() => { if (item?.image) setZoomedImage(item.image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
                 {item?.total_pieces === 0 && (
                   <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
                 )}
                 <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
                   {item?.image ? (
                     <>
-                      <img 
-                        src={item.image} 
-                        alt={item.name} 
-                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
-                        className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} 
-                      />
+                      <img src={item.image} alt={item.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />
                       <span className="text-6xl text-stone-300 hidden">👗</span>
                     </>
                   ) : (
@@ -282,11 +257,7 @@ function CustomerView() {
                 <div className="p-5 flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{String(item?.name || 'Unnamed')}</h3>
-                    {item?.color && item.color !== 'N/A' && (
-                      <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                        {String(item.color)}
-                      </span>
-                    )}
+                    {item?.color && item.color !== 'N/A' && (<span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">{String(item.color)}</span>)}
                   </div>
                   <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
                   <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
@@ -295,9 +266,7 @@ function CustomerView() {
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
                     <div className="flex flex-wrap gap-2">
                       {parseSafeArray(item?.sizes).map(s => (
-                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>
-                          {String(s?.size || 'N/A')}
-                        </span>
+                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{String(s?.size || 'N/A')}</span>
                       ))}
                     </div>
                   </div>
@@ -320,9 +289,6 @@ function CustomerView() {
   );
 }
 
-// ==========================================
-// 2. LOGIN SCREEN (SECURED VIA .ENV & SHOW/HIDE)
-// ==========================================
 function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -350,27 +316,11 @@ function LoginScreen() {
         
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
-            <input 
-              type={showPassword ? "text" : "password"} 
-              placeholder="Password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required
-              className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition"
-              title={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? '👁️' : '👁️‍🗨️'}
-            </button>
+            <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"/>
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition" title={showPassword ? "Hide password" : "Show password"}>{showPassword ? '👁️' : '👁️‍🗨️'}</button>
           </div>
           {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
-          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
-            Login to Workspace
-          </button>
+          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">Login to Workspace</button>
         </form>
         <div className="mt-6 pt-6 border-t border-stone-100">
           <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
@@ -380,9 +330,6 @@ function LoginScreen() {
   );
 }
 
-// ==========================================
-// 3. ADMIN DASHBOARD
-// ==========================================
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -410,28 +357,23 @@ function AdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  
   const [showPreOrderModal, setShowPreOrderModal] = useState(false);
+
   const [showEditPreOrderModal, setShowEditPreOrderModal] = useState(false);
 
   const [showRenameBatchModal, setShowRenameBatchModal] = useState(false);
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
 
-  const [productModal, setProductModal] = useState({
-    show: false, garment: null, mode: 'sell', size: 'M', quantity: 1
-  });
-
+  const [productModal, setProductModal] = useState({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '',
-    styles: [
-      { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
-    ]
+    batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
-    id: null, batch_name: '', name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, previewUrl: null,
-    sizes: { S: 0, M: 0, L: 0, XL: 0 }
+    id: null, batch_name: '', name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, previewUrl: null, sizes: { S: 0, M: 0, L: 0, XL: 0 }
   });
 
   const [newExpense, setNewExpense] = useState({
@@ -444,6 +386,7 @@ function AdminDashboard() {
     isDetailed: false, breakdown: [{ name: '', cost: '' }]
   });
 
+  // State for multiple items in Pre-order
   const [newPreOrder, setNewPreOrder] = useState({
     customer_name: '', recipient_name: '', contact_number: '', address: '',
     items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
@@ -454,23 +397,11 @@ function AdminDashboard() {
     items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
   });
 
-  const showToast = (message) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('isAdmin');
-    navigate('/');
-  };
+  const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
+  const handleLogout = () => { localStorage.removeItem('isAdmin'); navigate('/'); };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({
-      batch_name: prefillBatchName,
-      styles: [
-        { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }
-      ]
-    });
+    setNewBatch({ batch_name: prefillBatchName, styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -480,26 +411,17 @@ function AdminDashboard() {
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
-      const formattedGarments = (gData || []).map(g => ({
-        ...g,
-        sizes: parseSafeArray(g?.sizes),
-        image: formatImageUrl(g?.image)
-      }));
+      const formattedGarments = (gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) }));
       setGarments(formattedGarments);
 
-      // Re-hydrate the Product Modal specifically looking out for merged updates
       if (productModal.show && productModal.garment) {
         const mergedList = mergeGarments(formattedGarments);
-        
         let freshCurrent;
         if (productModal.garment.underlying_garments) {
-          // It was a merged garment
           freshCurrent = mergedList.find(g => g.name === productModal.garment.name && g.color === productModal.garment.color);
         } else {
-          // It was an individual garment from batch tracker
           freshCurrent = formattedGarments.find(g => g?.id === productModal.garment.id);
         }
-        
         if (freshCurrent) setProductModal(prev => ({ ...prev, garment: freshCurrent }));
       }
 
@@ -509,40 +431,13 @@ function AdminDashboard() {
       if (!isBackgroundRefresh) setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
-      if (!isBackgroundRefresh) {
-        setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.');
-        setLoading(false);
-      }
+      if (!isBackgroundRefresh) { setErrorMessage('Could not connect to Django server. Please ensure the backend is running and the URL is configured.'); setLoading(false); }
     }
   };
 
-  const fetchSalesHistory = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}sales/history/`);
-      setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || []));
-    } catch (error) {
-      console.error("Failed to load Sales History.", error);
-    }
-  };
-
-  const fetchExpenses = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}expenses/`);
-      const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-      setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) })));
-    } catch (error) {
-      console.error("Failed to load Expenses.", error);
-    }
-  };
-
-  const fetchPreOrders = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}preorders/`);
-      setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || []));
-    } catch (error) {
-      console.error("Failed to load Pre-orders.", error);
-    }
-  };
+  const fetchSalesHistory = async () => { try { const res = await axios.get(`${API_BASE}sales/history/`); setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
+  const fetchExpenses = async () => { try { const res = await axios.get(`${API_BASE}expenses/`); const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []); setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) }))); } catch (error) {} };
+  const fetchPreOrders = async () => { try { const res = await axios.get(`${API_BASE}preorders/`); setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -552,9 +447,6 @@ function AdminDashboard() {
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
-  // -------------------------------------------------------------
-  // FIFO LOGIC APPLIED TO RECORDING SALES
-  // -------------------------------------------------------------
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -593,56 +485,26 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
-      
-      // LIFO ROUTING: Restock is mapped to the newest batch
-      const targetGarmentId = isMergedGarment 
-        ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id 
-        : productModal.garment.id;
-
-      await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, {
-        size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false
-      });
-      
+      const targetGarmentId = isMergedGarment ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id : productModal.garment.id;
+      await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false });
       showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${productModal.garment.name} (${productModal.size})`);
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       await fetchData(true);
-    } catch (error) {
-      alert('Could not restock item.');
-    }
+    } catch (error) { alert('Could not restock item.'); }
   };
 
-  const handleBatchStyleChange = (index, field, value) => {
-    const updatedStyles = [...newBatch.styles];
-    updatedStyles[index][field] = value;
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
-
-  const handleBatchSizeChange = (index, size, value) => {
-    const updatedStyles = [...newBatch.styles];
-    updatedStyles[index].sizes[size] = value;
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
-
-  const addStyleToBatch = () => {
-    setNewBatch({
-      ...newBatch,
-      styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
-    });
-  };
-
-  const removeStyleFromBatch = (index) => {
-    const updatedStyles = newBatch.styles.filter((_, i) => i !== index);
-    setNewBatch({ ...newBatch, styles: updatedStyles });
-  };
+  const handleBatchStyleChange = (index, field, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index][field] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+  const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
     try {
       for (const style of newBatch.styles) {
         if (!style.name) continue; 
-        
         const batchName = newBatch.batch_name || 'Uncategorized';
-        
+
         const existingGarment = (garments || []).find(g =>
           String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
           String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim() &&
@@ -653,29 +515,18 @@ function AdminDashboard() {
         const formData = new FormData();
         formData.append('batch_name', batchName);
         formData.append('name', style.name.trim());
-
         if (existingGarment) {
           const mergedSizes = { S: 0, M: 0, L: 0, XL: 0 };
           const currentSizeMap = {};
-          
           parseSafeArray(existingGarment.sizes).forEach(s => { currentSizeMap[s?.size] = s?.quantity; });
-          
-          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => {
-            mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0);
-          });
-
+          ['S', 'M', 'L', 'XL'].forEach(sizeLabel => { mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0); });
           formData.append('category', style.category || existingGarment.category || 'Uncategorized');
           formData.append('color', style.color || existingGarment.color || 'N/A');
           formData.append('cost_price', style.cost_price || existingGarment.cost_price);
           formData.append('selling_price', style.selling_price || existingGarment.selling_price);
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
-          
           if (style.image) formData.append('image', style.image);
-
-          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
-
+          await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           formData.append('category', style.category || 'Uncategorized');
           formData.append('color', style.color || 'N/A');
@@ -683,39 +534,21 @@ function AdminDashboard() {
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
           if (style.image) formData.append('image', style.image);
-
-          await axios.post(`${API_BASE}garments/`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
+          await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         }
       }
-
       setShowAddBatchModal(false);
-      setNewBatch({
-        batch_name: '',
-        styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
-      });
-      
+      setNewBatch({ batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
-    } catch (error) {
-      alert('Error uploading batch. Ensure the backend database matches the frontend changes.');
-    }
+    } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
   };
 
-  const openRenameBatchModal = (oldName) => {
-    setBatchRenameState({ oldName, newName: oldName });
-    setShowRenameBatchModal(true);
-  };
-
+  const openRenameBatchModal = (oldName) => { setBatchRenameState({ oldName, newName: oldName }); setShowRenameBatchModal(true); };
   const handleRenameBatchSubmit = async (e) => {
     e.preventDefault();
     const { oldName, newName } = batchRenameState;
-    if (!newName.trim() || newName.trim() === oldName) {
-      setShowRenameBatchModal(false);
-      return;
-    }
-
+    if (!newName.trim() || newName.trim() === oldName) { setShowRenameBatchModal(false); return; }
     try {
       const itemsToUpdate = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === oldName);
       for (const item of itemsToUpdate) {
@@ -723,43 +556,28 @@ function AdminDashboard() {
         formData.append('batch_name', newName.trim());
         await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
       }
-
       if (selectedBatch === oldName) setSelectedBatch(newName.trim());
-
       setShowRenameBatchModal(false);
       showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
       await fetchData(true);
-    } catch (error) {
-      alert('Could not rename batch. Please try again.');
-    }
+    } catch (error) { alert('Could not rename batch. Please try again.'); }
   };
 
   const handleDeleteBatch = async (batchName) => {
     const itemsToDelete = (garments || []).filter(g => (g?.batch_name || 'Uncategorized') === batchName);
     if (!window.confirm(`Are you sure you want to delete "${batchName}"?\n\nThis will permanently delete all ${itemsToDelete.length} item styles inside this batch!`)) return;
-
     try {
-      for (const item of itemsToDelete) {
-        await axios.delete(`${API_BASE}garments/${item.id}/`);
-      }
+      for (const item of itemsToDelete) { await axios.delete(`${API_BASE}garments/${item.id}/`); }
       if (selectedBatch === batchName) setSelectedBatch(null);
       showToast(`🗑️ Batch "${batchName}" and all its styles have been removed.`);
       await fetchData(true);
-    } catch (error) {
-      alert('Could not delete all items in batch.');
-    }
+    } catch (error) { alert('Could not delete all items in batch.'); }
   };
 
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
-    
-    setEditGarment({
-      id: item.id, batch_name: item.batch_name || '', name: item.name || '', 
-      category: item.category || '', color: item.color || '',
-      cost_price: item.cost_price || '', selling_price: item.selling_price || '',
-      image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap
-    });
+    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -768,38 +586,15 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const formData = new FormData();
-      formData.append('batch_name', editGarment.batch_name);
-      formData.append('name', editGarment.name);
-      formData.append('category', editGarment.category || 'Uncategorized');
-      formData.append('color', editGarment.color || 'N/A');
-      formData.append('cost_price', editGarment.cost_price);
-      formData.append('selling_price', editGarment.selling_price);
-      formData.append('initial_sizes', JSON.stringify(editGarment.sizes));
-      if (editGarment.image) formData.append('image', editGarment.image);
-
-      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      setShowEditModal(false);
-      showToast("✏️ Style details updated!");
-      await fetchData(true);
-    } catch (error) {
-      alert('Error saving changes. Check your inputs.');
-    }
+      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); formData.append('cost_price', editGarment.cost_price); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); if (editGarment.image) formData.append('image', editGarment.image);
+      await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setShowEditModal(false); showToast("✏️ Style details updated!"); await fetchData(true);
+    } catch (error) { alert('Error saving changes. Check your inputs.'); }
   };
 
   const handleDeleteGarment = async (id) => {
     if (!window.confirm("Are you sure you want to delete this style? All remaining stock for this item will be removed.")) return;
-    try {
-      await axios.delete(`${API_BASE}garments/${id}/`);
-      setShowEditModal(false);
-      setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast("🗑️ Garment style removed.");
-      await fetchData(true);
-    } catch (error) {
-      alert('Could not delete garment. Please try again.');
-    }
+    try { await axios.delete(`${API_BASE}garments/${id}/`); setShowEditModal(false); setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 }); showToast("🗑️ Garment style removed."); await fetchData(true); } catch (error) { alert('Could not delete garment. Please try again.'); }
   };
 
   const handleFactoryReset = async () => {
@@ -807,27 +602,14 @@ function AdminDashboard() {
     if (confirmText === 'DELETE') {
       setLoading(true);
       try {
-        for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`);
-        for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`);
-        for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`);
-        for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
-        
-        setActiveTab('inventory');
-        showToast("🧨 All data has been completely wiped. Fresh start!");
-        await fetchData(true);
-      } catch (error) {
-        alert('Error wiping data. Check connection.');
-      }
+        for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`); for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`); for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`); for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
+        setActiveTab('inventory'); showToast("🧨 All data has been completely wiped. Fresh start!"); await fetchData(true);
+      } catch (error) { alert('Error wiping data. Check connection.'); }
       setLoading(false);
     }
   };
 
-  const handleBreakdownChange = (index, field, value) => {
-    const updated = [...newExpense.breakdown];
-    updated[index][field] = value;
-    const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0);
-    setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' });
-  };
+  const handleBreakdownChange = (index, field, value) => { const updated = [...newExpense.breakdown]; updated[index][field] = value; const totalSum = updated.reduce((sum, item) => sum + (parseFloat(item?.cost) || 0), 0); setNewExpense({ ...newExpense, breakdown: updated, amount: totalSum > 0 ? totalSum.toFixed(2) : '' }); };
   const addBreakdownRow = () => setNewExpense({ ...newExpense, breakdown: [...newExpense.breakdown, { name: '', cost: '' }] });
   const removeBreakdownRow = (index) => {
     const updated = newExpense.breakdown.filter((_, i) => i !== index);
@@ -877,9 +659,9 @@ function AdminDashboard() {
     if (!window.confirm("Remove this recorded expense?")) return;
     try { await axios.delete(`${API_BASE}expenses/${id}/`); setShowEditExpenseModal(false); showToast("🗑️ Expense removed."); await fetchData(true); } catch (error) { alert('Could not delete expense.'); }
   };
-  
+
   // -------------------------------------------------------------
-  // FIFO LOGIC APPLIED TO PRE-ORDERS
+  // MULTI-STYLE PRE-ORDER LOGIC & FIFO
   // -------------------------------------------------------------
   // Sum of (matched garment's selling price * quantity) across an item list — used to
   // auto-suggest the order's total price whenever items/quantities change.
@@ -1022,11 +804,17 @@ function AdminDashboard() {
       is_paid: item.is_paid || false,
       balance: item.balance || ''
     });
+    setEditPoItemInput({ item_name: '', size: '', color: '', price: '' });
+    setShowEditPoItemForm(false);
     setShowEditPreOrderModal(true);
   };
 
   const handleUpdatePreOrder = async (e) => {
     e.preventDefault();
+    if (!editPreOrder.items || editPreOrder.items.length === 0) {
+      return alert("Please add at least one style to the pre-order.");
+    }
+
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
       const draftPayload = buildPreOrderPayload(editPreOrder);
@@ -1062,32 +850,29 @@ function AdminDashboard() {
     } catch (error) { alert('Could not delete pre-order.'); }
   };
 
-  // ==========================================
-  // SALES HISTORY & LEDGER
-  // ==========================================
   const handleDeleteSalesHistory = async (id) => {
     if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
     try {
       const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        // LIFO Restore to newest matching batch
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === logToRevert.garment_name)
-          .sort((a, b) => b.id - a.id);
+        let targetGarmentId = logToRevert.garment_id;
+        if (!targetGarmentId && logToRevert.batch_name) {
+            const g = (garments || []).find(g => g.name === logToRevert.garment_name && g.batch_name === logToRevert.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === logToRevert.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
           
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
-            size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false
-          });
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false });
         }
       }
-
       await axios.delete(`${API_BASE}sales/history/${id}/`);
       showToast("🗑️ Sales record deleted & stock restored.");
       await fetchData(true);
-    } catch (error) { 
-      alert('Could not delete sales record.'); 
-    }
+    } catch (error) { alert('Could not delete sales record.'); }
   };
 
   const handleClearAllHistory = async () => {
@@ -1096,33 +881,29 @@ function AdminDashboard() {
     try {
       for (const log of (salesHistory || [])) {
         if (!log) continue;
-        // LIFO Restore
-        const targetGarments = (garments || [])
-          .filter(g => g?.name === log.garment_name)
-          .sort((a, b) => b.id - a.id);
-          
-        if (targetGarments.length > 0) {
-          await axios.patch(`${API_BASE}garments/${targetGarments[0].id}/update_stock/`, {
-            size: log.size, change: log.quantity_sold, is_sale: false
-          });
+        let targetGarmentId = log.garment_id;
+        if (!targetGarmentId && log.batch_name) {
+            const g = (garments || []).find(g => g.name === log.garment_name && g.batch_name === log.batch_name);
+            if (g) targetGarmentId = g.id;
+        }
+        if (!targetGarmentId) {
+            const g = (garments || []).filter(g => g?.name === log.garment_name).sort((a, b) => b.id - a.id)[0];
+            if (g) targetGarmentId = g.id;
+        }
+        if (targetGarmentId) {
+          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: log.size, change: log.quantity_sold, is_sale: false });
         }
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
       }
       showToast("🗑️ Entire Sales Ledger cleared & stocks restored!");
       await fetchData(true);
-    } catch (error) { 
-      alert('Error clearing some records.'); 
-    }
+    } catch (error) { alert('Error clearing some records.'); }
     setLoading(false);
   };
 
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
-    if (isPreOrder) {
-      setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p));
-    } else {
-      setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s));
-    }
-
+    if (isPreOrder) { setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p)); } 
+    else { setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s)); }
     try {
       const endpoint = isPreOrder ? `${API_BASE}preorders/${originalId}/` : `${API_BASE}sales/history/${originalId}/`;
       await axios.patch(endpoint, { status: newStatus });
@@ -1134,36 +915,33 @@ function AdminDashboard() {
     }
   };
 
-  // ==========================================
-  // COMBINED SALES LEDGER & PRE-ORDERS MAPPING
-  // ==========================================
-  
   const mergedGarmentsList = mergeGarments(garments);
+
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
   let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
   
-  // SECURE DATA MAPPER FOR PRE-ORDERS
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
-    const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === order?.item_name && s.size === order?.size);
-    if (matchIndex !== -1) {
-      localSalesHistory.splice(matchIndex, 1);
-    }
+    const safeItems = order.items && order.items.length > 0 
+      ? order.items 
+      : [{ item_name: order.item_name, size: order.size }];
+
+    safeItems.forEach(si => {
+        const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === si.item_name && s.size === si.size);
+        if (matchIndex !== -1) localSalesHistory.splice(matchIndex, 1);
+    });
     
     return { 
-      id: `preorder-${order?.id}`, 
-      originalId: order?.id,
-      isPreOrder: true, 
+      id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
       date: order?.order_date ? String(order.order_date) : '', 
-      name: order?.item_name ? String(order.item_name) : '',
+      itemsArray: safeItems,
+      name: safeItems.map(i => i.item_name).join(', '),
+      size: safeItems.map(i => i.size).join(', '),
       customer_name: order?.customer_name ? String(order.customer_name) : 'Unnamed',
       recipient_name: order?.recipient_name ? String(order.recipient_name) : '',
       contact_number: order?.contact_number ? String(order.contact_number) : '',
       address: order?.address ? String(order.address) : '',
-      item_name: order?.item_name ? String(order.item_name) : '', 
-      size: order?.size ? String(order.size) : '', 
-      color: order?.color ? String(order.color) : '', 
-      qty: 1, 
+      qty: safeItems.length, 
       price: parseFloat(order?.price) || 0,
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
@@ -1173,7 +951,6 @@ function AdminDashboard() {
     };
   });
 
-  // SECURE DATA MAPPER FOR NORMAL SALES
   const mappedSales = localSalesHistory.filter(s => s).map(log => {
     const matchedGarment = (garments || []).find(g => String(g?.name) === String(log?.garment_name));
     const sellingPrice = matchedGarment ? parseFloat(matchedGarment.selling_price) : 0;
@@ -1181,10 +958,8 @@ function AdminDashboard() {
     const amountCollected = sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
 
     return {
-      id: `sale-${log?.id}`,
-      originalId: log?.id,
-      isPreOrder: false,
-      date: log?.sold_at ? String(log.sold_at) : '',
+      id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '',
+      itemsArray: [],
       name: log?.garment_name ? String(log.garment_name) : '',
       customer_name: '',
       recipient_name: '',
@@ -1205,9 +980,6 @@ function AdminDashboard() {
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
 
-  // ==========================================
-  // ANALYTICS CALCULATIONS
-  // ==========================================
   let analyticsSales = unifiedHistory;
   let analyticsExpenses = expenses || [];
 
@@ -1219,9 +991,13 @@ function AdminDashboard() {
     analyticsSales = unifiedHistory.filter(log => {
       // Exact batch attribution when available (completed sales carry the batch
       // they were actually deducted from); otherwise fall back to matching by
-      // product name — used for pre-orders and any pre-batch-tracking record.
+      // product name(s) — used for pre-orders (which may hold several styles) and
+      // any pre-batch-tracking record.
       if (log?.batch_name) return log.batch_name === analyticsFilterBatch;
-      return validGarmentNames.includes(log.item_name);
+      if (log.isPreOrder && log.itemsArray && log.itemsArray.length > 0) {
+        return log.itemsArray.some(it => validGarmentNames.includes(it.item_name));
+      }
+      return validGarmentNames.includes(log.name);
     });
 
     analyticsExpenses = (expenses || []).filter(e => {
@@ -1236,7 +1012,6 @@ function AdminDashboard() {
   const totalBatchExpenses = analyticsExpenses.reduce((sum, item) => sum + (parseFloat(item?.amount) || 0), 0);
   const actualNetProfit = totalGrossSalesProfit - totalBatchExpenses;
 
-  // Other general stats
   const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
   const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
@@ -1256,7 +1031,6 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
-  // Gallery Tab uses Merged styles
   const filteredGarments = (mergedGarmentsList || [])
     .filter(item => {
       if (!item) return false;
@@ -1268,14 +1042,11 @@ function AdminDashboard() {
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-  // Batch Tracker uses Individual styles to keep batch accounting separated
   const batchMap = {};
   (garments || []).forEach(g => {
     if (!g) return;
     const bName = String(g.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) {
-      batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 };
-    }
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 }; }
     batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
     batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
     batchMap[bName].styles_count += 1;
@@ -1322,69 +1093,32 @@ function AdminDashboard() {
 
           <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-3 px-2">Collection Menu</p>
           <div className="space-y-2">
-            <button
-              onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">🛍️</span> Product Gallery
             </button>
-            <button
-              onClick={() => { setActiveTab('history'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📜</span> Sales Ledger
             </button>
-            <button
-              onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📈</span> Net Profit Analytics
             </button>
-            <button
-              onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${
-                activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📝</span> Custom Pre-Orders
             </button>
-
-            <button
-              onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${
-                activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent'
-              }`}
-            >
+            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
               <span className="text-lg">📊</span> Batch Tracker
             </button>
           </div>
         </div>
 
         <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-2">
-          <button 
-            onClick={() => openAddBatchWizard('')}
-            className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm"
-          >
+          <button onClick={() => openAddBatchWizard('')} className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm">
             <span className="text-lg leading-none">📦</span> Import New Batch
           </button>
-          <button 
-            onClick={handleLogout}
-            className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
-          >
+          <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             Log Out
           </button>
-
-          {/* CLEAR ALL / FACTORY RESET BUTTON */}
-          <button 
-            onClick={handleFactoryReset}
-            className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs"
-          >
+          <button onClick={handleFactoryReset} className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             <span className="text-sm">🧨</span> Factory Reset
           </button>
         </div>
@@ -1417,13 +1151,7 @@ function AdminDashboard() {
             {categories.length > 1 && (
               <div className="flex flex-wrap gap-2 mb-6">
                 {categories.map(cat => (
-                  <button
-                    key={String(cat)}
-                    onClick={() => setActiveCategory(cat)}
-                    className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${
-                      activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300'
-                    }`}
-                  >
+                  <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300' }`}>
                     {String(cat)}
                   </button>
                 ))}
@@ -1520,32 +1248,20 @@ function AdminDashboard() {
               <div className="animate-fade-in">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-stone-200">
                   <div>
-                    <button 
-                      onClick={() => setSelectedBatch(null)} 
-                      className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition"
-                    >
+                    <button onClick={() => setSelectedBatch(null)} className="text-pink-700 hover:text-pink-900 font-black text-sm mb-1.5 flex items-center gap-2 transition">
                       <span>⬅</span> Back to All Batches
                     </button>
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Batch: {String(selectedBatch)}</h2>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <button 
-                      onClick={() => openAddBatchWizard(selectedBatch)}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => openAddBatchWizard(selectedBatch)} className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5">
                       <span>➕</span> Add New Styles
                     </button>
-                    <button 
-                      onClick={() => openRenameBatchModal(selectedBatch)}
-                      className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => openRenameBatchModal(selectedBatch)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5">
                       <span>✏️</span> Rename Batch
                     </button>
-                    <button 
-                      onClick={() => handleDeleteBatch(selectedBatch)}
-                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
-                    >
+                    <button onClick={() => handleDeleteBatch(selectedBatch)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5">
                       <span>🗑️</span> Delete Entire Batch
                     </button>
                   </div>
@@ -1589,19 +1305,10 @@ function AdminDashboard() {
                         </div>
 
                         <div className="pt-2 border-t border-stone-100 flex gap-2">
-                          <button 
-                            type="button"
-                            onClick={() => openEditModal(item)}
-                            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1"
-                          >
+                          <button onClick={() => openEditModal(item)} className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1">
                             <span>✏️</span> Edit
                           </button>
-                          <button 
-                            type="button"
-                            onClick={() => handleDeleteGarment(item.id)}
-                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center"
-                            title="Delete this style"
-                          >
+                          <button onClick={() => handleDeleteGarment(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center" title="Delete this style">
                             🗑️
                           </button>
                         </div>
@@ -1618,10 +1325,7 @@ function AdminDashboard() {
                     <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Active Batch Tracker</h2>
                     <p className="text-stone-500 text-sm mt-1">Click a batch to view its items, or manage and delete batches below</p>
                   </div>
-                  <button 
-                    onClick={() => openAddBatchWizard('')}
-                    className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
-                  >
+                  <button onClick={() => openAddBatchWizard('')} className="bg-stone-900 hover:bg-black text-white font-black px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0">
                     <span className="text-lg leading-none">📦</span> Import New Batch
                   </button>
                 </div>
@@ -1635,10 +1339,7 @@ function AdminDashboard() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {batchTrackerData.map((batch, index) => (
-                      <div 
-                        key={`btd-${index}`} 
-                        className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group"
-                      >
+                      <div key={`btd-${index}`} className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group">
                         <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
@@ -1661,27 +1362,13 @@ function AdminDashboard() {
                         </div>
 
                         <div className="pt-4 border-t border-stone-100 flex gap-2">
-                          <button 
-                            type="button" 
-                            onClick={() => setSelectedBatch(batch.name)}
-                            className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center"
-                          >
+                          <button onClick={() => setSelectedBatch(batch.name)} className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center">
                             👁️ View Items
                           </button>
-                          <button 
-                            type="button" 
-                            onClick={() => openRenameBatchModal(batch.name)}
-                            className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
-                            title="Rename batch"
-                          >
+                          <button onClick={() => openRenameBatchModal(batch.name)} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Rename batch">
                             ✏️
                           </button>
-                          <button 
-                            type="button" 
-                            onClick={() => handleDeleteBatch(batch.name)}
-                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition"
-                            title="Delete whole batch"
-                          >
+                          <button onClick={() => handleDeleteBatch(batch.name)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Delete whole batch">
                             🗑️
                           </button>
                         </div>
@@ -1694,7 +1381,7 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 2: UNIFIED SALES HISTORY LOG VIEW (UPDATED) */}
+        {/* TAB 2: SALES HISTORY LOG VIEW */}
         {activeTab === 'history' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
@@ -1703,22 +1390,13 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* CLEAR ALL HISTORY BUTTON */}
-                <button 
-                  onClick={handleClearAllHistory} 
-                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1"
-                >
+                <button onClick={handleClearAllHistory} className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1">
                   <span>🗑️</span> Clear Ledger
                 </button>
                 
-                {/* STATUS FILTER DROPDOWN */}
                 <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200 h-[38px]">
                   <span className="text-xs font-extrabold text-stone-400 pl-2 uppercase">Status:</span>
-                  <select 
-                    value={historyFilterStatus} 
-                    onChange={(e) => setHistoryFilterStatus(e.target.value)}
-                    className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer"
-                  >
+                  <select value={historyFilterStatus} onChange={(e) => setHistoryFilterStatus(e.target.value)} className="text-sm font-bold bg-[#f9f6f0] border border-stone-200 rounded-lg px-2 py-1 text-stone-800 focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
                     <option value="All">All</option>
                     <option value="Pending">Pending</option>
                     <option value="Shipped">Shipped</option>
@@ -1765,7 +1443,7 @@ function AdminDashboard() {
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
                       <th className="p-4">Date</th>
                       <th className="p-4">Transaction / Style Name</th>
-                      <th className="p-4 text-center">Size</th>
+                      <th className="p-4 text-center">Details</th>
                       <th className="p-4 text-center">Quantity</th>
                       <th className="p-4 text-right">Revenue Collected</th>
                       <th className="p-4 text-center">Fulfillment Status</th>
@@ -1779,11 +1457,21 @@ function AdminDashboard() {
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
                         <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
                         
-                        <td className="p-4 font-black text-stone-900 text-base">
+                        <td className="p-4 font-black text-stone-900 text-base align-top">
                           {log?.isPreOrder ? (
                             <div className="flex flex-col cursor-pointer group w-fit" onClick={() => setViewPreOrder(log)}>
-                              <span className="text-pink-600 group-hover:text-pink-800 transition">📝 Pre-Order: {String(log?.name || '')}</span>
-                              <span className="text-[11px] font-bold text-stone-500 mt-1 flex items-center gap-2">
+                              <span className="text-pink-600 group-hover:text-pink-800 transition mb-1">📝 Pre-Order</span>
+                              
+                              {/* Display Individual Items */}
+                              {log.itemsArray && log.itemsArray.length > 0 ? (
+                                log.itemsArray.map((it, i) => (
+                                  <span key={`lo-${i}`} className="text-xs text-stone-800 font-bold block leading-snug">• {it.item_name}</span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-stone-800 font-bold block leading-snug">• {String(log?.name || '')}</span>
+                              )}
+
+                              <span className="text-[11px] font-bold text-stone-500 mt-1.5 flex items-center gap-2">
                                 <span>👤 By: {log?.customer_name || 'Unnamed'}</span>
                                 {!!(String(log?.recipient_name || '').trim() || String(log?.contact_number || '').trim() || String(log?.address || '').trim()) && (
                                    <span className="bg-[#f2ece4] px-1.5 py-0.5 rounded-md text-stone-600 group-hover:bg-pink-100 group-hover:text-pink-700 transition uppercase text-[9px]">
@@ -1797,11 +1485,25 @@ function AdminDashboard() {
                           )}
                         </td>
 
-                        <td className="p-4 text-center"><span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">{String(log?.size || '')}</span></td>
-                        <td className="p-4 text-center font-black text-stone-900 text-base">{log?.qty || 0} pcs</td>
-                        <td className="p-4 text-right font-black text-pink-600 text-lg">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
+                        <td className="p-4 text-center align-top">
+                          {log?.isPreOrder && log.itemsArray && log.itemsArray.length > 0 ? (
+                            <div className="flex flex-col gap-1 items-center mt-6">
+                              {log.itemsArray.map((it, i) => (
+                                <span key={`sz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
+                                  {it.size}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">
+                               {String(log?.size || '').includes(',') ? 'Mixed Sizes' : String(log?.size || '')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-center font-black text-stone-900 text-base align-top">{log?.qty || 0} pcs</td>
+                        <td className="p-4 text-right font-black text-pink-600 text-lg align-top">+₱{(parseFloat(log?.earned) || 0).toFixed(2)}</td>
                         
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           <select 
                             value={currentStatus} 
                             onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
@@ -1817,7 +1519,7 @@ function AdminDashboard() {
                           </select>
                         </td>
 
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           {log?.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
                           ) : (
@@ -1962,7 +1664,10 @@ function AdminDashboard() {
                 <p className="text-stone-500 text-sm mt-1">Track custom reservations, down payments, and remaining balances</p>
               </div>
               <button 
-                onClick={() => setShowPreOrderModal(true)} 
+                onClick={() => {
+                  setShowPreOrderModal(true);
+                  setShowAddPoItemForm(true); 
+                }} 
                 className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
               >
                 <span className="text-lg leading-none">+</span> Add Pre-Order
@@ -1980,7 +1685,7 @@ function AdminDashboard() {
                   <span className="text-5xl block mb-3">📝</span>
                   <h4 className="text-base font-bold text-stone-800 mb-1">No Pre-orders Found</h4>
                   <p className="text-stone-500 text-sm mb-6">You currently have no active pre-orders or reservations. Click below to add a new customer order.</p>
-                  <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
+                  <button onClick={() => { setShowPreOrderModal(true); setShowAddPoItemForm(true); }} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
@@ -1988,7 +1693,7 @@ function AdminDashboard() {
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
                       <th className="p-4">Order Date</th>
                       <th className="p-4">Customer Info</th>
-                      <th className="p-4">Item &amp; Details</th>
+                      <th className="p-4">Item(s) &amp; Details</th>
                       <th className="p-4 text-center">Payment Status</th>
                       <th className="p-4 text-right">Balance Due</th>
                       <th className="p-4 text-center">Actions</th>
@@ -1997,11 +1702,12 @@ function AdminDashboard() {
                   <tbody className="divide-y divide-stone-200/80">
                     {preOrders.map((order) => {
                       const hasExtraDetails = !!(String(order?.recipient_name || '').trim() || String(order?.contact_number || '').trim() || String(order?.address || '').trim());
+
                       return (
                       <tr key={`po-${order?.id}`} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(order?.order_date || 'N/A')}</td>
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top">📅 {String(order?.order_date || 'N/A')}</td>
                         
-                        <td className="p-4 font-black text-stone-900 text-base cursor-pointer group" onClick={() => setViewPreOrder(order)}>
+                        <td className="p-4 font-black text-stone-900 text-base cursor-pointer group align-top" onClick={() => setViewPreOrder(order)}>
                           <span className="group-hover:text-pink-600 transition block">{String(order?.customer_name || 'Unnamed')}</span>
                           {hasExtraDetails && (
                             <div className="text-[10px] font-bold text-stone-500 mt-1 flex items-center gap-1 uppercase bg-stone-100 px-2 py-0.5 rounded w-fit group-hover:bg-pink-50 group-hover:text-pink-600 transition">
@@ -2017,17 +1723,17 @@ function AdminDashboard() {
                             <div className="text-[10px] font-black text-pink-600 mt-0.5">{parseSafeArray(order.items).length} items — click to view</div>
                           )}
                         </td>
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           {order?.is_paid ? (
                             <span className="bg-emerald-100 text-emerald-800 font-black text-xs px-2.5 py-1 rounded-md border border-emerald-200 shadow-2xs">Fully Paid</span>
                           ) : (
                             <span className="bg-rose-50 text-rose-600 font-black text-xs px-2.5 py-1 rounded-md border border-rose-200 shadow-2xs">Pending</span>
                           )}
                         </td>
-                        <td className="p-4 text-right font-black text-rose-600 text-base">
+                        <td className="p-4 text-right font-black text-rose-600 text-base align-top">
                           {parseFloat(order?.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
                         </td>
-                        <td className="p-4 text-center">
+                        <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
                             <button onClick={() => openEditPreOrderModal(order)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold p-2 rounded-lg text-xs transition shadow-2xs" title="Edit Pre-order">✏️ Edit</button>
                             <button onClick={() => handleDeletePreOrder(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold p-2 rounded-lg text-xs transition" title="Delete Pre-order">🗑️ Delete</button>
@@ -2044,7 +1750,7 @@ function AdminDashboard() {
       </main>
 
       {/* ========================================== */}
-      {/* ZOOM PRE-ORDER MODAL (NEW)                 */}
+      {/* ZOOM PRE-ORDER MODAL                       */}
       {/* ========================================== */}
       {viewPreOrder && (
         <div onClick={() => setViewPreOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -2080,7 +1786,7 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm max-h-48 overflow-y-auto">
                 <h3 className="text-[10px] font-black uppercase text-stone-400 tracking-widest mb-3 flex items-center gap-1.5"><span>🛍️</span> Garment Info</h3>
                 {parseSafeArray(viewPreOrder.items).length > 0 ? (
                   <div className="space-y-2">
@@ -2128,7 +1834,7 @@ function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* RENAME BATCH MODAL                         */}
+      {/* ADD PRE-ORDER MODAL                        */}
       {/* ========================================== */}
       {showRenameBatchModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -2839,13 +2545,13 @@ function AdminDashboard() {
       {/* PRE-ORDER MODALS */}
       {showPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[95vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
               <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>📝</span> Add Pre-Order</h2>
               <button onClick={() => setShowPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
             </div>
 
-            <form onSubmit={handleCreatePreOrder} className="space-y-4">
+            <form onSubmit={handleCreatePreOrder} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
@@ -2939,7 +2645,8 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
+              {/* PAYMENT SECTION */}
+              <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
@@ -2952,7 +2659,7 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setNewPreOrder({...newPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                   <div>
@@ -2966,12 +2673,12 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setNewPreOrder({...newPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
+                <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
                   <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
                   <span className={`text-xl font-black ${newPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
                     ₱{newPreOrder.balance || '0.00'}
@@ -2985,7 +2692,7 @@ function AdminDashboard() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 shrink-0">
                 <button type="button" onClick={() => setShowPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
                 <button type="submit" className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Pre-Order</button>
               </div>
@@ -2994,15 +2701,18 @@ function AdminDashboard() {
         </div>
       )}
 
+      {/* ========================================== */}
+      {/* EDIT PRE-ORDER MODAL                       */}
+      {/* ========================================== */}
       {showEditPreOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl overflow-hidden border border-stone-200 max-h-[95vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4 border-stone-100 shrink-0">
               <h2 className="text-lg font-black text-stone-900 flex items-center gap-2"><span>✏️</span> Edit Pre-Order</h2>
               <button onClick={() => setShowEditPreOrderModal(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
             </div>
 
-            <form onSubmit={handleUpdatePreOrder} className="space-y-4">
+            <form onSubmit={handleUpdatePreOrder} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Customer Name (Buyer)</label>
@@ -3097,7 +2807,7 @@ function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bg-[#f2ece4] p-4 rounded-xl border border-stone-300 mt-2">
+              <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
@@ -3110,7 +2820,7 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setEditPreOrder({...editPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                   <div>
@@ -3124,12 +2834,12 @@ function AdminDashboard() {
                         const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
                         setEditPreOrder({...editPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
                       }}
-                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                      className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-stone-200">
+                <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
                   <span className="text-xs font-extrabold text-stone-600 uppercase">Remaining Balance:</span>
                   <span className={`text-xl font-black ${editPreOrder.is_paid ? 'text-emerald-500' : 'text-rose-600'}`}>
                     ₱{editPreOrder.balance || '0.00'}
@@ -3143,7 +2853,7 @@ function AdminDashboard() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 shrink-0">
                 <button type="button" onClick={() => setShowEditPreOrderModal(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
                 <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Update</button>
               </div>
@@ -3156,9 +2866,6 @@ function AdminDashboard() {
   );
 }
 
-// ==========================================
-// 4. ROUTER WRAPPER
-// ==========================================
 function ProtectedRoute({ children }) {
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   return isAdmin ? children : <Navigate to="/login" replace />;
@@ -3171,11 +2878,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<CustomerView />} />
           <Route path="/login" element={<LoginScreen />} />
-          <Route path="/admin" element={
-            <ProtectedRoute>
-              <AdminDashboard />
-            </ProtectedRoute>
-          } />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         </Routes>
       </Router>
     </ErrorBoundary>
