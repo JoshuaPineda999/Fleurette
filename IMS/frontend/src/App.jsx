@@ -804,8 +804,6 @@ function AdminDashboard() {
       is_paid: item.is_paid || false,
       balance: item.balance || ''
     });
-    setEditPoItemInput({ item_name: '', size: '', color: '', price: '' });
-    setShowEditPoItemForm(false);
     setShowEditPreOrderModal(true);
   };
 
@@ -1663,11 +1661,8 @@ function AdminDashboard() {
                 <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Customer Pre-Orders</h2>
                 <p className="text-stone-500 text-sm mt-1">Track custom reservations, down payments, and remaining balances</p>
               </div>
-              <button 
-                onClick={() => {
-                  setShowPreOrderModal(true);
-                  setShowAddPoItemForm(true); 
-                }} 
+              <button
+                onClick={() => setShowPreOrderModal(true)}
                 className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2 text-sm shrink-0"
               >
                 <span className="text-lg leading-none">+</span> Add Pre-Order
@@ -1685,7 +1680,7 @@ function AdminDashboard() {
                   <span className="text-5xl block mb-3">📝</span>
                   <h4 className="text-base font-bold text-stone-800 mb-1">No Pre-orders Found</h4>
                   <p className="text-stone-500 text-sm mb-6">You currently have no active pre-orders or reservations. Click below to add a new customer order.</p>
-                  <button onClick={() => { setShowPreOrderModal(true); setShowAddPoItemForm(true); }} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
+                  <button onClick={() => setShowPreOrderModal(true)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2 rounded-xl text-xs shadow transition">+ Add Pre-Order</button>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
