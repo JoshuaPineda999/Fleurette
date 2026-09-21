@@ -114,6 +114,11 @@ const fifoDeduct = ({ name, color, category, size, quantity, is_sale = false, st
 const fifoRestore = ({ name, color, category, size, quantity }) =>
   axios.post(`${API_BASE}garments/fifo-restore/`, { name, color, category, size, quantity }).then(r => r.data);
 
+// 'N/A' is a display-only placeholder for "no color set" (see buildPreOrderPayload) — garments
+// with no color actually store an empty/null color, so it must be normalized back to '' before
+// being used to match a garment via fifoDeduct/fifoRestore, or the lookup silently finds nothing.
+const matchColor = (color) => (!color || color === 'N/A' ? '' : color);
+
 // 8. One line item within a (possibly multi-item) pre-order
 const emptyPreOrderItem = () => ({ item_name: '', size: '', color: '', quantity: 1 });
 
@@ -711,7 +716,7 @@ function AdminDashboard() {
       try {
         const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
         const res = await fifoDeduct({
-          name: it.item_name, color: it.color, category: garmentMeta?.category,
+          name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
           size: it.size, quantity: parseInt(it.quantity) || 1, is_sale: false, strict: false
         });
         reserved = res?.deducted || 0;
@@ -733,7 +738,7 @@ function AdminDashboard() {
       try {
         const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
         await fifoRestore({
-          name: it.item_name, color: it.color, category: garmentMeta?.category,
+          name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
           size: it.size, quantity: qty
         });
       } catch (err) {
