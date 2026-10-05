@@ -56,6 +56,8 @@ class SaleLog(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending')
     # Batch the sold garment came from, captured at sale time for accurate batch analytics
     batch_name = models.CharField(max_length=255, blank=True, null=True)
+    # The garment (batch record) this sale was taken from, so returns go back to that batch.
+    garment_id = models.IntegerField(blank=True, null=True)
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):

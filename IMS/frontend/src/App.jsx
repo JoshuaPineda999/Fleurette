@@ -69,12 +69,18 @@ const getLocalDate = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Colour used for grouping: blank, missing and the 'N/A' placeholder all mean "no colour".
+const normColorKey = (color) => {
+  const v = String(color ?? '').trim().toLowerCase();
+  return v === 'n/a' ? '' : v;
+};
+
 // 6. VISUAL MERGER FOR DUPLICATE STYLES ACROSS BATCHES
 const mergeGarments = (garmentsList) => {
   const mergedMap = {};
   
   (garmentsList || []).forEach(g => {
-    const key = `${String(g?.name || '').trim().toLowerCase()}-${String(g?.color || '').trim().toLowerCase()}-${String(g?.category || '').trim().toLowerCase()}`;
+    const key = `${String(g?.name || '').trim().toLowerCase()}-${normColorKey(g?.color)}-${String(g?.category || '').trim().toLowerCase()}`;
     
     if (!mergedMap[key]) {
       mergedMap[key] = {
@@ -831,7 +837,7 @@ function AdminDashboard() {
         const existingGarment = (garments || []).find(g =>
           String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
           String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim() &&
-          String(g?.color || '').toLowerCase().trim() === String(style.color || '').toLowerCase().trim() &&
+          normColorKey(g?.color) === normColorKey(style.color) &&
           String(g?.category || '').toLowerCase().trim() === String(style.category || '').toLowerCase().trim()
         );
 
@@ -1172,24 +1178,34 @@ function AdminDashboard() {
     } catch (error) { alert('Could not delete pre-order.'); }
   };
 
+  // The batch record a sale came from, so a returned sale goes back to that batch only.
+  // Uses the exact garment recorded at sale time; falls back to the same name in the same batch.
+  // Returns null if that batch no longer exists (stock is never moved into a different batch).
+  const findSaleReturnGarment = (log) => {
+    const list = garments || [];
+    if (log?.garment_id) {
+      const exact = list.find(g => g?.id === log.garment_id);
+      if (exact) return exact;
+    }
+    const norm = (v) => String(v || '').trim().toLowerCase();
+    if (log?.batch_name) {
+      return list.find(g => norm(g?.name) === norm(log.garment_name) && norm(g?.batch_name || 'Uncategorized') === norm(log.batch_name)) || null;
+    }
+    // Sales recorded before batches were tracked have no batch: fall back to the newest style with that name.
+    return list.filter(g => norm(g?.name) === norm(log?.garment_name)).sort((a, b) => b.id - a.id)[0] || null;
+  };
+
   const handleDeleteSalesHistory = async (id) => {
-    if (!window.confirm("Delete this specific sales record? The sold items will be returned to your inventory stock.")) return;
+    if (!window.confirm("Delete this specific sales record? The sold items will be returned to their batch's stock.")) return;
     try {
       const logToRevert = (salesHistory || []).find(s => s?.id === id);
       if (logToRevert) {
-        let targetGarmentId = logToRevert.garment_id;
-        if (!targetGarmentId && logToRevert.batch_name) {
-            const g = (garments || []).find(g => g.name === logToRevert.garment_name && g.batch_name === logToRevert.batch_name);
-            if (g) targetGarmentId = g.id;
+        const target = findSaleReturnGarment(logToRevert);
+        if (!target) {
+          alert(`Could not return this sale: its batch "${logToRevert.batch_name || 'Uncategorized'}" no longer has "${logToRevert.garment_name}". The sales record was kept.`);
+          return;
         }
-        if (!targetGarmentId) {
-            const g = (garments || []).filter(g => g?.name === logToRevert.garment_name).sort((a, b) => b.id - a.id)[0];
-            if (g) targetGarmentId = g.id;
-        }
-          
-        if (targetGarmentId) {
-          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false });
-        }
+        await axios.patch(`${API_BASE}garments/${target.id}/update_stock/`, { size: logToRevert.size, change: logToRevert.quantity_sold, is_sale: false });
       }
       await axios.delete(`${API_BASE}sales/history/${id}/`);
       showToast("🗑️ Sales record deleted & stock restored.");
@@ -1201,23 +1217,16 @@ function AdminDashboard() {
     if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger?\n\nThis will delete all recorded regular sales and RETURN the sold items back to your stock.")) return;
     setLoading(true);
     try {
+      let kept = 0;
       for (const log of (salesHistory || [])) {
         if (!log) continue;
-        let targetGarmentId = log.garment_id;
-        if (!targetGarmentId && log.batch_name) {
-            const g = (garments || []).find(g => g.name === log.garment_name && g.batch_name === log.batch_name);
-            if (g) targetGarmentId = g.id;
-        }
-        if (!targetGarmentId) {
-            const g = (garments || []).filter(g => g?.name === log.garment_name).sort((a, b) => b.id - a.id)[0];
-            if (g) targetGarmentId = g.id;
-        }
-        if (targetGarmentId) {
-          await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: log.size, change: log.quantity_sold, is_sale: false });
-        }
+        const target = findSaleReturnGarment(log);
+        if (!target) { kept++; continue; } // its batch is gone: keep the record rather than lose the sale
+        await axios.patch(`${API_BASE}garments/${target.id}/update_stock/`, { size: log.size, change: log.quantity_sold, is_sale: false });
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
       }
-      showToast("🗑️ Entire Sales Ledger cleared & stocks restored!");
+      if (kept > 0) alert(`${kept} sale(s) were kept because their batch no longer exists, so their stock could not be returned.`);
+      showToast("🗑️ Sales Ledger cleared & stocks returned to their batches!");
       await fetchData(true);
     } catch (error) { alert('Error clearing some records.'); }
     setLoading(false);

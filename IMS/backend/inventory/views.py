@@ -13,6 +13,12 @@ def _norm(value):
     return str(value or '').strip().lower()
 
 
+def _norm_color(value):
+    # Blank, null and the 'N/A' placeholder all mean "no color".
+    v = _norm(value)
+    return '' if v in ('', 'n/a') else v
+
+
 class GarmentViewSet(viewsets.ModelViewSet):
     queryset = Garment.objects.all().order_by('id').prefetch_related('sizes')
     serializer_class = GarmentSerializer
@@ -41,7 +47,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
                         quantity_sold=qty_sold,
                         profit_earned=profit,
                         sold_at=timezone.localdate(),
-                        batch_name=garment.batch_name
+                        batch_name=garment.batch_name,
+                        garment_id=garment.id,
                     )
             return Response(GarmentSerializer(garment).data)
         except SizeStock.DoesNotExist:
@@ -53,7 +60,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
         qs = Garment.objects.filter(name__iexact=_norm(name))
         matches = []
         for g in qs:
-            if _norm(g.color) != _norm(color):
+            if _norm_color(g.color) != _norm_color(color):
                 continue
             if category and _norm(g.category) != _norm(category):
                 continue
@@ -127,7 +134,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
                         quantity_sold=deduct,
                         profit_earned=profit,
                         sold_at=timezone.localdate(),
-                        batch_name=g.batch_name
+                        batch_name=g.batch_name,
+                        garment_id=g.id,
                     )
 
         return Response({'deducted': deducted_total, 'requested': quantity})
