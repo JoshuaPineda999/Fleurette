@@ -640,6 +640,8 @@ function AdminDashboard() {
   const [viewPreOrder, setViewPreOrder] = useState(null); 
 
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const batchSaveLock = useRef(false); // blocks a second save while one is in flight (state updates are too slow to guard double clicks)
   const [showEditModal, setShowEditModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
@@ -810,6 +812,9 @@ function AdminDashboard() {
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
+    if (batchSaveLock.current) return;
+    batchSaveLock.current = true;
+    setBatchSaving(true);
     try {
       for (const style of newBatch.styles) {
         if (!style.name) continue; 
@@ -852,6 +857,7 @@ function AdminDashboard() {
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
     } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
+    finally { batchSaveLock.current = false; setBatchSaving(false); }
   };
 
   const openRenameBatchModal = (oldName) => { setBatchRenameState({ oldName, newName: oldName }); setShowRenameBatchModal(true); };
@@ -2456,7 +2462,7 @@ function AdminDashboard() {
 
               <div className="flex justify-end gap-3 pt-4 border-t border-stone-200 shrink-0 sticky bottom-0 bg-white p-3 rounded-xl shadow-up">
                 <button type="button" onClick={() => setShowAddBatchModal(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100 transition">Cancel</button>
-                <button type="submit" className="bg-stone-900 hover:bg-black text-white font-black px-8 py-2.5 rounded-xl shadow-lg transition">Save Entire Batch</button>
+                <button type="submit" disabled={batchSaving} className="bg-stone-900 hover:bg-black text-white font-black px-8 py-2.5 rounded-xl shadow-lg transition disabled:opacity-60 disabled:cursor-not-allowed">{batchSaving ? 'Saving…' : 'Save Entire Batch'}</button>
               </div>
             </form>
           </div>
