@@ -2397,6 +2397,7 @@ function AdminDashboard() {
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Photo (Optional)</label>
                         <PhotoCropper
                           file={style.image}
+                          currentUrl={findStyleByName(style.name, newBatch.batch_name)?.image || null}
                           previewName={style.name}
                           previewPrice={style.selling_price}
                           onChange={(f) => handleBatchStyleChange(index, 'image', f)}

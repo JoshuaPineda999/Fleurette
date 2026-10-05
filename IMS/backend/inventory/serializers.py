@@ -32,8 +32,25 @@ class GarmentSerializer(serializers.ModelSerializer):
             'sizes', 'initial_sizes'
         ]
 
+    @staticmethod
+    def _existing_photo_garment(name, category):
+        """Newest garment with the same style name (and category, if one matches) that has a photo."""
+        key = str(name or '').strip()
+        if not key:
+            return None
+        photos = Garment.objects.filter(name__iexact=key).exclude(image__isnull=True).exclude(image='').order_by('-id')
+        wanted = str(category or '').strip().lower()
+        same_category = [g for g in photos if str(g.category or '').strip().lower() == wanted]
+        candidates = same_category or list(photos)
+        return candidates[0] if candidates else None
+
     def create(self, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', {})
+        if not validated_data.get('image'):
+            # No new photo for this batch: reuse the photo of the same style already in stock.
+            existing = self._existing_photo_garment(validated_data.get('name'), validated_data.get('category'))
+            if existing is not None:
+                validated_data['image'] = existing.image.name
         garment = Garment.objects.create(**validated_data)
         for size_label in ['S', 'M', 'L', 'XL']:
             qty = initial_sizes.get(size_label, 0)
