@@ -335,19 +335,23 @@ function LoginScreen() {
   );
 }
 
-// 6c. PHOTO CROPPER. Drag and zoom a photo inside the card's image frame, with a live mini card
-// preview. Applying the crop outputs a cropped JPEG File that is uploaded instead of the original.
+// 6c. PHOTO CROPPER. The full photo is shown with a fixed-ratio crop box (same ratio as the product
+// card's image area). Drag the box to move it, or drag a corner to resize it. The card preview shows
+// the result. Applying the crop outputs a cropped JPEG File that is uploaded instead of the original.
 const CROP_ASPECT = 1.1; // matches the product card's image area (width : height)
 const CROP_OUT_WIDTH = 1100;
+const CROP_MAX_W = 340; // editor size on screen (px)
+const CROP_MAX_H = 260;
+const CROP_MIN_W = 30; // smallest crop width, in photo pixels
+
+const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, accent = 'pink' }) {
   const [rawUrl, setRawUrl] = useState(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [fx, setFx] = useState(0); // photo offset as a fraction of the frame width
-  const [fy, setFy] = useState(0); // photo offset as a fraction of the frame height
+  const [crop, setCrop] = useState(null); // { x, y, w } in photo pixels; crop height = w / CROP_ASPECT
   const [resultUrl, setResultUrl] = useState(null);
-  const frameRef = useRef(null);
+  const containerRef = useRef(null);
   const imgRef = useRef(null);
   const dragRef = useRef(null);
   const btnClass = accent === 'amber' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-pink-600 hover:bg-pink-700';
@@ -364,69 +368,76 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
     return () => URL.revokeObjectURL(rawUrl);
   }, [rawUrl]);
 
-  // Photo size inside the frame, as fractions of the frame (frame width = 1, frame height = 1 / CROP_ASPECT).
-  // The photo always covers the frame at zoom 1 and grows from there.
-  const layoutFor = (z) => {
-    if (!natural.w || !natural.h) return null;
-    const s = Math.max(1 / natural.w, 1 / (CROP_ASPECT * natural.h)) * z;
-    const rw = natural.w * s;
-    const rh = natural.h * s * CROP_ASPECT;
-    return { rw, rh, maxX: Math.max(0, (rw - 1) / 2), maxY: Math.max(0, (rh - 1) / 2) };
-  };
-  const layout = layoutFor(zoom);
-  const clamp = (v, max) => Math.max(-max, Math.min(max, v));
-  const left = layout ? 0.5 - layout.rw / 2 + fx : 0;
-  const top = layout ? 0.5 - layout.rh / 2 + fy : 0;
-  const imgStyle = layout
-    ? { left: `${left * 100}%`, top: `${top * 100}%`, width: `${layout.rw * 100}%`, height: `${layout.rh * 100}%` }
-    : { opacity: 0 };
+  const scale = natural.w ? Math.min(CROP_MAX_W / natural.w, CROP_MAX_H / natural.h) : 0; // screen px per photo px
+  const cropH = crop ? crop.w / CROP_ASPECT : 0;
 
   const pickFile = (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
     setNatural({ w: 0, h: 0 });
-    setZoom(1);
-    setFx(0);
-    setFy(0);
+    setCrop(null);
     setRawUrl(URL.createObjectURL(f));
   };
 
-  const changeZoom = (z) => {
-    const lay = layoutFor(z);
-    setZoom(z);
-    if (lay) { setFx(v => clamp(v, lay.maxX)); setFy(v => clamp(v, lay.maxY)); }
+  const onPhotoLoad = (e) => {
+    const nw = e.currentTarget.naturalWidth;
+    const nh = e.currentTarget.naturalHeight;
+    setNatural({ w: nw, h: nh });
+    // Start with the largest crop box of the card's ratio, centred on the photo.
+    const w = Math.min(nw, nh * CROP_ASPECT);
+    setCrop({ w, x: (nw - w) / 2, y: (nh - w / CROP_ASPECT) / 2 });
   };
 
-  const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
+  const beginDrag = (e, mode) => {
+    e.stopPropagation();
+    containerRef.current.setPointerCapture(e.pointerId);
+    dragRef.current = { mode, sx: e.clientX, sy: e.clientY, crop0: crop };
   };
+
   const onPointerMove = (e) => {
-    if (!dragRef.current || !layout || !frameRef.current) return;
-    const rect = frameRef.current.getBoundingClientRect();
-    const dx = (e.clientX - dragRef.current.x) / rect.width;
-    const dy = (e.clientY - dragRef.current.y) / rect.height;
-    dragRef.current = { x: e.clientX, y: e.clientY };
-    setFx(v => clamp(v + dx, layout.maxX));
-    setFy(v => clamp(v + dy, layout.maxY));
+    const d = dragRef.current;
+    if (!d || !scale) return;
+    const dx = (e.clientX - d.sx) / scale;
+    const dy = (e.clientY - d.sy) / scale;
+    const c = d.crop0;
+    const h0 = c.w / CROP_ASPECT;
+
+    if (d.mode === 'move') {
+      setCrop({
+        w: c.w,
+        x: clampNum(c.x + dx, 0, natural.w - c.w),
+        y: clampNum(c.y + dy, 0, natural.h - h0),
+      });
+      return;
+    }
+
+    // Corner resize: the opposite corner stays fixed as the anchor.
+    const left = d.mode.includes('w');
+    const top = d.mode.includes('n');
+    const ax = left ? c.x + c.w : c.x;
+    const ay = top ? c.y + h0 : c.y;
+    const wFromX = left ? c.w - dx : c.w + dx;
+    const wFromY = (top ? h0 - dy : h0 + dy) * CROP_ASPECT;
+    const w0 = Math.abs(wFromX - c.w) >= Math.abs(wFromY - c.w) ? wFromX : wFromY;
+    // Largest width that keeps the box inside the photo from the anchor corner.
+    const maxW = Math.min(left ? ax : natural.w - ax, (top ? ay : natural.h - ay) * CROP_ASPECT);
+    const w = clampNum(w0, Math.min(CROP_MIN_W, maxW), maxW);
+    const h = w / CROP_ASPECT;
+    setCrop({ w, x: left ? ax - w : ax, y: top ? ay - h : ay });
   };
-  const onPointerUp = () => { dragRef.current = null; };
+
+  const endDrag = () => { dragRef.current = null; };
 
   const applyCrop = () => {
     const img = imgRef.current;
-    if (!img || !layout) return;
-    // Source rectangle (in photo pixels) that is visible inside the frame.
-    const sw = natural.w / layout.rw;
-    const sh = natural.h / layout.rh;
-    const sx = -left * natural.w / layout.rw;
-    const sy = -top * natural.h / layout.rh;
+    if (!img || !crop) return;
     const outW = CROP_OUT_WIDTH;
     const outH = Math.round(outW / CROP_ASPECT);
     const canvas = document.createElement('canvas');
     canvas.width = outW;
     canvas.height = outH;
-    canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+    canvas.getContext('2d').drawImage(img, crop.x, crop.y, crop.w, cropH, 0, 0, outW, outH);
     canvas.toBlob((blob) => {
       if (!blob) return;
       onChange(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
@@ -457,51 +468,75 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
     );
   }
 
+  // Card preview: the photo positioned so only the crop box shows, at any size.
+  const previewStyle = crop ? {
+    width: `${(natural.w / crop.w) * 100}%`,
+    height: `${(natural.h / cropH) * 100}%`,
+    left: `${(-crop.x / crop.w) * 100}%`,
+    top: `${(-crop.y / cropH) * 100}%`,
+  } : { opacity: 0 };
+
+  const corners = [
+    { id: 'nw', pos: '-top-1.5 -left-1.5', cursor: 'cursor-nwse-resize' },
+    { id: 'ne', pos: '-top-1.5 -right-1.5', cursor: 'cursor-nesw-resize' },
+    { id: 'sw', pos: '-bottom-1.5 -left-1.5', cursor: 'cursor-nesw-resize' },
+    { id: 'se', pos: '-bottom-1.5 -right-1.5', cursor: 'cursor-nwse-resize' },
+  ];
+
   return (
     <div className="bg-white p-3 rounded-xl border border-stone-200 space-y-3">
-      <p className="text-[11px] font-bold text-stone-500">Drag the photo to position it, use the slider to zoom, then apply the crop.</p>
-      <div className="flex flex-row flex-wrap gap-3 items-start">
-        <div className="w-52 shrink-0">
-          <div
-            ref={frameRef}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            className="relative w-full overflow-hidden bg-stone-100 rounded-xl cursor-grab active:cursor-grabbing touch-none select-none"
-            style={{ aspectRatio: `${CROP_ASPECT}` }}
-          >
-            <img
-              ref={imgRef} src={rawUrl} alt="" draggable={false}
-              onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-              className="absolute max-w-none pointer-events-none"
-              style={imgStyle}
-            />
-          </div>
-          <input
-            type="range" min="1" max="3" step="0.01" value={zoom}
-            onChange={(e) => changeZoom(parseFloat(e.target.value))}
-            className="w-full mt-2"
-          />
-        </div>
+      <p className="text-[11px] font-bold text-stone-500">Drag the box to move it, drag a corner to resize. The area outside is cropped away.</p>
 
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">Card preview</span>
-          <div className="w-36 bg-white rounded-2xl shadow-md border border-stone-200 overflow-hidden">
-            <div className="relative bg-[#f2ece4] overflow-hidden" style={{ aspectRatio: `${CROP_ASPECT}` }}>
-              {layout && <img src={rawUrl} alt="" draggable={false} className="absolute max-w-none pointer-events-none" style={imgStyle} />}
-            </div>
-            <div className="p-2.5">
-              <p className="font-black text-sm text-stone-900 truncate">{previewName || 'Style name'}</p>
-              <p className="font-black text-pink-600 text-sm">₱{parseFloat(previewPrice || 0).toFixed(2)}</p>
-            </div>
+      <div
+        ref={containerRef}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        className="relative mx-auto select-none touch-none overflow-hidden bg-stone-900 rounded-lg"
+        style={{ width: natural.w ? natural.w * scale : CROP_MAX_W, height: natural.h ? natural.h * scale : 200 }}
+      >
+        <img
+          ref={imgRef} src={rawUrl} alt="" draggable={false} onLoad={onPhotoLoad}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+        />
+        {crop && (
+          <div
+            onPointerDown={(e) => beginDrag(e, 'move')}
+            className="absolute border-2 border-white cursor-move"
+            style={{
+              left: crop.x * scale, top: crop.y * scale,
+              width: crop.w * scale, height: cropH * scale,
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
+            }}
+          >
+            {corners.map((c) => (
+              <span
+                key={c.id}
+                onPointerDown={(e) => beginDrag(e, c.id)}
+                className={`absolute w-3.5 h-3.5 bg-white border border-stone-700 rounded-sm ${c.pos} ${c.cursor}`}
+              />
+            ))}
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => setRawUrl(null)} className="px-3 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">Cancel</button>
-        <button type="button" onClick={applyCrop} disabled={!layout} className={`${btnClass} text-white font-extrabold px-4 py-2 rounded-lg text-xs shadow transition disabled:opacity-50`}>Apply crop</button>
+      <div className="flex items-end justify-between gap-3">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">Card preview</span>
+          <div className="w-32 bg-white rounded-2xl shadow-md border border-stone-200 overflow-hidden">
+            <div className="relative bg-[#f2ece4] overflow-hidden" style={{ aspectRatio: `${CROP_ASPECT}` }}>
+              <img src={rawUrl} alt="" draggable={false} className="absolute max-w-none pointer-events-none" style={previewStyle} />
+            </div>
+            <div className="p-2">
+              <p className="font-black text-xs text-stone-900 truncate">{previewName || 'Style name'}</p>
+              <p className="font-black text-pink-600 text-xs">₱{parseFloat(previewPrice || 0).toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setRawUrl(null)} className="px-3 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">Cancel</button>
+          <button type="button" onClick={applyCrop} disabled={!crop} className={`${btnClass} text-white font-extrabold px-4 py-2 rounded-lg text-xs shadow transition disabled:opacity-50`}>Apply crop</button>
+        </div>
       </div>
     </div>
   );
