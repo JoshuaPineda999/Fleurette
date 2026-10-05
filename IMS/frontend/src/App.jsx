@@ -767,7 +767,12 @@ function AdminDashboard() {
       if (available !== undefined) {
         alert(`Not enough stock: requested ${error.response.data.requested}, only ${available} available across all batches.`);
       } else {
-        alert('Could not complete sale. Ensure sufficient stock across your batches.');
+        // Not a stock shortage (the server didn't report one), so show what actually failed.
+        const data = error.response?.data;
+        const serverMessage = data && typeof data === 'object' ? (data.error || data.detail) : null;
+        const detail = serverMessage
+          || (error.response ? `server responded HTTP ${error.response.status}` : error.message);
+        alert(`Could not complete sale: ${detail}`);
       }
     }
   };
