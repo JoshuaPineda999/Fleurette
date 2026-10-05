@@ -807,6 +807,14 @@ function AdminDashboard() {
     return matches.find(g => String(g?.batch_name || 'Uncategorized').trim().toLowerCase() === targetBatch) || matches[0] || null;
   };
 
+  // Photo that a new style of this name and colour will get from the server (same rule as the backend).
+  const findPhotoForStyle = (name, color) => {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    const matches = (garments || []).filter(g => g?.image && String(g?.name || '').trim().toLowerCase() === key && normColorKey(g?.color) === normColorKey(color));
+    return matches.length ? matches[matches.length - 1].image : null;
+  };
+
   // Fills the style's category, cost and selling price from the existing style with the same name.
   const autofillStyleFromName = (index, name) => {
     const existing = findStyleByName(name, newBatch.batch_name);
@@ -2397,7 +2405,7 @@ function AdminDashboard() {
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Photo (Optional)</label>
                         <PhotoCropper
                           file={style.image}
-                          currentUrl={findStyleByName(style.name, newBatch.batch_name)?.image || null}
+                          currentUrl={findPhotoForStyle(style.name, style.color)}
                           previewName={style.name}
                           previewPrice={style.selling_price}
                           onChange={(f) => handleBatchStyleChange(index, 'image', f)}

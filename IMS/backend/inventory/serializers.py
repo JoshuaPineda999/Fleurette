@@ -17,6 +17,12 @@ class SizeStockSerializer(serializers.ModelSerializer):
         model = SizeStock
         fields = ['id', 'size', 'quantity']
 
+def _norm_color(value):
+    # Blank, null and the 'N/A' placeholder all mean "no colour" (same rule as the stock matching in views.py).
+    v = str(value or '').strip().lower()
+    return '' if v in ('', 'n/a') else v
+
+
 class GarmentSerializer(serializers.ModelSerializer):
     sizes = SizeStockSerializer(many=True, read_only=True)
     profit_per_piece = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
@@ -33,22 +39,28 @@ class GarmentSerializer(serializers.ModelSerializer):
         ]
 
     @staticmethod
-    def _existing_photo_garment(name, category):
-        """Newest garment with the same style name (and category, if one matches) that has a photo."""
-        key = str(name or '').strip()
+    def _existing_photo_garment(name, color, category):
+        """Newest garment with the same style name AND colour that has a photo (same category preferred).
+        A photo of a different colour is never reused."""
+        key = str(name or '').strip().lower()
         if not key:
             return None
-        photos = Garment.objects.filter(name__iexact=key).exclude(image__isnull=True).exclude(image='').order_by('-id')
-        wanted = str(category or '').strip().lower()
-        same_category = [g for g in photos if str(g.category or '').strip().lower() == wanted]
-        candidates = same_category or list(photos)
+        wanted_color = _norm_color(color)
+        wanted_category = str(category or '').strip().lower()
+        photos = [
+            g for g in Garment.objects.filter(name__iexact=key).exclude(image__isnull=True).exclude(image='').order_by('-id')
+            if _norm_color(g.color) == wanted_color
+        ]
+        same_category = [g for g in photos if str(g.category or '').strip().lower() == wanted_category]
+        candidates = same_category or photos
         return candidates[0] if candidates else None
 
     def create(self, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', {})
         if not validated_data.get('image'):
-            # No new photo for this batch: reuse the photo of the same style already in stock.
-            existing = self._existing_photo_garment(validated_data.get('name'), validated_data.get('category'))
+            # No new photo for this batch: reuse the photo of the same style and colour already in stock.
+            existing = self._existing_photo_garment(
+                validated_data.get('name'), validated_data.get('color'), validated_data.get('category'))
             if existing is not None:
                 validated_data['image'] = existing.image.name
         garment = Garment.objects.create(**validated_data)
