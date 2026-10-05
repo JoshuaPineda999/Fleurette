@@ -573,6 +573,30 @@ function AdminDashboard() {
   };
 
   const handleBatchStyleChange = (index, field, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index][field] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+
+  // Finds an existing style by name (ignoring case and surrounding spaces). If the name exists in
+  // several batches/categories, prefers the record in the batch being added to.
+  const findStyleByName = (name, batchName) => {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    const matches = (garments || []).filter(g => String(g?.name || '').trim().toLowerCase() === key);
+    const targetBatch = String(batchName || 'Uncategorized').trim().toLowerCase();
+    return matches.find(g => String(g?.batch_name || 'Uncategorized').trim().toLowerCase() === targetBatch) || matches[0] || null;
+  };
+
+  // Fills the style's category, cost and selling price from the existing style with the same name.
+  const autofillStyleFromName = (index, name) => {
+    const existing = findStyleByName(name, newBatch.batch_name);
+    if (!existing) return;
+    const updatedStyles = [...newBatch.styles];
+    updatedStyles[index] = {
+      ...updatedStyles[index],
+      category: existing.category || '',
+      cost_price: existing.cost_price,
+      selling_price: existing.selling_price,
+    };
+    setNewBatch({ ...newBatch, styles: updatedStyles });
+  };
   const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
   const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
@@ -2128,13 +2152,9 @@ function AdminDashboard() {
                           onChange={(e) => {
                             const val = e.target.value;
                             handleBatchStyleChange(index, 'name', val);
-                            const existing = (garments || []).find(g => String(g?.name || '').toLowerCase() === String(val || '').toLowerCase());
-                            if (existing) {
-                              handleBatchStyleChange(index, 'category', existing.category || '');
-                              handleBatchStyleChange(index, 'cost_price', existing.cost_price);
-                              handleBatchStyleChange(index, 'selling_price', existing.selling_price);
-                            }
+                            autofillStyleFromName(index, val);
                           }}
+                          onBlur={(e) => autofillStyleFromName(index, e.target.value)}
                           className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                         />
                         <datalist id={`garment-names-${index}`}>
