@@ -2130,6 +2130,7 @@ function AdminDashboard() {
                             handleBatchStyleChange(index, 'name', val);
                             const existing = (garments || []).find(g => String(g?.name || '').toLowerCase() === String(val || '').toLowerCase());
                             if (existing) {
+                              handleBatchStyleChange(index, 'category', existing.category || '');
                               handleBatchStyleChange(index, 'cost_price', existing.cost_price);
                               handleBatchStyleChange(index, 'selling_price', existing.selling_price);
                             }
