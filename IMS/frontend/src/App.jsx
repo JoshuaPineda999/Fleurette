@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 
@@ -330,6 +330,178 @@ function LoginScreen() {
         <div className="mt-6 pt-6 border-t border-stone-100">
           <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// 6c. PHOTO CROPPER. Drag and zoom a photo inside the card's image frame, with a live mini card
+// preview. Applying the crop outputs a cropped JPEG File that is uploaded instead of the original.
+const CROP_ASPECT = 1.1; // matches the product card's image area (width : height)
+const CROP_OUT_WIDTH = 1100;
+
+function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, accent = 'pink' }) {
+  const [rawUrl, setRawUrl] = useState(null);
+  const [natural, setNatural] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [fx, setFx] = useState(0); // photo offset as a fraction of the frame width
+  const [fy, setFy] = useState(0); // photo offset as a fraction of the frame height
+  const [resultUrl, setResultUrl] = useState(null);
+  const frameRef = useRef(null);
+  const imgRef = useRef(null);
+  const dragRef = useRef(null);
+  const btnClass = accent === 'amber' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-pink-600 hover:bg-pink-700';
+
+  useEffect(() => {
+    if (!file) { setResultUrl(null); return undefined; }
+    const url = URL.createObjectURL(file);
+    setResultUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  useEffect(() => {
+    if (!rawUrl) return undefined;
+    return () => URL.revokeObjectURL(rawUrl);
+  }, [rawUrl]);
+
+  // Photo size inside the frame, as fractions of the frame (frame width = 1, frame height = 1 / CROP_ASPECT).
+  // The photo always covers the frame at zoom 1 and grows from there.
+  const layoutFor = (z) => {
+    if (!natural.w || !natural.h) return null;
+    const s = Math.max(1 / natural.w, 1 / (CROP_ASPECT * natural.h)) * z;
+    const rw = natural.w * s;
+    const rh = natural.h * s * CROP_ASPECT;
+    return { rw, rh, maxX: Math.max(0, (rw - 1) / 2), maxY: Math.max(0, (rh - 1) / 2) };
+  };
+  const layout = layoutFor(zoom);
+  const clamp = (v, max) => Math.max(-max, Math.min(max, v));
+  const left = layout ? 0.5 - layout.rw / 2 + fx : 0;
+  const top = layout ? 0.5 - layout.rh / 2 + fy : 0;
+  const imgStyle = layout
+    ? { left: `${left * 100}%`, top: `${top * 100}%`, width: `${layout.rw * 100}%`, height: `${layout.rh * 100}%` }
+    : { opacity: 0 };
+
+  const pickFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setNatural({ w: 0, h: 0 });
+    setZoom(1);
+    setFx(0);
+    setFy(0);
+    setRawUrl(URL.createObjectURL(f));
+  };
+
+  const changeZoom = (z) => {
+    const lay = layoutFor(z);
+    setZoom(z);
+    if (lay) { setFx(v => clamp(v, lay.maxX)); setFy(v => clamp(v, lay.maxY)); }
+  };
+
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!dragRef.current || !layout || !frameRef.current) return;
+    const rect = frameRef.current.getBoundingClientRect();
+    const dx = (e.clientX - dragRef.current.x) / rect.width;
+    const dy = (e.clientY - dragRef.current.y) / rect.height;
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    setFx(v => clamp(v + dx, layout.maxX));
+    setFy(v => clamp(v + dy, layout.maxY));
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const applyCrop = () => {
+    const img = imgRef.current;
+    if (!img || !layout) return;
+    // Source rectangle (in photo pixels) that is visible inside the frame.
+    const sw = natural.w / layout.rw;
+    const sh = natural.h / layout.rh;
+    const sx = -left * natural.w / layout.rw;
+    const sy = -top * natural.h / layout.rh;
+    const outW = CROP_OUT_WIDTH;
+    const outH = Math.round(outW / CROP_ASPECT);
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      onChange(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+      setRawUrl(null);
+    }, 'image/jpeg', 0.92);
+  };
+
+  const shownUrl = resultUrl || currentUrl;
+
+  if (!rawUrl) {
+    return (
+      <div className="flex items-center gap-3">
+        {shownUrl ? (
+          <img src={shownUrl} alt="Photo" className="w-16 h-16 object-cover rounded-lg border border-stone-200 shrink-0" />
+        ) : (
+          <div className="w-16 h-16 rounded-lg bg-[#f2ece4] border border-stone-200 flex items-center justify-center text-2xl shrink-0">👗</div>
+        )}
+        <div className="flex-1 min-w-0 space-y-1">
+          <input
+            type="file" accept="image/*" onChange={pickFile}
+            className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
+          />
+          {file && (
+            <button type="button" onClick={() => onChange(null)} className="text-[10px] font-black text-rose-600 hover:text-rose-800">Discard new photo</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white p-3 rounded-xl border border-stone-200 space-y-3">
+      <p className="text-[11px] font-bold text-stone-500">Drag the photo to position it, use the slider to zoom, then apply the crop.</p>
+      <div className="flex flex-row flex-wrap gap-3 items-start">
+        <div className="w-52 shrink-0">
+          <div
+            ref={frameRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            className="relative w-full overflow-hidden bg-stone-100 rounded-xl cursor-grab active:cursor-grabbing touch-none select-none"
+            style={{ aspectRatio: `${CROP_ASPECT}` }}
+          >
+            <img
+              ref={imgRef} src={rawUrl} alt="" draggable={false}
+              onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+              className="absolute max-w-none pointer-events-none"
+              style={imgStyle}
+            />
+          </div>
+          <input
+            type="range" min="1" max="3" step="0.01" value={zoom}
+            onChange={(e) => changeZoom(parseFloat(e.target.value))}
+            className="w-full mt-2"
+          />
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">Card preview</span>
+          <div className="w-36 bg-white rounded-2xl shadow-md border border-stone-200 overflow-hidden">
+            <div className="relative bg-[#f2ece4] overflow-hidden" style={{ aspectRatio: `${CROP_ASPECT}` }}>
+              {layout && <img src={rawUrl} alt="" draggable={false} className="absolute max-w-none pointer-events-none" style={imgStyle} />}
+            </div>
+            <div className="p-2.5">
+              <p className="font-black text-sm text-stone-900 truncate">{previewName || 'Style name'}</p>
+              <p className="font-black text-pink-600 text-sm">₱{parseFloat(previewPrice || 0).toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={() => setRawUrl(null)} className="px-3 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">Cancel</button>
+        <button type="button" onClick={applyCrop} disabled={!layout} className={`${btnClass} text-white font-extrabold px-4 py-2 rounded-lg text-xs shadow transition disabled:opacity-50`}>Apply crop</button>
       </div>
     </div>
   );
@@ -2166,10 +2338,11 @@ function AdminDashboard() {
 
                       <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Photo (Optional)</label>
-                        <input 
-                          type="file" accept="image/*"
-                          onChange={(e) => handleBatchStyleChange(index, 'image', e.target.files[0])}
-                          className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
+                        <PhotoCropper
+                          file={style.image}
+                          previewName={style.name}
+                          previewPrice={style.selling_price}
+                          onChange={(f) => handleBatchStyleChange(index, 'image', f)}
                         />
                       </div>
                     </div>
@@ -2309,16 +2482,13 @@ function AdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Change Photo (Optional)</label>
-                {editGarment.previewUrl && (
-                  <div className="flex items-center gap-3 mb-2 bg-[#f2ece4] p-2 rounded-xl border border-stone-200">
-                    <img src={editGarment.previewUrl} alt="Current" className="w-12 h-12 object-cover rounded-lg shadow-sm border border-stone-200" />
-                    <span className="text-xs text-stone-600 font-bold">Current photo active</span>
-                  </div>
-                )}
-                <input 
-                  type="file" accept="image/*"
-                  onChange={(e) => setEditGarment({...editGarment, image: e.target.files[0]})}
-                  className="w-full text-xs text-stone-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
+                <PhotoCropper
+                  file={editGarment.image}
+                  currentUrl={editGarment.previewUrl}
+                  previewName={editGarment.name}
+                  previewPrice={editGarment.selling_price}
+                  accent="amber"
+                  onChange={(f) => setEditGarment({ ...editGarment, image: f })}
                 />
               </div>
 
