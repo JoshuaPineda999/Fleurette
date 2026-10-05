@@ -56,6 +56,10 @@ const parseSafeArray = (data) => {
   return [];
 };
 
+// 4b. DISPLAY LABEL FOR SIZES. The stored size stays 'XL' (so existing stock and sales still match);
+// it is only shown as 'Freesize' in the UI.
+const displaySize = (size) => (String(size ?? '') === 'XL' ? 'Freesize' : String(size ?? ''));
+
 // 5. Get accurate Local Date String (YYYY-MM-DD)
 const getLocalDate = () => {
   const today = new Date();
@@ -271,7 +275,7 @@ function CustomerView() {
                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
                     <div className="flex flex-wrap gap-2">
                       {parseSafeArray(item?.sizes).map(s => (
-                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{String(s?.size || 'N/A')}</span>
+                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{displaySize(s?.size || 'N/A')}</span>
                       ))}
                     </div>
                   </div>
@@ -602,13 +606,12 @@ function DesignCard({ design, onOpen }) {
 
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-stone-900">₱{parseFloat(variant?.selling_price || 0).toFixed(2)}</span>
-            <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(variant?.cost_price || 0).toFixed(2)}</span>
           </div>
           <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(variant?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
         </div>
         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
           {parseSafeArray(variant?.sizes).map((s) => (
-            <div key={`szi-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
+            <div key={`szi-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{displaySize(s?.size)}: {s?.quantity}</div>
           ))}
         </div>
       </div>
@@ -757,7 +760,7 @@ function AdminDashboard() {
       }
 
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${productModal.size})`);
+      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)})`);
       await fetchData(true);
     } catch (error) {
       const available = error.response?.data?.available;
@@ -775,7 +778,7 @@ function AdminDashboard() {
       const isMergedGarment = productModal.garment.underlying_garments && productModal.garment.underlying_garments.length > 0;
       const targetGarmentId = isMergedGarment ? [...productModal.garment.underlying_garments].sort((a, b) => b.id - a.id)[0].id : productModal.garment.id;
       await axios.patch(`${API_BASE}garments/${targetGarmentId}/update_stock/`, { size: productModal.size, change: Math.abs(productModal.quantity), is_sale: false });
-      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${productModal.garment.name} (${productModal.size})`);
+      showToast(`📦 Restocked! Added ${productModal.quantity} pc(s) to ${productModal.garment.name} (${displaySize(productModal.size)})`);
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
       await fetchData(true);
     } catch (error) { alert('Could not restock item.'); }
@@ -1582,14 +1585,13 @@ function AdminDashboard() {
                           <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
                           <div className="mt-2 flex items-baseline gap-2">
                             <span className="text-2xl font-black text-stone-900">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
-                            <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(item?.cost_price || 0).toFixed(2)}</span>
                           </div>
                           <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
                           {parseSafeArray(item?.sizes).map((s) => (
-                            <div key={`bsz-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
+                            <div key={`bsz-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{displaySize(s?.size)}: {s?.quantity}</div>
                           ))}
                         </div>
 
@@ -1779,13 +1781,13 @@ function AdminDashboard() {
                             <div className="flex flex-col gap-1 items-center mt-6">
                               {log.itemsArray.map((it, i) => (
                                 <span key={`sz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
-                                  {it.size}
+                                  {displaySize(it.size)}
                                 </span>
                               ))}
                             </div>
                           ) : (
                             <span className="bg-[#f2ece4] text-stone-800 font-black text-xs px-3 py-1.5 rounded-lg border border-stone-300">
-                               {String(log?.size || '').includes(',') ? 'Mixed Sizes' : String(log?.size || '')}
+                               {displaySize(log?.size).includes(',') ? 'Mixed Sizes' : displaySize(log?.size)}
                             </span>
                           )}
                         </td>
@@ -2004,7 +2006,7 @@ function AdminDashboard() {
 
                         <td className="p-4">
                           <div className="font-bold text-stone-800">{String(order?.item_name || '')}</div>
-                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {String(order?.size || '')} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
+                          <div className="text-[11px] font-bold text-stone-400 mt-0.5">Size: {displaySize(order?.size)} {order?.color && order.color !== 'N/A' ? `| Color: ${String(order.color)}` : ''}</div>
                           {parseSafeArray(order?.items).length > 1 && (
                             <div className="text-[10px] font-black text-pink-600 mt-0.5">{parseSafeArray(order.items).length} items — click to view</div>
                           )}
@@ -2081,7 +2083,7 @@ function AdminDashboard() {
                         <p className="font-black text-sm text-stone-900 leading-tight">{it?.item_name}</p>
                         <div className="flex gap-1.5 shrink-0">
                           <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">x{it?.quantity || 1}</span>
-                          <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">{it?.size}</span>
+                          <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">{displaySize(it?.size)}</span>
                           {it?.color && it.color !== 'N/A' && (
                             <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">{it.color}</span>
                           )}
@@ -2093,7 +2095,7 @@ function AdminDashboard() {
                   <>
                     <p className="font-black text-lg text-stone-900 leading-tight">{viewPreOrder.item_name || String(viewPreOrder.name || '').replace('📝 Pre-Order: ', '').split(' (For:')[0]}</p>
                     <div className="flex gap-3 mt-1.5">
-                      <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {viewPreOrder.size}</span>
+                      <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Size: {displaySize(viewPreOrder.size)}</span>
                       {viewPreOrder.color && viewPreOrder.color !== 'N/A' && (
                         <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded">Color: {viewPreOrder.color}</span>
                       )}
@@ -2241,7 +2243,7 @@ function AdminDashboard() {
                               : 'bg-stone-100 border-stone-200 text-stone-300 cursor-not-allowed'
                         }`}
                       >
-                        <span className="text-sm font-black">{String(s?.size || '')}</span>
+                        <span className="text-sm font-black">{displaySize(s?.size)}</span>
                         <span className="text-[10px] opacity-80">{s?.quantity} in stock</span>
                       </button>
                     ))}
@@ -2437,7 +2439,7 @@ function AdminDashboard() {
                       <div className="grid grid-cols-4 gap-2 bg-[#f9f6f0] p-2.5 rounded-xl border border-stone-200">
                         {['S', 'M', 'L', 'XL'].map((sizeLabel) => (
                           <div key={sizeLabel} className="text-center">
-                            <span className="block font-extrabold text-[10px] text-stone-500 mb-1">{sizeLabel}</span>
+                            <span className="block font-extrabold text-[10px] text-stone-500 mb-1">{displaySize(sizeLabel)}</span>
                             <input 
                               type="number" min="0" placeholder="0" 
                               value={style.sizes[sizeLabel]} 
@@ -2557,7 +2559,7 @@ function AdminDashboard() {
                 <div className="grid grid-cols-4 gap-2 bg-[#f2ece4] p-3 rounded-xl border border-stone-300">
                   {['S', 'M', 'L', 'XL'].map((size) => (
                     <div key={`edit-sz-${size}`} className="text-center">
-                      <span className="block font-extrabold text-xs text-stone-500 mb-1">{size}</span>
+                      <span className="block font-extrabold text-xs text-stone-500 mb-1">{displaySize(size)}</span>
                       <input 
                         type="number" min="0" 
                         value={editGarment.sizes[size]} 
@@ -2906,7 +2908,7 @@ function AdminDashboard() {
                           <option value="" disabled>Size</option>
                           {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
                             <option key={`po-sz-${idx}-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
-                              {String(s?.size)} {s?.quantity <= 0 ? '(Out)' : ''}
+                              {displaySize(s?.size)} {s?.quantity <= 0 ? '(Out)' : ''}
                             </option>
                           ))}
                         </select>
@@ -3066,10 +3068,10 @@ function AdminDashboard() {
                         >
                           <option value="" disabled>Size</option>
                           {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
-                            <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size}>{String(s?.size)}</option>
+                            <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size}>{displaySize(s?.size)}</option>
                           ))}
                           {it.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).find(s => String(s?.size) === it.size) && (
-                            <option value={it.size}>{String(it.size)}</option>
+                            <option value={it.size}>{displaySize(it.size)}</option>
                           )}
                         </select>
                         <input
