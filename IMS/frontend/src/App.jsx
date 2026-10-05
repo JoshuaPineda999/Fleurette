@@ -335,6 +335,80 @@ function LoginScreen() {
   );
 }
 
+// 6b. GROUP COLOR VARIANTS INTO ONE DESIGN CARD (name + category). Input is the per-color
+// merged list from mergeGarments; each design keeps its color variants under `variants`.
+const groupGarmentDesigns = (mergedList) => {
+  const designMap = {};
+  (mergedList || []).forEach(v => {
+    const key = `${String(v?.name || '').trim().toLowerCase()}-${String(v?.category || '').trim().toLowerCase()}`;
+    if (!designMap[key]) {
+      designMap[key] = { key, name: v?.name, category: v?.category, variants: [] };
+    }
+    designMap[key].variants.push(v);
+  });
+  return Object.values(designMap);
+};
+
+// One design card. Lets the admin pick a color variant on the card itself; clicking the card
+// opens the sell/restock modal for whichever color is currently selected.
+function DesignCard({ design, onOpen }) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const variant = design.variants[selectedIdx] || design.variants[0];
+  const hasMultipleColors = design.variants.length > 1;
+  const image = variant?.image || design.variants.find(v => v?.image)?.image || null;
+  const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
+
+  return (
+    <div onClick={() => onOpen(variant)} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
+      <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
+        {image ? (<img src={image} alt={design.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+        <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{variant?.total_pieces} pcs left</div>
+      </div>
+      <div className="p-5 flex flex-col justify-between flex-1">
+        <div>
+          <div className="flex justify-between items-start mb-1">
+            <h3 className="font-black text-lg text-stone-900 leading-tight pr-2 group-hover:text-pink-600 transition">{String(design.name || 'Unnamed')}</h3>
+            {!hasMultipleColors && variant?.color && variant.color !== 'N/A' && (
+              <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
+                {String(variant.color)}
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-bold text-stone-400 mb-2 block">{String(design.category || 'Uncategorized')}</span>
+
+          {hasMultipleColors && (
+            <div className="flex flex-wrap gap-1.5 mb-2" onClick={(e) => e.stopPropagation()}>
+              {design.variants.map((v, i) => (
+                <button
+                  key={`color-${v?.id}-${i}`}
+                  type="button"
+                  onClick={() => setSelectedIdx(i)}
+                  className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border transition ${
+                    i === selectedIdx ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
+                  } ${v?.total_pieces === 0 ? 'line-through opacity-60' : ''}`}
+                >
+                  {colorLabel(v)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-stone-900">₱{parseFloat(variant?.selling_price || 0).toFixed(2)}</span>
+            <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(variant?.cost_price || 0).toFixed(2)}</span>
+          </div>
+          <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(variant?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
+        </div>
+        <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
+          {parseSafeArray(variant?.sizes).map((s) => (
+            <div key={`szi-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -1038,12 +1112,15 @@ function AdminDashboard() {
     .filter(item => {
       if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
-      const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
+      const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) ||
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+
+  // Gallery shows one card per design; each card lets the admin pick the color variant.
+  const galleryDesigns = groupGarmentDesigns(filteredGarments);
 
   const batchMap = {};
   (garments || []).forEach(g => {
@@ -1146,7 +1223,7 @@ function AdminDashboard() {
                   <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
                   {searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-stone-400 hover:text-stone-600 font-bold text-sm" title="Clear search">✖</button>)}
                 </div>
-                <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{filteredGarments.length} Styles</span>
+                <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
             </div>
 
@@ -1207,36 +1284,8 @@ function AdminDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredGarments.map((item) => (
-                  <div key={`adm-${item?.id}`} onClick={() => openProductModal(item, 'sell')} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
-                    <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
-                      {item?.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
-                      <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item?.total_pieces} pcs left</div>
-                    </div>
-                    <div className="p-5 flex flex-col justify-between flex-1">
-                      <div>
-                        <div className="flex justify-between items-start mb-1">
-                          <h3 className="font-black text-lg text-stone-900 leading-tight pr-2 group-hover:text-pink-600 transition">{String(item?.name || 'Unnamed')}</h3>
-                          {item?.color && item.color !== 'N/A' && (
-                            <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">
-                              {String(item.color)}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
-                        <div className="mt-2 flex items-baseline gap-2">
-                          <span className="text-2xl font-black text-stone-900">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
-                          <span className="text-xs font-bold text-stone-400 line-through">₱{parseFloat(item?.cost_price || 0).toFixed(2)}</span>
-                        </div>
-                        <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
-                        {parseSafeArray(item?.sizes).map((s) => (
-                          <div key={`szi-${s?.size}`} className={`text-center py-1 rounded border text-[11px] font-black ${s?.quantity > 0 ? 'bg-[#f9f6f0] text-stone-700 border-stone-200' : 'bg-red-50 text-red-500 border-red-200 opacity-60'}`}>{String(s?.size || '')}: {s?.quantity}</div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                {galleryDesigns.map((design) => (
+                  <DesignCard key={`adm-design-${design.key}`} design={design} onOpen={(variant) => openProductModal(variant, 'sell')} />
                 ))}
               </div>
             )}
