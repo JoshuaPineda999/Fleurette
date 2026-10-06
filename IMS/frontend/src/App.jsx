@@ -57,8 +57,8 @@ const parseSafeArray = (data) => {
 };
 
 // 4b. DISPLAY LABEL FOR SIZES. The stored size stays 'XL' (so existing stock and sales still match);
-// it is only shown as 'Freesize' in the UI.
-const displaySize = (size) => (String(size ?? '') === 'XL' ? 'Freesize' : String(size ?? ''));
+// it is only shown as 'FS' in the UI.
+const displaySize = (size) => (String(size ?? '') === 'XL' ? 'FS' : String(size ?? ''));
 
 // 5. Get accurate Local Date String (YYYY-MM-DD)
 const getLocalDate = () => {
