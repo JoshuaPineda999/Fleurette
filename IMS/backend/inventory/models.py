@@ -58,6 +58,8 @@ class SaleLog(models.Model):
     batch_name = models.CharField(max_length=255, blank=True, null=True)
     # The garment (batch record) this sale was taken from, so returns go back to that batch.
     garment_id = models.IntegerField(blank=True, null=True)
+    # Selling price x quantity at the time of sale (the amount the sale brought in).
+    amount_sold = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):

@@ -1399,7 +1399,13 @@ function AdminDashboard() {
     const bName = String(s.batch_name || 'Uncategorized');
     if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
     batchMap[bName].pieces_sold += (parseFloat(s.quantity_sold) || 0);
-    batchMap[bName].profit_earned += (parseFloat(s.profit_earned) || 0);
+    // Amount the sale brought in: selling price x quantity. Older sales without a stored amount use the style's current selling price.
+    let amount = parseFloat(s.amount_sold);
+    if (isNaN(amount)) {
+      const style = (garments || []).find(g => String(g?.name || '').trim().toLowerCase() === String(s.garment_name || '').trim().toLowerCase());
+      amount = (parseFloat(style?.selling_price) || 0) * (parseFloat(s.quantity_sold) || 0);
+    }
+    batchMap[bName].profit_earned += amount;
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
@@ -1678,7 +1684,7 @@ function AdminDashboard() {
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Sold</span>
                               <span className="text-3xl font-black text-emerald-600">{batch?.pieces_sold || 0} <span className="text-sm font-bold text-stone-400">pcs</span></span>
-                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} profit earned</span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} earned</span>
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
