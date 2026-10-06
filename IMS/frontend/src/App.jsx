@@ -1388,10 +1388,18 @@ function AdminDashboard() {
   (garments || []).forEach(g => {
     if (!g) return;
     const bName = String(g.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0 }; }
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
     batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
     batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
     batchMap[bName].styles_count += 1;
+  });
+  // Sales are recorded per batch (SaleLog.batch_name), so sold totals come from the sales ledger.
+  (salesHistory || []).forEach(s => {
+    if (!s) return;
+    const bName = String(s.batch_name || 'Uncategorized');
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
+    batchMap[bName].pieces_sold += (parseFloat(s.quantity_sold) || 0);
+    batchMap[bName].profit_earned += (parseFloat(s.profit_earned) || 0);
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
@@ -1666,6 +1674,11 @@ function AdminDashboard() {
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Pieces Remaining</span>
                               <span className="text-3xl font-black text-stone-900">{batch?.pieces_left} <span className="text-sm font-bold text-stone-400">pcs</span></span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Sold</span>
+                              <span className="text-3xl font-black text-emerald-600">{batch?.pieces_sold || 0} <span className="text-sm font-bold text-stone-400">pcs</span></span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} profit earned</span>
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
