@@ -1763,17 +1763,12 @@ function AdminDashboard() {
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Sold</span>
                               <span className="text-3xl font-black text-emerald-600">{batch?.pieces_sold || 0} <span className="text-sm font-bold text-stone-400">pcs</span></span>
-                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} earned</span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} / ₱{(parseFloat(batch?.profit_earned || 0) + parseFloat(batch?.value_left || 0)).toFixed(2)} earned</span>
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit</span>
                               <span className="text-2xl font-black text-pink-600">₱{parseFloat(batch?.potential_profit || 0).toFixed(2)}</span>
                               <span className="block text-xs font-bold text-stone-500 mt-0.5">All pieces sold, minus ₱{parseFloat(batch?.expenses || 0).toFixed(2)} expenses</span>
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Left to Earn</span>
-                              <span className="text-2xl font-black text-stone-900">₱{parseFloat(batch?.value_left || 0).toFixed(2)}</span>
-                              <span className="block text-xs font-bold text-stone-500 mt-0.5">Remaining pieces at selling price</span>
                             </div>
                           </div>
                         </div>
