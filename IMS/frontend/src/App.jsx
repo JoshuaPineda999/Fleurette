@@ -143,6 +143,15 @@ const preOrderItemList = (order) => {
   return [];
 };
 
+// For a pre-order item with no recorded batch: the oldest batch of that style and colour,
+// which is the batch a reservation takes stock from first.
+const preOrderOriginGarment = (garmentsList, item) => {
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  return (garmentsList || [])
+    .filter(g => norm(g?.name) === norm(item?.item_name) && normColorKey(g?.color) === normColorKey(item?.color))
+    .sort((a, b) => a.id - b.id)[0] || null;
+};
+
 // ==========================================
 // ERROR BOUNDARY (PREVENTS WHITE SCREENS)
 // ==========================================
@@ -1091,11 +1100,17 @@ function AdminDashboard() {
       const qty = parseInt(it.reserved != null ? it.reserved : it.quantity) || 0;
       if (qty <= 0) continue;
       try {
-        const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
-        await fifoRestore({
-          name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
-          size: it.size, quantity: qty
-        });
+        // No batch was recorded, so return it to the batch the batch tracker counts it under.
+        const origin = preOrderOriginGarment(garments, it);
+        if (origin) {
+          await axios.patch(`${API_BASE}garments/${origin.id}/update_stock/`, { size: it.size, change: qty, is_sale: false });
+        } else {
+          const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+          await fifoRestore({
+            name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
+            size: it.size, quantity: qty
+          });
+        }
       } catch (err) {
         console.error('Stock restore failed for', it.item_name, err);
       }
@@ -1288,7 +1303,9 @@ function AdminDashboard() {
       : [{ item_name: order.item_name, size: order.size }];
 
     safeItems.forEach(si => {
-        const matchIndex = localSalesHistory.findIndex(s => s && s.garment_name === si.item_name && s.size === si.size);
+        // Pre-orders made before 2026-08-17 also wrote a sales record on the order date; hide only that duplicate.
+        // Sales recorded since 2026-10-06 always store their garment_id, so they are never pre-order duplicates.
+        const matchIndex = localSalesHistory.findIndex(s => s && !s.garment_id && s.garment_name === si.item_name && s.size === si.size && String(s.sold_at) === String(order?.order_date));
         if (matchIndex !== -1) localSalesHistory.splice(matchIndex, 1);
     });
     
@@ -1450,10 +1467,7 @@ function AdminDashboard() {
       // Pieces with no recorded batch (older pre-orders, or stock not yet available) go to the
       // oldest batch of that style and colour, the same batch a reservation takes from first.
       if (qty > counted) {
-        const norm = (v) => String(v || '').trim().toLowerCase();
-        const match = (garments || [])
-          .filter(g => norm(g?.name) === norm(it?.item_name) && normColorKey(g?.color) === normColorKey(it?.color))
-          .sort((a, b) => a.id - b.id)[0];
+        const match = preOrderOriginGarment(garments, it);
         if (match) addBatchSold(match, match.batch_name, qty - counted);
       }
     });
