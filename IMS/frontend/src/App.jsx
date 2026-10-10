@@ -1046,6 +1046,7 @@ function AdminDashboard() {
     const results = [];
     for (const it of items) {
       let reserved = 0;
+      let allocations = [];
       try {
         const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
         const res = await fifoDeduct({
@@ -1053,10 +1054,12 @@ function AdminDashboard() {
           size: it.size, quantity: parseInt(it.quantity) || 1, is_sale: false, strict: false
         });
         reserved = res?.deducted || 0;
+        // Which batch each reserved piece came from, for batch totals and for returning stock to that batch.
+        allocations = Array.isArray(res?.allocations) ? res.allocations : [];
       } catch (err) {
         console.error('Stock reservation failed for', it.item_name, err);
       }
-      results.push({ ...it, reserved });
+      results.push({ ...it, reserved, allocations });
     }
     return results;
   };
@@ -1064,6 +1067,25 @@ function AdminDashboard() {
   const restorePreOrderItems = async (items) => {
     for (const it of items) {
       if (!it.item_name || !it.size) continue;
+      // Give each reserved piece back to the batch it was taken from, when that batch still exists.
+      const allocations = parseSafeArray(it.allocations);
+      if (allocations.length > 0) {
+        for (const a of allocations) {
+          const qty = parseInt(a?.quantity) || 0;
+          if (qty <= 0) continue;
+          try {
+            if ((garments || []).some(g => g?.id === a.garment_id)) {
+              await axios.patch(`${API_BASE}garments/${a.garment_id}/update_stock/`, { size: it.size, change: qty, is_sale: false });
+            } else {
+              const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+              await fifoRestore({ name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category, size: it.size, quantity: qty });
+            }
+          } catch (err) {
+            console.error('Stock restore failed for', it.item_name, err);
+          }
+        }
+        continue;
+      }
       // Legacy records (created before reservation tracking) have no `reserved`
       // field — fall back to the requested quantity for those.
       const qty = parseInt(it.reserved != null ? it.reserved : it.quantity) || 0;
@@ -1406,6 +1428,35 @@ function AdminDashboard() {
       amount = (parseFloat(style?.selling_price) || 0) * (parseFloat(s.quantity_sold) || 0);
     }
     batchMap[bName].profit_earned += amount;
+  });
+  // Pre-orders take stock without a sales record, so their pieces are counted toward the batch they came from.
+  const addBatchSold = (garment, batchName, qty) => {
+    const bName = String(batchName || garment?.batch_name || 'Uncategorized');
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
+    batchMap[bName].pieces_sold += qty;
+    batchMap[bName].profit_earned += (parseFloat(garment?.selling_price) || 0) * qty;
+  };
+  (preOrders || []).forEach(order => {
+    preOrderItemList(order).forEach(it => {
+      const qty = parseInt(it?.quantity) || 1;
+      const allocations = parseSafeArray(it?.allocations);
+      let counted = 0;
+      allocations.forEach(a => {
+        const aQty = parseInt(a?.quantity) || 0;
+        if (aQty <= 0) return;
+        addBatchSold((garments || []).find(g => g?.id === a.garment_id), a.batch_name, aQty);
+        counted += aQty;
+      });
+      // Pieces with no recorded batch (older pre-orders, or stock not yet available) go to the
+      // oldest batch of that style and colour, the same batch a reservation takes from first.
+      if (qty > counted) {
+        const norm = (v) => String(v || '').trim().toLowerCase();
+        const match = (garments || [])
+          .filter(g => norm(g?.name) === norm(it?.item_name) && normColorKey(g?.color) === normColorKey(it?.color))
+          .sort((a, b) => a.id - b.id)[0];
+        if (match) addBatchSold(match, match.batch_name, qty - counted);
+      }
+    });
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 

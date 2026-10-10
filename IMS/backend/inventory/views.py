@@ -115,6 +115,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
 
             remaining = quantity
             deducted_total = 0
+            # Which batch each deducted piece came from, so callers can give it back to that batch.
+            allocations = []
             for g in matching:
                 if remaining <= 0:
                     break
@@ -126,6 +128,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                 stock.save()
                 remaining -= deduct
                 deducted_total += deduct
+                allocations.append({'garment_id': g.id, 'batch_name': g.batch_name, 'quantity': deduct})
 
                 if is_sale and deduct > 0:
                     profit = g.profit_per_piece * deduct
@@ -140,7 +143,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                         garment_id=g.id,
                     )
 
-        return Response({'deducted': deducted_total, 'requested': quantity})
+        return Response({'deducted': deducted_total, 'requested': quantity, 'allocations': allocations})
 
     @action(detail=False, methods=['post'], url_path='fifo-restore')
     def fifo_restore(self, request):
