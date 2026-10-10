@@ -1295,21 +1295,15 @@ function AdminDashboard() {
 
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
-  let localSalesHistory = Array.isArray(salesHistory) ? [...salesHistory] : [];
-  
+  // Every sale and every pre-order is listed, even when a customer buys the same style and size again.
+  const localSalesHistory = Array.isArray(salesHistory) ? salesHistory : [];
+
   const mappedPreOrders = (preOrders || []).filter(o => o).map(order => {
-    const safeItems = order.items && order.items.length > 0 
-      ? order.items 
+    const safeItems = order.items && order.items.length > 0
+      ? order.items
       : [{ item_name: order.item_name, size: order.size }];
 
-    safeItems.forEach(si => {
-        // Pre-orders made before 2026-08-17 also wrote a sales record on the order date; hide only that duplicate.
-        // Sales recorded since 2026-10-06 always store their garment_id, so they are never pre-order duplicates.
-        const matchIndex = localSalesHistory.findIndex(s => s && !s.garment_id && s.garment_name === si.item_name && s.size === si.size && String(s.sold_at) === String(order?.order_date));
-        if (matchIndex !== -1) localSalesHistory.splice(matchIndex, 1);
-    });
-    
-    return { 
+    return {
       id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
       date: order?.order_date ? String(order.order_date) : '', 
       itemsArray: safeItems,
