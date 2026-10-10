@@ -903,6 +903,13 @@ function AdminDashboard() {
         formData.append('batch_name', newName.trim());
         await axios.patch(`${API_BASE}garments/${item.id}/`, formData);
       }
+      // Expenses and sales records carry the batch name too, so they stay with the renamed batch.
+      for (const exp of (expenses || []).filter(x => x?.batch_name === oldName)) {
+        await axios.patch(`${API_BASE}expenses/${exp.id}/`, { batch_name: newName.trim() });
+      }
+      for (const sale of (salesHistory || []).filter(s => (s?.batch_name || 'Uncategorized') === oldName)) {
+        await axios.patch(`${API_BASE}sales/history/${sale.id}/`, { batch_name: newName.trim() });
+      }
       if (selectedBatch === oldName) setSelectedBatch(newName.trim());
       setShowRenameBatchModal(false);
       showToast(`✏️ Batch renamed from "${oldName}" to "${newName.trim()}"!`);
@@ -1418,19 +1425,24 @@ function AdminDashboard() {
   const galleryDesigns = groupGarmentDesigns(filteredGarments);
 
   const batchMap = {};
+  const batchEntry = (bName) => {
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, value_left: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0, expenses: 0 }; }
+    return batchMap[bName];
+  };
   (garments || []).forEach(g => {
     if (!g) return;
     const bName = String(g.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
+    batchEntry(bName);
     batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
-    batchMap[bName].potential_profit += (parseFloat(g.total_potential_profit) || 0);
+    // Remaining pieces at their full selling price (cost price is not deducted).
+    batchMap[bName].value_left += (parseFloat(g.total_pieces) || 0) * (parseFloat(g.selling_price) || 0);
     batchMap[bName].styles_count += 1;
   });
   // Sales are recorded per batch (SaleLog.batch_name), so sold totals come from the sales ledger.
   (salesHistory || []).forEach(s => {
     if (!s) return;
     const bName = String(s.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
+    batchEntry(bName);
     batchMap[bName].pieces_sold += (parseFloat(s.quantity_sold) || 0);
     // Amount the sale brought in: selling price x quantity. Older sales without a stored amount use the style's current selling price.
     let amount = parseFloat(s.amount_sold);
@@ -1442,8 +1454,9 @@ function AdminDashboard() {
   });
   // Pre-orders take stock without a sales record, so their pieces are counted toward the batch they came from.
   const addBatchSold = (garment, batchName, qty) => {
-    const bName = String(batchName || garment?.batch_name || 'Uncategorized');
-    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, potential_profit: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0 }; }
+    // The garment's current batch wins, so a renamed batch keeps its pre-orders.
+    const bName = String(garment?.batch_name || batchName || 'Uncategorized');
+    batchEntry(bName);
     batchMap[bName].pieces_sold += qty;
     batchMap[bName].profit_earned += (parseFloat(garment?.selling_price) || 0) * qty;
   };
@@ -1465,6 +1478,13 @@ function AdminDashboard() {
         if (match) addBatchSold(match, match.batch_name, qty - counted);
       }
     });
+  });
+  (expenses || []).forEach(e => {
+    if (e?.batch_name && batchMap[e.batch_name]) batchMap[e.batch_name].expenses += (parseFloat(e.amount) || 0);
+  });
+  Object.values(batchMap).forEach(b => {
+    // Potential profit: every piece in the batch (sold + remaining) at its selling price, minus the batch's expenses.
+    b.potential_profit = b.profit_earned + b.value_left - b.expenses;
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
@@ -1746,8 +1766,14 @@ function AdminDashboard() {
                               <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} earned</span>
                             </div>
                             <div>
-                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit Left</span>
+                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit</span>
                               <span className="text-2xl font-black text-pink-600">₱{parseFloat(batch?.potential_profit || 0).toFixed(2)}</span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">All pieces sold, minus ₱{parseFloat(batch?.expenses || 0).toFixed(2)} expenses</span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Left to Earn</span>
+                              <span className="text-2xl font-black text-stone-900">₱{parseFloat(batch?.value_left || 0).toFixed(2)}</span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">Remaining pieces at selling price</span>
                             </div>
                           </div>
                         </div>
