@@ -69,6 +69,20 @@ const getLocalDate = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Style name used for grouping: case and surrounding spaces are ignored.
+const normNameKey = (name) => String(name ?? '').trim().toLowerCase();
+
+// One entry per style name (first spelling wins), in alphabetical order, for name dropdowns.
+const uniqueByName = (names) => {
+  const seen = new Set();
+  return (names || []).map(n => String(n ?? '').trim()).filter(n => {
+    const key = n.toLowerCase();
+    if (!n || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+};
+
 // Colour used for grouping: blank, missing and the 'N/A' placeholder all mean "no colour".
 const normColorKey = (color) => {
   const v = String(color ?? '').trim().toLowerCase();
@@ -1020,7 +1034,8 @@ function AdminDashboard() {
   // Sum of (matched garment's selling price * quantity) across an item list — used to
   // auto-suggest the order's total price whenever items/quantities change.
   // A style is listed once in the pre-order form; each colour of it is one merged entry (with its own stock).
-  const styleVariants = (name) => (mergedGarmentsList || []).filter(g => String(g?.name) === name);
+  // Names match ignoring case and surrounding spaces, the same way the inventory merges styles.
+  const styleVariants = (name) => (mergedGarmentsList || []).filter(g => normNameKey(g?.name) === normNameKey(name));
   const styleVariant = (name, color) => styleVariants(name).find(g => normColorKey(g?.color) === normColorKey(color)) || null;
   // Picking a style selects its colour when it has only one; changing style or colour clears the size.
   const changePreOrderItem = (it, field, value) => {
@@ -1501,8 +1516,8 @@ function AdminDashboard() {
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
-  const preOrderStyleNames = Array.from(new Set((mergedGarmentsList || []).map(g => String(g?.name || '')).filter(Boolean)));
-  const uniqueGarmentNames = Array.from(new Set((garments || []).filter(g => g).map(g => String(g.name || ''))));
+  const preOrderStyleNames = uniqueByName((mergedGarmentsList || []).map(g => g?.name));
+  const uniqueGarmentNames = uniqueByName((garments || []).map(g => g?.name));
 
   if (errorMessage) {
     return (
