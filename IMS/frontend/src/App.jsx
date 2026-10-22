@@ -304,11 +304,26 @@ function CustomerDesignCard({ design, onZoom }) {
   const hasMultipleColors = design.variants.length > 1;
   const image = item?.image || design.variants.find(v => v?.image)?.image || null;
   const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
+  // Stock per size, split into batches that have arrived (on hand) and batches still on pre-order.
+  const sizeStock = { S: { onHand: 0, preOrder: 0 }, M: { onHand: 0, preOrder: 0 }, L: { onHand: 0, preOrder: 0 }, XL: { onHand: 0, preOrder: 0 } };
+  (item?.underlying_garments || []).forEach(g => {
+    const bucket = g?.batch_status === 'Pre-order' ? 'preOrder' : 'onHand';
+    parseSafeArray(g?.sizes).forEach(sz => {
+      if (!sizeStock[sz?.size]) sizeStock[sz?.size] = { onHand: 0, preOrder: 0 };
+      sizeStock[sz.size][bucket] += parseInt(sz?.quantity) || 0;
+    });
+  });
+  const onHandTotal = Object.values(sizeStock).reduce((sum, v) => sum + v.onHand, 0);
+  const preOrderTotal = Object.values(sizeStock).reduce((sum, v) => sum + v.preOrder, 0);
+  const preOrderOnly = onHandTotal === 0 && preOrderTotal > 0;
 
   return (
     <div onClick={() => { if (image) onZoom(image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
       {item?.total_pieces === 0 && (
         <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
+      )}
+      {preOrderOnly && (
+        <div className="absolute top-4 right-4 bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">🚚 Pre-Order</div>
       )}
       <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
         {image ? (
@@ -351,10 +366,22 @@ function CustomerDesignCard({ design, onZoom }) {
         <div className="mt-auto">
           <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
           <div className="flex flex-wrap gap-2">
-            {parseSafeArray(item?.sizes).map(s => (
-              <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{displaySize(s?.size || 'N/A')}</span>
-            ))}
+            {parseSafeArray(item?.sizes).map(s => {
+              const stock = sizeStock[s?.size] || { onHand: 0, preOrder: 0 };
+              // On hand wins; a size only available from a pre-order batch is shown as pre-order.
+              const cls = stock.onHand > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700'
+                : stock.preOrder > 0 ? 'bg-violet-50 border-violet-300 text-violet-700'
+                : 'bg-stone-50 border-stone-100 text-stone-300 line-through';
+              return (
+                <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${cls}`} title={stock.onHand === 0 && stock.preOrder > 0 ? 'Available on pre-order' : undefined}>
+                  {displaySize(s?.size || 'N/A')}
+                </span>
+              );
+            })}
           </div>
+          {preOrderTotal > 0 && onHandTotal > 0 && Object.values(sizeStock).some(v => v.onHand === 0 && v.preOrder > 0) && (
+            <span className="block text-[10px] font-bold text-violet-700 mt-2">Purple sizes are available on pre-order</span>
+          )}
         </div>
       </div>
     </div>
@@ -723,7 +750,7 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
@@ -754,8 +781,22 @@ function AdminDashboard() {
   const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
   const handleLogout = () => { localStorage.removeItem('isAdmin'); navigate('/'); };
 
+  // A batch is Pre-order while any of its garments is still marked Pre-order.
+  const batchStatusOf = (batchName) => (garments || []).some(g =>
+    String(g?.batch_name || 'Uncategorized') === String(batchName) && g?.batch_status === 'Pre-order') ? 'Pre-order' : 'On-hand';
+
+  const handleSetBatchStatus = async (batchName, batchStatus) => {
+    try {
+      await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: batchName, batch_status: batchStatus });
+      showToast(batchStatus === 'Pre-order' ? `🚚 Batch "${batchName}" marked as Pre-order` : `📦 Batch "${batchName}" marked as On-hand`);
+      await fetchData(true);
+    } catch (error) {
+      alert(`Could not change the batch status: ${JSON.stringify(error.response?.data || error.message)}`);
+    }
+  };
+
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({ batch_name: prefillBatchName, styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -931,8 +972,10 @@ function AdminDashboard() {
           await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         }
       }
+      // The whole batch (including styles already in it) takes the status chosen in the form.
+      await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: newBatch.batch_name || 'Uncategorized', batch_status: newBatch.batch_status || 'On-hand' });
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
     } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
@@ -1548,6 +1591,7 @@ function AdminDashboard() {
     // Potential profit: every piece in the batch (sold + remaining) at its selling price, minus the batch's expenses.
     b.potential_profit = b.profit_earned + b.value_left - b.expenses;
   });
+  Object.values(batchMap).forEach(b => { b.status = batchStatusOf(b.name); });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
   const preOrderStyleNames = uniqueByName((mergedGarmentsList || []).map(g => g?.name));
@@ -1814,6 +1858,9 @@ function AdminDashboard() {
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
                               {batch?.styles_count} Styles Inside
                             </span>
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${batch?.status === 'Pre-order' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                              {batch?.status === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                            </span>
                             {batch?.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
                           </div>
                           <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{String(batch?.name || 'Unnamed')}</h3>
@@ -1836,7 +1883,21 @@ function AdminDashboard() {
                           </div>
                         </div>
 
-                        <div className="pt-4 border-t border-stone-100 flex gap-2">
+                        <div className="pt-4 border-t border-stone-100 grid grid-cols-2 gap-1 mb-2">
+                          {['On-hand', 'Pre-order'].map(opt => (
+                            <button
+                              key={`batch-status-${batch.name}-${opt}`} type="button"
+                              onClick={() => { if (batch.status !== opt) handleSetBatchStatus(batch.name, opt); }}
+                              className={`py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition ${
+                                batch.status === opt ? (opt === 'Pre-order' ? 'bg-violet-600 text-white border-violet-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-100'
+                              }`}
+                              title={opt === 'Pre-order' ? 'Mark this batch as still on its way' : 'Mark this batch as arrived'}
+                            >
+                              {opt === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
                           <button onClick={() => setSelectedBatch(batch.name)} className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center">
                             👁️ View Items
                           </button>
@@ -2520,9 +2581,29 @@ function AdminDashboard() {
                 <label className="block text-xs font-black text-stone-700 uppercase tracking-wider mb-2">Assign Batch Name</label>
                 <input 
                   type="text" required placeholder="e.g. Batch #1 (Summer Collection)" 
-                  value={newBatch.batch_name} onChange={(e) => setNewBatch({...newBatch, batch_name: e.target.value})}
+                  value={newBatch.batch_name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    // Adding to an existing batch starts from that batch's current status.
+                    const exists = (garments || []).some(g => String(g?.batch_name || 'Uncategorized') === name);
+                    setNewBatch({ ...newBatch, batch_name: name, ...(exists ? { batch_status: batchStatusOf(name) } : {}) });
+                  }}
                   className="w-full border border-stone-300 rounded-lg p-3 text-base font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white shadow-inner"
                 />
+                <label className="block text-xs font-black text-stone-700 uppercase tracking-wider mt-3 mb-2">Batch Status</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['On-hand', 'Pre-order'].map(opt => (
+                    <button
+                      key={`new-batch-status-${opt}`} type="button"
+                      onClick={() => setNewBatch({ ...newBatch, batch_status: opt })}
+                      className={`py-2 rounded-lg text-xs font-black uppercase tracking-wider border transition ${
+                        (newBatch.batch_status || 'On-hand') === opt ? (opt === 'Pre-order' ? 'bg-violet-600 text-white border-violet-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
+                      }`}
+                    >
+                      {opt === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-4">

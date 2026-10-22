@@ -33,7 +33,7 @@ class GarmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 
+            'id', 'batch_name', 'batch_status', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]

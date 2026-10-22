@@ -69,6 +69,17 @@ class GarmentViewSet(viewsets.ModelViewSet):
         matches.sort(key=lambda g: g.id)
         return matches
 
+    @action(detail=False, methods=['post'], url_path='set-batch-status')
+    def set_batch_status(self, request):
+        """Mark every garment in `batch_name` as On-hand or Pre-order."""
+        batch_name = request.data.get('batch_name')
+        batch_status = request.data.get('batch_status')
+        valid = [choice for choice, _ in Garment.BATCH_STATUS_CHOICES]
+        if not batch_name or batch_status not in valid:
+            return Response({'error': f'batch_name and a batch_status of {valid} are required'}, status=status.HTTP_400_BAD_REQUEST)
+        updated = Garment.objects.filter(batch_name=batch_name).update(batch_status=batch_status)
+        return Response({'updated': updated, 'batch_name': batch_name, 'batch_status': batch_status})
+
     @action(detail=False, methods=['post'], url_path='fifo-deduct')
     def fifo_deduct(self, request):
         """Atomically deduct `quantity` of `size` across all batches of a

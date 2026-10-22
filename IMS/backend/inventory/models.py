@@ -9,6 +9,12 @@ class Garment(models.Model):
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
     image = models.ImageField(upload_to='garments/', blank=True, null=True)
+    # Whether this garment's batch has arrived (On-hand) or is still on its way (Pre-order).
+    BATCH_STATUS_CHOICES = [
+        ('On-hand', 'On-hand'),
+        ('Pre-order', 'Pre-order'),
+    ]
+    batch_status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='On-hand')
     created_at = models.DateTimeField(auto_now_add=True)
 
     # ... rest of the code remains exactly the same
