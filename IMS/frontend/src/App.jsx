@@ -3232,7 +3232,9 @@ function AdminDashboard() {
                           ))}
                         </select>
                         <select
-                          required
+                          // "No color" has an empty value, which a required select treats as unanswered,
+                          // so a colour is only required when the style has no colourless version.
+                          required={!styleVariants(it.item_name).some(v => normColorKey(v?.color) === '')}
                           value={it.color || ''}
                           onChange={(e) => updateNewPreOrderItem(idx, 'color', e.target.value)}
                           disabled={!it.item_name}
@@ -3415,7 +3417,9 @@ function AdminDashboard() {
                           )}
                         </select>
                         <select
-                          required
+                          // "No color" has an empty value, which a required select treats as unanswered,
+                          // so a colour is only required when the style has no colourless version.
+                          required={!styleVariants(it.item_name).some(v => normColorKey(v?.color) === '')}
                           value={it.color || ''}
                           onChange={(e) => updateEditPreOrderItem(idx, 'color', e.target.value)}
                           disabled={!it.item_name}
