@@ -1229,14 +1229,59 @@ function AdminDashboard() {
     }
   };
 
+  // A style that only comes in one colour uses that colour when none is given, so its stock can be found.
+  const resolvePreOrderColor = (it) => {
+    if (normColorKey(it?.color) !== '') return it.color;
+    const variants = styleVariants(it?.item_name);
+    return variants.length === 1 ? String(variants[0].color || '') : (it?.color || '');
+  };
+
+  // Stock an existing order already holds for one item (what restorePreOrderItems would give back).
+  const heldPreOrderQty = (it) => {
+    const allocations = parseSafeArray(it?.allocations);
+    if (allocations.length > 0) return allocations.reduce((sum, a) => sum + (parseInt(a?.quantity) || 0), 0);
+    return parseInt(it?.reserved != null ? it.reserved : it?.quantity) || 0;
+  };
+  const preOrderStockKey = (name, color, size) => `${normNameKey(name)}|${normColorKey(color)}|${size}`;
+
+  // Pieces available for a style/colour/size, counting stock this order already holds (it is given back on edit).
+  const preOrderAvailable = (name, color, size, heldItems = []) => {
+    const inStock = parseInt(parseSafeArray(styleVariant(name, color)?.sizes).find(s => s?.size === size)?.quantity) || 0;
+    const key = preOrderStockKey(name, color, size);
+    const held = (heldItems || []).filter(h => preOrderStockKey(h?.item_name, h?.color, h?.size) === key).reduce((sum, h) => sum + heldPreOrderQty(h), 0);
+    return inStock + held;
+  };
+
+  // Lines describing every style/colour/size whose requested quantity is more than is available.
+  const preOrderShortages = (items, heldItems = []) => {
+    const requested = {};
+    (items || []).forEach(it => {
+      const key = preOrderStockKey(it.item_name, it.color, it.size);
+      if (!requested[key]) requested[key] = { it, qty: 0 };
+      requested[key].qty += parseInt(it.quantity) || 0;
+    });
+    return Object.values(requested)
+      .map(({ it, qty }) => ({ it, qty, available: preOrderAvailable(it.item_name, it.color, it.size, heldItems) }))
+      .filter(r => r.qty > r.available)
+      .map(({ it, qty, available }) => `• ${it.item_name}${normColorKey(it.color) ? ` (${it.color})` : ''} size ${displaySize(it.size)}: ${qty} wanted, only ${available} in stock`);
+  };
+
+  // After reserving, lines for any item that still got less stock than it asked for.
+  const reservationShortfalls = (reservedItems) => (reservedItems || [])
+    .filter(it => (parseInt(it.reserved) || 0) < (parseInt(it.quantity) || 0))
+    .map(it => `• ${it.item_name} size ${displaySize(it.size)}: ${it.reserved || 0} of ${it.quantity} taken from stock`);
+
   const buildPreOrderPayload = (form) => {
     const validItems = (form.items || [])
       .filter(it => it.item_name && it.size && parseInt(it.quantity) > 0)
-      .map(it => ({
-        item_name: it.item_name, size: it.size,
-        color: !it.color || it.color.trim() === '' ? 'N/A' : it.color,
-        quantity: parseInt(it.quantity) || 1
-      }));
+      .map(it => {
+        const color = resolvePreOrderColor(it);
+        return {
+          item_name: it.item_name, size: it.size,
+          color: !color || color.trim() === '' ? 'N/A' : color,
+          quantity: parseInt(it.quantity) || 1
+        };
+      });
     if (validItems.length === 0) return null;
 
     const primary = validItems[0];
@@ -1258,11 +1303,15 @@ function AdminDashboard() {
     try {
       const draftPayload = buildPreOrderPayload(newPreOrder);
       if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
+      const shortages = preOrderShortages(draftPayload.items);
+      if (shortages.length > 0) { alert(`Not enough stock for this pre-order:\n\n${shortages.join('\n')}\n\nAdd the stock to a batch first, or lower the quantity.`); return; }
 
       // Reserve first so the saved order records exactly how much stock it actually holds.
       const reservedItems = await reservePreOrderItems(draftPayload.items);
       const orderPayload = { ...draftPayload, items: reservedItems };
       await axios.post(`${API_BASE}preorders/`, orderPayload);
+      const shortfalls = reservationShortfalls(reservedItems);
+      if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
 
       setShowPreOrderModal(false);
       setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '' });
@@ -1276,7 +1325,7 @@ function AdminDashboard() {
   const openEditPreOrderModal = (item) => {
     const items = preOrderItemList(item).map(it => ({
       item_name: it.item_name || '', size: it.size || '',
-      color: !it.color || it.color === 'N/A' ? '' : it.color,
+      color: resolvePreOrderColor({ ...it, color: !it.color || it.color === 'N/A' ? '' : it.color }),
       quantity: it.quantity || 1
     }));
     setEditPreOrder({
@@ -1304,6 +1353,8 @@ function AdminDashboard() {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
       const draftPayload = buildPreOrderPayload(editPreOrder);
       if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
+      const shortages = preOrderShortages(draftPayload.items, oldOrder ? preOrderItemList(oldOrder) : []);
+      if (shortages.length > 0) { alert(`Not enough stock for this pre-order:\n\n${shortages.join('\n')}\n\nAdd the stock to a batch first, or lower the quantity.`); return; }
 
       let finalItems = draftPayload.items;
       if (oldOrder) {
@@ -1315,6 +1366,8 @@ function AdminDashboard() {
 
       const orderPayload = { ...draftPayload, items: finalItems };
       await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
+      const shortfalls = reservationShortfalls(finalItems);
+      if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
       setShowEditPreOrderModal(false);
       showToast("✏️ Pre-order & stocks updated!");
       await fetchData(true);
@@ -3348,7 +3401,14 @@ function AdminDashboard() {
                         >
                           <option value="" disabled>Size</option>
                           {parseSafeArray(styleVariant(it.item_name, it.color)?.sizes).map(s => (
-                            <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size}>{displaySize(s?.size)}</option>
+                            (() => {
+                              const available = preOrderAvailable(it.item_name, it.color, s?.size, preOrderItemList((preOrders || []).find(o => o?.id === editPreOrder.id)));
+                              return (
+                                <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size} disabled={available <= 0}>
+                                  {displaySize(s?.size)} {available <= 0 ? '(Out)' : ''}
+                                </option>
+                              );
+                            })()
                           ))}
                           {it.size && !parseSafeArray(styleVariant(it.item_name, it.color)?.sizes).find(s => String(s?.size) === it.size) && (
                             <option value={it.size}>{displaySize(it.size)}</option>
