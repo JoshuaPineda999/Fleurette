@@ -323,7 +323,7 @@ function CustomerDesignCard({ design, onZoom }) {
         <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
       )}
       {preOrderOnly && (
-        <div className="absolute top-4 right-4 bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">🚚 Pre-Order</div>
+        <div className="absolute top-4 right-4 bg-pink-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Pre-Order</div>
       )}
       <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
         {image ? (
@@ -370,7 +370,7 @@ function CustomerDesignCard({ design, onZoom }) {
               const stock = sizeStock[s?.size] || { onHand: 0, preOrder: 0 };
               // On hand wins; a size only available from a pre-order batch is shown as pre-order.
               const cls = stock.onHand > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700'
-                : stock.preOrder > 0 ? 'bg-violet-50 border-violet-300 text-violet-700'
+                : stock.preOrder > 0 ? 'bg-pink-50 border-pink-300 text-pink-700'
                 : 'bg-stone-50 border-stone-100 text-stone-300 line-through';
               return (
                 <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${cls}`} title={stock.onHand === 0 && stock.preOrder > 0 ? 'Available on pre-order' : undefined}>
@@ -380,7 +380,7 @@ function CustomerDesignCard({ design, onZoom }) {
             })}
           </div>
           {preOrderTotal > 0 && onHandTotal > 0 && Object.values(sizeStock).some(v => v.onHand === 0 && v.preOrder > 0) && (
-            <span className="block text-[10px] font-bold text-violet-700 mt-2">Purple sizes are available on pre-order</span>
+            <span className="block text-[10px] font-bold text-pink-700 mt-2">Pink sizes are available on pre-order</span>
           )}
         </div>
       </div>
@@ -788,7 +788,7 @@ function AdminDashboard() {
   const handleSetBatchStatus = async (batchName, batchStatus) => {
     try {
       await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: batchName, batch_status: batchStatus });
-      showToast(batchStatus === 'Pre-order' ? `🚚 Batch "${batchName}" marked as Pre-order` : `📦 Batch "${batchName}" marked as On-hand`);
+      showToast(batchStatus === 'Pre-order' ? `Batch "${batchName}" marked as Pre-order` : `📦 Batch "${batchName}" marked as On-hand`);
       await fetchData(true);
     } catch (error) {
       alert(`Could not change the batch status: ${JSON.stringify(error.response?.data || error.message)}`);
@@ -1858,8 +1858,8 @@ function AdminDashboard() {
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
                               {batch?.styles_count} Styles Inside
                             </span>
-                            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${batch?.status === 'Pre-order' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                              {batch?.status === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${batch?.status === 'Pre-order' ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                              {batch?.status === 'Pre-order' ? 'Pre-order' : '📦 On-hand'}
                             </span>
                             {batch?.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
                           </div>
@@ -1889,11 +1889,11 @@ function AdminDashboard() {
                               key={`batch-status-${batch.name}-${opt}`} type="button"
                               onClick={() => { if (batch.status !== opt) handleSetBatchStatus(batch.name, opt); }}
                               className={`py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition ${
-                                batch.status === opt ? (opt === 'Pre-order' ? 'bg-violet-600 text-white border-violet-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-100'
+                                batch.status === opt ? (opt === 'Pre-order' ? 'bg-pink-600 text-white border-pink-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-100'
                               }`}
                               title={opt === 'Pre-order' ? 'Mark this batch as still on its way' : 'Mark this batch as arrived'}
                             >
-                              {opt === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                              {opt === 'Pre-order' ? 'Pre-order' : '📦 On-hand'}
                             </button>
                           ))}
                         </div>
@@ -2597,10 +2597,10 @@ function AdminDashboard() {
                       key={`new-batch-status-${opt}`} type="button"
                       onClick={() => setNewBatch({ ...newBatch, batch_status: opt })}
                       className={`py-2 rounded-lg text-xs font-black uppercase tracking-wider border transition ${
-                        (newBatch.batch_status || 'On-hand') === opt ? (opt === 'Pre-order' ? 'bg-violet-600 text-white border-violet-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
+                        (newBatch.batch_status || 'On-hand') === opt ? (opt === 'Pre-order' ? 'bg-pink-600 text-white border-pink-600' : 'bg-emerald-600 text-white border-emerald-600') : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
                       }`}
                     >
-                      {opt === 'Pre-order' ? '🚚 Pre-order' : '📦 On-hand'}
+                      {opt === 'Pre-order' ? 'Pre-order' : '📦 On-hand'}
                     </button>
                   ))}
                 </div>
