@@ -277,39 +277,8 @@ function CustomerView() {
           <div className="text-center text-stone-500 font-bold py-20">Loading Fleurette Collection...</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {filteredGarments.map(item => (
-              <div key={`cust-${item?.id}`} onClick={() => { if (item?.image) setZoomedImage(item.image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
-                {item?.total_pieces === 0 && (
-                  <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
-                )}
-                <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
-                  {item?.image ? (
-                    <>
-                      <img src={item.image} alt={item.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} className={`w-full h-full object-cover rounded-xl transition duration-500 ${item.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />
-                      <span className="text-6xl text-stone-300 hidden">👗</span>
-                    </>
-                  ) : (
-                    <span className="text-6xl text-stone-300">👗</span>
-                  )}
-                </div>
-                <div className="p-5 flex flex-col flex-1">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{String(item?.name || 'Unnamed')}</h3>
-                    {item?.color && item.color !== 'N/A' && (<span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">{String(item.color)}</span>)}
-                  </div>
-                  <span className="text-xs font-bold text-stone-400 mb-2 block">{String(item?.category || 'Uncategorized')}</span>
-                  <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
-                  
-                  <div className="mt-auto">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
-                    <div className="flex flex-wrap gap-2">
-                      {parseSafeArray(item?.sizes).map(s => (
-                        <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{displaySize(s?.size || 'N/A')}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {groupGarmentDesigns(filteredGarments).map(design => (
+              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} />
             ))}
           </div>
         )}
@@ -323,6 +292,71 @@ function CustomerView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// One customer card per design; the colour buttons switch the photo, price and sizes shown.
+function CustomerDesignCard({ design, onZoom }) {
+  // Start on the first colour that still has stock.
+  const [selectedIdx, setSelectedIdx] = useState(() => Math.max(0, design.variants.findIndex(v => v?.total_pieces > 0)));
+  const item = design.variants[selectedIdx] || design.variants[0];
+  const hasMultipleColors = design.variants.length > 1;
+  const image = item?.image || design.variants.find(v => v?.image)?.image || null;
+  const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
+
+  return (
+    <div onClick={() => { if (image) onZoom(image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
+      {item?.total_pieces === 0 && (
+        <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
+      )}
+      <div className="relative h-72 bg-[#f2ece4] overflow-hidden flex items-center justify-center p-4">
+        {image ? (
+          <>
+            <img key={image} src={image} alt={design.name} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} className={`w-full h-full object-cover rounded-xl transition duration-500 ${item?.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />
+            <span className="text-6xl text-stone-300 hidden">👗</span>
+          </>
+        ) : (
+          <span className="text-6xl text-stone-300">👗</span>
+        )}
+      </div>
+      <div className="p-5 flex flex-col flex-1">
+        <div className="flex justify-between items-start mb-1">
+          <h3 className="font-black text-lg text-stone-900 leading-tight pr-2">{String(design.name || 'Unnamed')}</h3>
+          {!hasMultipleColors && item?.color && item.color !== 'N/A' && (<span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">{String(item.color)}</span>)}
+        </div>
+        <span className="text-xs font-bold text-stone-400 mb-2 block">{String(design.category || 'Uncategorized')}</span>
+        <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
+
+        {hasMultipleColors && (
+          <div className="mb-4" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Colors</span>
+            <div className="flex flex-wrap gap-2">
+              {design.variants.map((v, i) => (
+                <button
+                  key={`cust-color-${v?.id}-${i}`}
+                  type="button"
+                  onClick={() => setSelectedIdx(i)}
+                  className={`text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border transition ${
+                    i === selectedIdx ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
+                  } ${v?.total_pieces === 0 ? 'line-through opacity-60' : ''}`}
+                >
+                  {colorLabel(v)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-auto">
+          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Available Sizes</span>
+          <div className="flex flex-wrap gap-2">
+            {parseSafeArray(item?.sizes).map(s => (
+              <span key={`sz-${s?.size}`} className={`text-xs font-black px-3 py-1.5 rounded-lg border ${s?.quantity > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-700' : 'bg-stone-50 border-stone-100 text-stone-300 line-through'}`}>{displaySize(s?.size || 'N/A')}</span>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
