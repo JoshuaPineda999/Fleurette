@@ -1019,8 +1019,21 @@ function AdminDashboard() {
   // -------------------------------------------------------------
   // Sum of (matched garment's selling price * quantity) across an item list — used to
   // auto-suggest the order's total price whenever items/quantities change.
+  // A style is listed once in the pre-order form; each colour of it is one merged entry (with its own stock).
+  const styleVariants = (name) => (mergedGarmentsList || []).filter(g => String(g?.name) === name);
+  const styleVariant = (name, color) => styleVariants(name).find(g => normColorKey(g?.color) === normColorKey(color)) || null;
+  // Picking a style selects its colour when it has only one; changing style or colour clears the size.
+  const changePreOrderItem = (it, field, value) => {
+    if (field === 'item_name') {
+      const variants = styleVariants(value);
+      return { ...it, item_name: value, color: variants.length === 1 ? String(variants[0].color || '') : '', size: '' };
+    }
+    if (field === 'color') return { ...it, color: value, size: '' };
+    return { ...it, [field]: value };
+  };
+
   const suggestedPreOrderPrice = (items) => (items || []).reduce((sum, it) => {
-    const g = (mergedGarmentsList || []).find(mg => String(mg?.name) === it.item_name);
+    const g = styleVariant(it.item_name, it.color) || styleVariants(it.item_name)[0];
     const unit = g ? parseFloat(g.selling_price || 0) : 0;
     return sum + unit * (parseInt(it.quantity) || 0);
   }, 0);
@@ -1032,7 +1045,7 @@ function AdminDashboard() {
   };
 
   const updateNewPreOrderItem = (index, field, value) => {
-    const items = newPreOrder.items.map((it, i) => i === index ? { ...it, [field]: value, ...(field === 'item_name' ? { size: '' } : {}) } : it);
+    const items = newPreOrder.items.map((it, i) => i === index ? changePreOrderItem(it, field, value) : it);
     setNewPreOrder({ ...newPreOrder, items, ...recalcPreOrderPricing(items, newPreOrder.down_payment) });
   };
   const addNewPreOrderItemRow = () => setNewPreOrder({ ...newPreOrder, items: [...newPreOrder.items, emptyPreOrderItem()] });
@@ -1042,7 +1055,7 @@ function AdminDashboard() {
   };
 
   const updateEditPreOrderItem = (index, field, value) => {
-    const items = editPreOrder.items.map((it, i) => i === index ? { ...it, [field]: value, ...(field === 'item_name' ? { size: '' } : {}) } : it);
+    const items = editPreOrder.items.map((it, i) => i === index ? changePreOrderItem(it, field, value) : it);
     setEditPreOrder({ ...editPreOrder, items, ...recalcPreOrderPricing(items, editPreOrder.down_payment) });
   };
   const addEditPreOrderItemRow = () => setEditPreOrder({ ...editPreOrder, items: [...editPreOrder.items, emptyPreOrderItem()] });
@@ -1064,7 +1077,7 @@ function AdminDashboard() {
       let reserved = 0;
       let allocations = [];
       try {
-        const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+        const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name && normColorKey(g?.color) === normColorKey(it.color));
         const res = await fifoDeduct({
           name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
           size: it.size, quantity: parseInt(it.quantity) || 1, is_sale: false, strict: false
@@ -1093,7 +1106,7 @@ function AdminDashboard() {
             if ((garments || []).some(g => g?.id === a.garment_id)) {
               await axios.patch(`${API_BASE}garments/${a.garment_id}/update_stock/`, { size: it.size, change: qty, is_sale: false });
             } else {
-              const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+              const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name && normColorKey(g?.color) === normColorKey(it.color));
               await fifoRestore({ name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category, size: it.size, quantity: qty });
             }
           } catch (err) {
@@ -1112,7 +1125,7 @@ function AdminDashboard() {
         if (origin) {
           await axios.patch(`${API_BASE}garments/${origin.id}/update_stock/`, { size: it.size, change: qty, is_sale: false });
         } else {
-          const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name);
+          const garmentMeta = (garments || []).find(g => String(g?.name) === it.item_name && normColorKey(g?.color) === normColorKey(it.color));
           await fifoRestore({
             name: it.item_name, color: matchColor(it.color), category: garmentMeta?.category,
             size: it.size, quantity: qty
@@ -1488,6 +1501,7 @@ function AdminDashboard() {
   });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
+  const preOrderStyleNames = Array.from(new Set((mergedGarmentsList || []).map(g => String(g?.name || '')).filter(Boolean)));
   const uniqueGarmentNames = Array.from(new Set((garments || []).filter(g => g).map(g => String(g.name || ''))));
 
   if (errorMessage) {
@@ -3011,8 +3025,8 @@ function AdminDashboard() {
                           className="flex-1 border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
                         >
                           <option value="" disabled>-- Select a Style --</option>
-                          {(mergedGarmentsList || []).map(g => (
-                            <option key={`po-opt-${idx}-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                          {preOrderStyleNames.map(name => (
+                            <option key={`po-opt-${idx}-${name}`} value={name}>{name}</option>
                           ))}
                         </select>
                         {newPreOrder.items.length > 1 && (
@@ -3024,21 +3038,35 @@ function AdminDashboard() {
                           required
                           value={it.size || ''}
                           onChange={(e) => updateNewPreOrderItem(idx, 'size', e.target.value)}
-                          disabled={!it.item_name}
+                          disabled={!styleVariant(it.item_name, it.color)}
                           className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
                         >
                           <option value="" disabled>Size</option>
-                          {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
+                          {parseSafeArray(styleVariant(it.item_name, it.color)?.sizes).map(s => (
                             <option key={`po-sz-${idx}-${s?.size}`} value={s?.size} disabled={s?.quantity <= 0}>
                               {displaySize(s?.size)} {s?.quantity <= 0 ? '(Out)' : ''}
                             </option>
                           ))}
                         </select>
-                        <input
-                          type="text" placeholder="Color"
-                          value={it.color || ''} onChange={(e) => updateNewPreOrderItem(idx, 'color', e.target.value)}
+                        <select
+                          required
+                          value={it.color || ''}
+                          onChange={(e) => updateNewPreOrderItem(idx, 'color', e.target.value)}
+                          disabled={!it.item_name}
                           className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white"
-                        />
+                        >
+                          {(() => {
+                            const variants = styleVariants(it.item_name);
+                            const hasPlain = variants.some(v => normColorKey(v?.color) === '');
+                            const colors = variants.map(v => String(v?.color || '')).filter(c => normColorKey(c) !== '');
+                            // A colour typed on an older pre-order that no longer matches a variant stays selectable.
+                            if (it.color && normColorKey(it.color) !== '' && !colors.includes(it.color)) colors.push(it.color);
+                            return [
+                              <option key="plain" value="" disabled={!hasPlain}>{hasPlain ? 'No color' : 'Color'}</option>,
+                              ...colors.map(c => <option key={`po-clr-${idx}-${c}`} value={c}>{c}</option>)
+                            ];
+                          })()}
+                        </select>
                         <input
                           type="number" min="1" placeholder="Qty" required
                           value={it.quantity} onChange={(e) => updateNewPreOrderItem(idx, 'quantity', e.target.value)}
@@ -3172,8 +3200,8 @@ function AdminDashboard() {
                           className="flex-1 border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
                         >
                           <option value="" disabled>-- Select a Style --</option>
-                          {(mergedGarmentsList || []).map(g => (
-                            <option key={`edit-po-opt-${idx}-${g?.id}`} value={g?.name}>{String(g?.name)}</option>
+                          {preOrderStyleNames.map(name => (
+                            <option key={`edit-po-opt-${idx}-${name}`} value={name}>{name}</option>
                           ))}
                         </select>
                         {editPreOrder.items.length > 1 && (
@@ -3185,22 +3213,36 @@ function AdminDashboard() {
                           required
                           value={it.size || ''}
                           onChange={(e) => updateEditPreOrderItem(idx, 'size', e.target.value)}
-                          disabled={!it.item_name}
+                          disabled={!styleVariant(it.item_name, it.color)}
                           className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
                         >
                           <option value="" disabled>Size</option>
-                          {it.item_name && parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).map(s => (
+                          {parseSafeArray(styleVariant(it.item_name, it.color)?.sizes).map(s => (
                             <option key={`edit-po-sz-${idx}-${s?.size}`} value={s?.size}>{displaySize(s?.size)}</option>
                           ))}
-                          {it.size && !parseSafeArray((mergedGarmentsList || []).find(g => String(g?.name) === it.item_name)?.sizes).find(s => String(s?.size) === it.size) && (
+                          {it.size && !parseSafeArray(styleVariant(it.item_name, it.color)?.sizes).find(s => String(s?.size) === it.size) && (
                             <option value={it.size}>{displaySize(it.size)}</option>
                           )}
                         </select>
-                        <input
-                          type="text" placeholder="Color"
-                          value={it.color || ''} onChange={(e) => updateEditPreOrderItem(idx, 'color', e.target.value)}
+                        <select
+                          required
+                          value={it.color || ''}
+                          onChange={(e) => updateEditPreOrderItem(idx, 'color', e.target.value)}
+                          disabled={!it.item_name}
                           className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
-                        />
+                        >
+                          {(() => {
+                            const variants = styleVariants(it.item_name);
+                            const hasPlain = variants.some(v => normColorKey(v?.color) === '');
+                            const colors = variants.map(v => String(v?.color || '')).filter(c => normColorKey(c) !== '');
+                            // A colour typed on an older pre-order that no longer matches a variant stays selectable.
+                            if (it.color && normColorKey(it.color) !== '' && !colors.includes(it.color)) colors.push(it.color);
+                            return [
+                              <option key="plain" value="" disabled={!hasPlain}>{hasPlain ? 'No color' : 'Color'}</option>,
+                              ...colors.map(c => <option key={`edit-po-clr-${idx}-${c}`} value={c}>{c}</option>)
+                            ];
+                          })()}
+                        </select>
                         <input
                           type="number" min="1" placeholder="Qty" required
                           value={it.quantity} onChange={(e) => updateEditPreOrderItem(idx, 'quantity', e.target.value)}
