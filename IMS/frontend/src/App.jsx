@@ -1294,7 +1294,9 @@ function AdminDashboard() {
       item_name: validItems.length > 1 ? `${primary.item_name} +${validItems.length - 1} more` : primary.item_name,
       size: primary.size,
       color: primary.color,
-      price: form.price, down_payment: form.down_payment, is_paid: form.is_paid, balance: form.balance
+      // Blank amounts are sent as 0: the server rejects blanks, and a rejected save must not happen after stock is taken.
+      price: parseFloat(form.price) || 0, down_payment: parseFloat(form.down_payment) || 0,
+      is_paid: !!form.is_paid, balance: parseFloat(form.balance) || 0
     };
   };
 
@@ -1309,7 +1311,14 @@ function AdminDashboard() {
       // Reserve first so the saved order records exactly how much stock it actually holds.
       const reservedItems = await reservePreOrderItems(draftPayload.items);
       const orderPayload = { ...draftPayload, items: reservedItems };
-      await axios.post(`${API_BASE}preorders/`, orderPayload);
+      try {
+        await axios.post(`${API_BASE}preorders/`, orderPayload);
+      } catch (saveError) {
+        // The order was not saved, so give back the stock it just took.
+        await restorePreOrderItems(reservedItems);
+        await fetchData(true);
+        throw saveError;
+      }
       const shortfalls = reservationShortfalls(reservedItems);
       if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
 
@@ -1365,7 +1374,26 @@ function AdminDashboard() {
       }
 
       const orderPayload = { ...draftPayload, items: finalItems };
-      await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
+      try {
+        await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, orderPayload);
+      } catch (saveError) {
+        // The edit was not saved: give back the new items' stock and take the old items' stock again,
+        // recording what the order now holds so stock and order stay in step.
+        if (oldOrder) {
+          await restorePreOrderItems(finalItems);
+          const retaken = [];
+          for (const it of preOrderItemList(oldOrder)) {
+            // Take back only what each old item held before (an item that held nothing stays at nothing).
+            const held = heldPreOrderQty(it);
+            if (held <= 0) { retaken.push({ ...it, reserved: 0, allocations: [] }); continue; }
+            const [again] = await reservePreOrderItems([{ ...it, quantity: held }]);
+            retaken.push({ ...again, quantity: it.quantity });
+          }
+          try { await axios.patch(`${API_BASE}preorders/${editPreOrder.id}/`, { items: retaken }); } catch (err) { console.error('Could not record restored pre-order items', err); }
+        }
+        await fetchData(true);
+        throw saveError;
+      }
       const shortfalls = reservationShortfalls(finalItems);
       if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
       setShowEditPreOrderModal(false);
@@ -1620,7 +1648,8 @@ function AdminDashboard() {
   };
   (preOrders || []).forEach(order => {
     preOrderItemList(order).forEach(it => {
-      const qty = parseInt(it?.quantity) || 1;
+      // Only pieces the order actually took from stock count as sold.
+      const qty = heldPreOrderQty(it);
       const allocations = parseSafeArray(it?.allocations);
       let counted = 0;
       allocations.forEach(a => {
@@ -1629,8 +1658,8 @@ function AdminDashboard() {
         addBatchSold((garments || []).find(g => g?.id === a.garment_id), a.batch_name, aQty);
         counted += aQty;
       });
-      // Pieces with no recorded batch (older pre-orders, or stock not yet available) go to the
-      // oldest batch of that style and colour, the same batch a reservation takes from first.
+      // Pieces with no recorded batch (older pre-orders) go to the oldest batch of that
+      // style and colour, the same batch a reservation takes from first.
       if (qty > counted) {
         const match = preOrderOriginGarment(garments, it);
         if (match) addBatchSold(match, match.batch_name, qty - counted);
