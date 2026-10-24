@@ -323,7 +323,10 @@ function CustomerView() {
             <span className="text-2xl">🌸</span>
             <span className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</span>
           </div>
-          <p className="text-sm text-stone-500 max-w-sm">Follow us for new arrivals, restocks and promos.</p>
+          <p className="text-sm text-stone-500 max-w-md">
+            <span className="block font-black text-stone-800">Found something you love? Message us to order! 💌</span>
+            Follow us so you never miss a restock, pop-up, or promo.
+          </p>
           <div className="flex items-center gap-3">
             {SOCIAL_LINKS.map(link => (
               <a
