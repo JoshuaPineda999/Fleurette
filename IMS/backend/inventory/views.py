@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Sum
@@ -11,6 +12,32 @@ from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer
 
 def _norm(value):
     return str(value or '').strip().lower()
+
+
+def _sale_discount(request):
+    """Discount (pesos, whole sale) and promo code sent with a sale; None if the discount is invalid."""
+    try:
+        discount = Decimal(str(request.data.get('discount') or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return None, ''
+    if discount < 0:
+        return None, ''
+    return discount, str(request.data.get('promo_code') or '').strip()[:100]
+
+
+def _split_discount(discount, grosses):
+    """Split one sale-wide discount across sale records in proportion to their gross amounts.
+    The last record takes the rounding remainder, so the shares always add up to the discount."""
+    total = sum(grosses)
+    shares, given = [], Decimal('0')
+    for i, gross in enumerate(grosses):
+        if i == len(grosses) - 1:
+            share = discount - given
+        else:
+            share = (discount * gross / total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if total else Decimal('0')
+            given += share
+        shares.append(share)
+    return shares
 
 
 def _norm_color(value):
@@ -29,6 +56,11 @@ class GarmentViewSet(viewsets.ModelViewSet):
         size_label = request.data.get('size')
         change = int(request.data.get('change', 0))
         is_sale = request.data.get('is_sale', False)
+        discount, promo_code = _sale_discount(request)
+        if discount is None:
+            return Response({'error': 'Discount must be a number of pesos, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
+        if change < 0 and is_sale and discount > garment.selling_price * abs(change):
+            return Response({'error': 'Discount cannot be more than the sale amount'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
@@ -40,13 +72,16 @@ class GarmentViewSet(viewsets.ModelViewSet):
 
                 if change < 0 and is_sale:
                     qty_sold = abs(change)
-                    profit = garment.profit_per_piece * qty_sold
+                    # The discount comes off both what the sale brought in and the profit.
+                    profit = garment.profit_per_piece * qty_sold - discount
                     SaleLog.objects.create(
                         garment_name=garment.name,
                         size=size_label,
                         quantity_sold=qty_sold,
                         profit_earned=profit,
-                        amount_sold=garment.selling_price * qty_sold,
+                        amount_sold=garment.selling_price * qty_sold - discount,
+                        discount=discount,
+                        promo_code=promo_code,
                         sold_at=timezone.localdate(),
                         batch_name=garment.batch_name,
                         garment_id=garment.id,
@@ -103,6 +138,9 @@ class GarmentViewSet(viewsets.ModelViewSet):
             quantity = 0
         is_sale = bool(request.data.get('is_sale', False))
         strict = bool(request.data.get('strict', True))
+        discount, promo_code = _sale_discount(request)
+        if discount is None:
+            return Response({'error': 'Discount must be a number of pesos, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not name or not size or quantity <= 0:
             return Response({'error': 'name, size and a positive quantity are required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -128,6 +166,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
             deducted_total = 0
             # Which batch each deducted piece came from, so callers can give it back to that batch.
             allocations = []
+            sales = []  # (garment, pieces) for each sale record to write
             for g in matching:
                 if remaining <= 0:
                     break
@@ -142,13 +181,23 @@ class GarmentViewSet(viewsets.ModelViewSet):
                 allocations.append({'garment_id': g.id, 'batch_name': g.batch_name, 'quantity': deduct})
 
                 if is_sale and deduct > 0:
-                    profit = g.profit_per_piece * deduct
+                    sales.append((g, deduct))
+
+            if sales:
+                grosses = [g.selling_price * pieces for g, pieces in sales]
+                if discount > sum(grosses):
+                    transaction.set_rollback(True)
+                    return Response({'error': 'Discount cannot be more than the sale amount'}, status=status.HTTP_400_BAD_REQUEST)
+                # A sale split across batches shares its discount between the batch records.
+                for (g, pieces), gross, share in zip(sales, grosses, _split_discount(discount, grosses)):
                     SaleLog.objects.create(
                         garment_name=g.name,
                         size=size,
-                        quantity_sold=deduct,
-                        profit_earned=profit,
-                        amount_sold=g.selling_price * deduct,
+                        quantity_sold=pieces,
+                        profit_earned=g.profit_per_piece * pieces - share,
+                        amount_sold=gross - share,
+                        discount=share,
+                        promo_code=promo_code,
                         sold_at=timezone.localdate(),
                         batch_name=g.batch_name,
                         garment_id=g.id,

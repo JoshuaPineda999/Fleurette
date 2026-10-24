@@ -132,8 +132,8 @@ const mergeGarments = (garmentsList) => {
 // 7. ATOMIC FIFO/LIFO STOCK HELPERS (server-side, transactional — see GarmentViewSet.fifo_deduct/fifo_restore)
 // strict=true (sales): fails as a whole if total stock across batches can't cover the request.
 // strict=false (pre-order reservations): deducts whatever is available, even zero, and never errors.
-const fifoDeduct = ({ name, color, category, size, quantity, is_sale = false, strict = true }) =>
-  axios.post(`${API_BASE}garments/fifo-deduct/`, { name, color, category, size, quantity, is_sale, strict }).then(r => r.data);
+const fifoDeduct = ({ name, color, category, size, quantity, is_sale = false, strict = true, discount = 0, promo_code = '' }) =>
+  axios.post(`${API_BASE}garments/fifo-deduct/`, { name, color, category, size, quantity, is_sale, strict, discount, promo_code }).then(r => r.data);
 
 const fifoRestore = ({ name, color, category, size, quantity }) =>
   axios.post(`${API_BASE}garments/fifo-restore/`, { name, color, category, size, quantity }).then(r => r.data);
@@ -843,29 +843,40 @@ function AdminDashboard() {
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
   };
 
+  // Sale total before and after the promo discount, which applies once to the whole sale.
+  const saleTotals = (modal) => {
+    const subtotal = (parseFloat(modal?.garment?.selling_price) || 0) * (parseInt(modal?.quantity) || 0);
+    const value = parseFloat(modal?.discount_value) || 0;
+    const discount = Math.max(0, Math.round((modal?.discount_type === 'percent' ? subtotal * value / 100 : value) * 100) / 100);
+    return { subtotal, discount, total: subtotal - discount };
+  };
+
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
       const g = productModal.garment;
       const isMergedGarment = g.underlying_garments && g.underlying_garments.length > 0;
       const quantity = parseInt(productModal.quantity);
+      const { subtotal, discount, total } = saleTotals(productModal);
+      if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
+      const promo = { discount: discount.toFixed(2), promo_code: String(productModal.promo_code || '').trim() };
 
       if (isMergedGarment) {
         // Atomic FIFO deduction across all batches sharing this name+color+category.
         // strict:true means this either fully succeeds or nothing is deducted.
         await fifoDeduct({
           name: g.name, color: g.color, category: g.category,
-          size: productModal.size, quantity, is_sale: true, strict: true
+          size: productModal.size, quantity, is_sale: true, strict: true, ...promo
         });
       } else {
         // Standard unmerged sale (from Batch Tracker) — targets this exact batch only.
         await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-          size: productModal.size, change: -quantity, is_sale: true
+          size: productModal.size, change: -quantity, is_sale: true, ...promo
         });
       }
 
       setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)})`);
+      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
       await fetchData(true);
     } catch (error) {
       const available = error.response?.data?.available;
@@ -1521,7 +1532,10 @@ function AdminDashboard() {
     const matchedGarment = (garments || []).find(g => String(g?.name) === String(log?.garment_name));
     const sellingPrice = matchedGarment ? parseFloat(matchedGarment.selling_price) : 0;
     const qty = parseFloat(log?.quantity_sold) || 0;
-    const amountCollected = sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
+    // Sales store what they brought in (after any promo discount); older sales fall back to the selling price.
+    const storedAmount = parseFloat(log?.amount_sold);
+    const amountCollected = !isNaN(storedAmount) ? storedAmount
+      : sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
 
     return {
       id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '',
@@ -1536,7 +1550,9 @@ function AdminDashboard() {
       qty: qty,
       earned: amountCollected,
       status: log?.status ? String(log.status) : 'Pending',
-      batch_name: log?.batch_name ? String(log.batch_name) : ''
+      batch_name: log?.batch_name ? String(log.batch_name) : '',
+      discount: parseFloat(log?.discount) || 0,
+      promo_code: log?.promo_code ? String(log.promo_code) : ''
     };
   });
 
@@ -1774,25 +1790,31 @@ function AdminDashboard() {
               </div>
             </div>
 
-            {/* ADMIN CATEGORY TABS */}
-            {categories.length > 1 && (
-              <div className="flex flex-wrap gap-2 mb-6">
-                {categories.map(cat => (
-                  <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-stone-800 text-white border-stone-800 scale-105' : 'bg-[#eae4dc] text-stone-600 border-transparent hover:bg-stone-300' }`}>
-                    {String(cat)}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* ADMIN SIZE FILTER */}
-            <div className="flex flex-wrap items-center gap-2 mb-6">
-              <span className="text-[11px] font-extrabold text-stone-500 uppercase tracking-widest mr-1">Size</span>
-              {['All', 'S', 'M', 'L', 'XL'].map(size => (
-                <button key={`size-filter-${size}`} onClick={() => setActiveSize(size)} className={`min-w-[44px] px-3.5 py-1.5 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeSize === size ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100' }`}>
-                  {size === 'All' ? 'All' : displaySize(size)}
-                </button>
+            {/* ADMIN CATEGORY & SIZE FILTERS */}
+            <div className="flex flex-wrap items-center gap-3 mb-6">
+              {[
+                { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
+                { label: 'Size', value: activeSize, onChange: setActiveSize, options: ['All', 'S', 'M', 'L', 'XL'].map(size => [size, size === 'All' ? 'All' : displaySize(size)]) },
+              ].map(f => (
+                <label key={`filter-${f.label}`} className={`relative flex items-center gap-2 pl-4 pr-9 py-2 rounded-full border shadow-sm cursor-pointer transition ${f.value !== 'All' ? 'bg-pink-600 border-pink-600 text-white' : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'}`}>
+                  <span className={`text-[11px] font-extrabold uppercase tracking-widest ${f.value !== 'All' ? 'text-pink-100' : 'text-stone-400'}`}>{f.label}</span>
+                  <select
+                    value={f.value}
+                    onChange={(e) => f.onChange(e.target.value)}
+                    className="appearance-none bg-transparent text-xs font-black uppercase tracking-wider focus:outline-none cursor-pointer"
+                  >
+                    {f.options.map(([value, text]) => (
+                      <option key={`${f.label}-${value}`} value={value} className="text-stone-800 bg-white">{text}</option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-3.5 text-[10px]">▼</span>
+                </label>
               ))}
+              {(activeCategory !== 'All' || activeSize !== 'All') && (
+                <button type="button" onClick={() => { setActiveCategory('All'); setActiveSize('All'); }} className="text-xs font-extrabold text-stone-500 hover:text-pink-600 transition">
+                  Clear filters
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
@@ -2112,7 +2134,14 @@ function AdminDashboard() {
                               </span>
                             </div>
                           ) : (
-                            String(log?.name || '')
+                            <>
+                              {String(log?.name || '')}
+                              {log?.discount > 0 && (
+                                <span className="block w-fit mt-1 bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                  {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
+                                </span>
+                              )}
+                            </>
                           )}
                         </td>
 
@@ -2589,8 +2618,42 @@ function AdminDashboard() {
                     ))}
                   </div>
 
+                  {productModal.mode === 'sell' && (
+                    <div className="mb-6">
+                      <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
+                        2. Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional)</span>:
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text" placeholder="Code (e.g. FLEUR50)"
+                          value={productModal.promo_code || ''}
+                          onChange={(e) => setProductModal({ ...productModal, promo_code: e.target.value.toUpperCase() })}
+                          className="flex-1 min-w-0 border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold uppercase bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        />
+                        <input
+                          type="number" min="0" step="0.01" placeholder="0"
+                          value={productModal.discount_value || ''}
+                          onChange={(e) => setProductModal({ ...productModal, discount_value: e.target.value })}
+                          className="w-24 border border-stone-300 rounded-xl px-3 py-2 text-sm font-black text-right bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
+                          title="Discount for the whole sale"
+                        />
+                        <div className="flex bg-[#f2ece4] p-1 rounded-xl shrink-0">
+                          {[['amount', '₱'], ['percent', '%']].map(([type, label]) => (
+                            <button
+                              key={`disc-type-${type}`} type="button"
+                              onClick={() => setProductModal({ ...productModal, discount_type: type })}
+                              className={`w-9 rounded-lg text-sm font-black transition ${(productModal.discount_type || 'amount') === type ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    2. Quantity &amp; Confirm:
+                    {productModal.mode === 'sell' ? '3' : '2'}. Quantity &amp; Confirm:
                   </label>
                   <div className="flex gap-3 items-center">
                     <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] px-2 py-1 shrink-0">
@@ -2632,6 +2695,23 @@ function AdminDashboard() {
                       </button>
                     )}
                   </div>
+
+                  {productModal.mode === 'sell' && (() => {
+                    const { subtotal, discount, total } = saleTotals(productModal);
+                    return (
+                      <div className="mt-3 bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
+                        <div className="flex justify-between"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
+                        {discount > 0 && (
+                          <div className="flex justify-between text-pink-700">
+                            <span>Discount{productModal.promo_code ? ` (${productModal.promo_code})` : ''}</span><span>-₱{discount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className={`flex justify-between pt-1 border-t border-stone-200 text-sm font-black ${discount > subtotal ? 'text-rose-600' : 'text-stone-900'}`}>
+                          <span>{discount > subtotal ? 'Discount is more than the sale' : 'Total to record'}</span><span>₱{Math.max(0, total).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
