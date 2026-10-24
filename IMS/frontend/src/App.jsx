@@ -723,6 +723,15 @@ function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeSize, setActiveSize] = useState('All');
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersRef = useRef(null);
+  useEffect(() => {
+    if (!showFilters) return;
+    // Close the filters panel when clicking anywhere outside it.
+    const close = (e) => { if (filtersRef.current && !filtersRef.current.contains(e.target)) setShowFilters(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showFilters]);
   const [selectedDate, setSelectedDate] = useState(getLocalDate());
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -1786,36 +1795,45 @@ function AdminDashboard() {
                   <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
                   {searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-stone-400 hover:text-stone-600 font-bold text-sm" title="Clear search">✖</button>)}
                 </div>
+                <div className="relative shrink-0" ref={filtersRef}>
+                  {(() => {
+                    const activeCount = (activeCategory !== 'All' ? 1 : 0) + (activeSize !== 'All' ? 1 : 0);
+                    return (
+                      <button type="button" onClick={() => setShowFilters(v => !v)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-black shadow-sm transition ${activeCount > 0 ? 'bg-pink-600 border-pink-600 text-white' : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'}`}>
+                        Filters
+                        {activeCount > 0 && <span className="bg-white text-pink-600 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center">{activeCount}</span>}
+                        <span className="text-[10px]">{showFilters ? '▲' : '▼'}</span>
+                      </button>
+                    );
+                  })()}
+                  {showFilters && (
+                    <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-stone-200 p-4 z-30 space-y-4">
+                      {[
+                        { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
+                        { label: 'Size', value: activeSize, onChange: setActiveSize, options: ['All', 'S', 'M', 'L', 'XL'].map(size => [size, size === 'All' ? 'All' : displaySize(size)]) },
+                      ].map(f => (
+                        <div key={`filter-group-${f.label}`}>
+                          <span className="block text-[11px] font-extrabold text-stone-400 uppercase tracking-widest mb-2">{f.label}</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {f.options.map(([value, text]) => (
+                              <button key={`${f.label}-${value}`} type="button" onClick={() => f.onChange(value)} className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition ${f.value === value ? 'bg-pink-600 border-pink-600 text-white' : 'bg-[#f9f6f0] border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
+                                {text}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex justify-between items-center pt-3 border-t border-stone-100">
+                        <button type="button" onClick={() => { setActiveCategory('All'); setActiveSize('All'); }} className="text-xs font-extrabold text-stone-500 hover:text-pink-600 transition">Clear all</button>
+                        <button type="button" onClick={() => setShowFilters(false)} className="bg-stone-900 hover:bg-black text-white text-xs font-black px-4 py-1.5 rounded-lg transition">Done</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
             </div>
 
-            {/* ADMIN CATEGORY & SIZE FILTERS */}
-            <div className="flex flex-wrap items-center gap-3 mb-6">
-              {[
-                { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
-                { label: 'Size', value: activeSize, onChange: setActiveSize, options: ['All', 'S', 'M', 'L', 'XL'].map(size => [size, size === 'All' ? 'All' : displaySize(size)]) },
-              ].map(f => (
-                <label key={`filter-${f.label}`} className={`relative flex items-center gap-2 pl-4 pr-9 py-2 rounded-full border shadow-sm cursor-pointer transition ${f.value !== 'All' ? 'bg-pink-600 border-pink-600 text-white' : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'}`}>
-                  <span className={`text-[11px] font-extrabold uppercase tracking-widest ${f.value !== 'All' ? 'text-pink-100' : 'text-stone-400'}`}>{f.label}</span>
-                  <select
-                    value={f.value}
-                    onChange={(e) => f.onChange(e.target.value)}
-                    className="appearance-none bg-transparent text-xs font-black uppercase tracking-wider focus:outline-none cursor-pointer"
-                  >
-                    {f.options.map(([value, text]) => (
-                      <option key={`${f.label}-${value}`} value={value} className="text-stone-800 bg-white">{text}</option>
-                    ))}
-                  </select>
-                  <span className="pointer-events-none absolute right-3.5 text-[10px]">▼</span>
-                </label>
-              ))}
-              {(activeCategory !== 'All' || activeSize !== 'All') && (
-                <button type="button" onClick={() => { setActiveCategory('All'); setActiveSize('All'); }} className="text-xs font-extrabold text-stone-500 hover:text-pink-600 transition">
-                  Clear filters
-                </button>
-              )}
-            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
               <div className="bg-[#eae4dc] text-stone-900 rounded-3xl p-6 shadow-md border border-[#ddd5cc] relative overflow-hidden flex flex-col justify-between">
