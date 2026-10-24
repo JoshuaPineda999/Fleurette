@@ -319,8 +319,9 @@ function CustomerView() {
 
       <footer className="bg-white border-t border-stone-200 mt-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col items-center text-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🌸</span>
+          {/* The word is centred on its own; the flower hangs off its left edge so it doesn't push the word right. */}
+          <div className="relative">
+            <span className="absolute right-full top-1/2 -translate-y-1/2 mr-2 text-2xl">🌸</span>
             <span className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</span>
           </div>
           <p className="text-sm text-stone-500 max-w-md">
