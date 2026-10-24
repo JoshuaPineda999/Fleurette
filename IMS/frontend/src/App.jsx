@@ -722,6 +722,7 @@ function AdminDashboard() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
+  const [activeSize, setActiveSize] = useState('All');
   const [selectedDate, setSelectedDate] = useState(getLocalDate());
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -1603,7 +1604,9 @@ function AdminDashboard() {
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) ||
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
-      return matchesSearch && matchesCategory;
+      // A colour matches a size only while it still has that size in stock.
+      const matchesSize = activeSize === 'All' || parseSafeArray(item.sizes).some(s => s?.size === activeSize && s?.quantity > 0);
+      return matchesSearch && matchesCategory && matchesSize;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
@@ -1781,6 +1784,16 @@ function AdminDashboard() {
                 ))}
               </div>
             )}
+
+            {/* ADMIN SIZE FILTER */}
+            <div className="flex flex-wrap items-center gap-2 mb-6">
+              <span className="text-[11px] font-extrabold text-stone-500 uppercase tracking-widest mr-1">Size</span>
+              {['All', 'S', 'M', 'L', 'XL'].map(size => (
+                <button key={`size-filter-${size}`} onClick={() => setActiveSize(size)} className={`min-w-[44px] px-3.5 py-1.5 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeSize === size ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100' }`}>
+                  {size === 'All' ? 'All' : displaySize(size)}
+                </button>
+              ))}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
               <div className="bg-[#eae4dc] text-stone-900 rounded-3xl p-6 shadow-md border border-[#ddd5cc] relative overflow-hidden flex flex-col justify-between">
