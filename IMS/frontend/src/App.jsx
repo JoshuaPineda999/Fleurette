@@ -931,7 +931,7 @@ function AdminDashboard() {
   };
   const cartPieces = saleCart.reduce((sum, line) => sum + line.quantity, 0);
 
-  // Adds the product open in the sell screen to the current sale (same product + size adds up on one line).
+  // Adds the product open in the sell screen to the cart (same product + size adds up on one line).
   const addToSale = (openCheckout) => {
     const g = productModal.garment;
     const quantity = parseInt(productModal.quantity) || 0;
@@ -943,7 +943,7 @@ function AdminDashboard() {
     const inStock = parseInt(parseSafeArray(g.sizes).find(s => s?.size === productModal.size)?.quantity) || 0;
     const alreadyInSale = saleCart.find(line => line.key === key)?.quantity || 0;
     if (alreadyInSale + quantity > inStock) {
-      alert(`Only ${inStock} of ${g.name} (${displaySize(productModal.size)}) in stock${alreadyInSale ? `, and ${alreadyInSale} already in this sale` : ''}.`);
+      alert(`Only ${inStock} of ${g.name} (${displaySize(productModal.size)}) in stock${alreadyInSale ? `, and ${alreadyInSale} already in your cart` : ''}.`);
       return;
     }
     const line = {
@@ -960,13 +960,13 @@ function AdminDashboard() {
       : [...prev, line]);
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     if (openCheckout) setShowCheckout(true);
-    else showToast(`🛍️ Added ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) to the sale`);
+    else showToast(`🛍️ Added ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) to the cart`);
   };
 
   const changeCartQuantity = (key, quantity) => setSaleCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, Math.min(l.max, quantity)) } : l));
   const removeFromCart = (key) => setSaleCart(prev => prev.filter(l => l.key !== key));
 
-  // Records every item in the current sale as one sale (all or nothing on the server).
+  // Records every item in the cart as one sale (all or nothing on the server).
   const handleRecordCartSale = async () => {
     if (saleCart.length === 0 || recordingSale) return;
     const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
@@ -1946,7 +1946,7 @@ function AdminDashboard() {
       
       {saleCart.length > 0 && !showCheckout && (
         <button type="button" onClick={() => setShowCheckout(true)} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
-          <span>🛍️</span> Current Sale
+          <span>🛍️</span> Cart
           <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
         </button>
       )}
@@ -1958,15 +1958,15 @@ function AdminDashboard() {
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-center p-6 pb-4 border-b border-stone-100">
                 <div>
-                  <h2 className="text-xl font-black text-stone-900">🛍️ Current Sale</h2>
-                  <p className="text-stone-500 text-xs mt-0.5">All items are recorded together as one sale.</p>
+                  <h2 className="text-xl font-black text-stone-900">🛍️ Cart</h2>
+                  <p className="text-stone-500 text-xs mt-0.5">Everything in the cart is recorded together as one sale.</p>
                 </div>
                 <button onClick={() => setShowCheckout(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
               </div>
 
               <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-5">
                 {saleCart.length === 0 ? (
-                  <p className="text-center text-stone-400 font-bold py-6">No items yet. Open a product and press "Add to Sale".</p>
+                  <p className="text-center text-stone-400 font-bold py-6">Your cart is empty. Open a product and press "Add to Cart".</p>
                 ) : (
                   <div className="space-y-2">
                     {saleCart.map(line => (
@@ -1986,7 +1986,7 @@ function AdminDashboard() {
                           <button type="button" onClick={() => changeCartQuantity(line.key, line.quantity + 1)} disabled={line.quantity >= line.max} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900 disabled:text-stone-300">+</button>
                         </div>
                         <span className="w-20 text-right font-black text-sm text-stone-900 shrink-0">₱{(line.unit_price * line.quantity).toFixed(2)}</span>
-                        <button type="button" onClick={() => removeFromCart(line.key)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" title="Remove from sale">&times;</button>
+                        <button type="button" onClick={() => removeFromCart(line.key)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" title="Remove from cart">&times;</button>
                       </div>
                     ))}
                   </div>
@@ -2038,7 +2038,7 @@ function AdminDashboard() {
               </div>
 
               <div className="flex justify-between items-center gap-3 p-6 pt-4 border-t border-stone-100">
-                <button type="button" onClick={() => { if (window.confirm('Remove every item from the current sale?')) { setSaleCart([]); setShowCheckout(false); } }} disabled={saleCart.length === 0} className="text-xs font-extrabold text-stone-500 hover:text-rose-600 disabled:opacity-40 transition">Clear sale</button>
+                <button type="button" onClick={() => { if (window.confirm('Remove every item from the cart?')) { setSaleCart([]); setShowCheckout(false); } }} disabled={saleCart.length === 0} className="text-xs font-extrabold text-stone-500 hover:text-rose-600 disabled:opacity-40 transition">Clear cart</button>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setShowCheckout(false)} className="px-4 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100">Add more items</button>
                   <button type="button" onClick={handleRecordCartSale} disabled={saleCart.length === 0 || recordingSale || discount > subtotal} className="bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white font-black px-5 py-2.5 rounded-xl shadow-lg shadow-pink-500/30 text-sm transition active:scale-95">
@@ -3121,7 +3121,7 @@ function AdminDashboard() {
                     2. Quantity &amp; Confirm:
                   </label>
                   {productModal.mode === 'sell' && saleCart.length > 0 && (
-                    <p className="text-[11px] font-bold text-pink-700 mb-2">🛍️ {cartPieces} pc(s) already in the current sale</p>
+                    <p className="text-[11px] font-bold text-pink-700 mb-2">🛍️ {cartPieces} pc(s) already in the cart</p>
                   )}
                   <div className="flex gap-3 items-center">
                     <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] px-2 py-1 shrink-0">
@@ -3153,7 +3153,7 @@ function AdminDashboard() {
                           type="button" onClick={() => addToSale(false)}
                           className="flex-1 bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-500 font-black py-3 px-3 rounded-xl text-sm flex items-center justify-center gap-1.5 transition active:scale-95"
                         >
-                          <span>➕</span> Add to Sale
+                          <span>➕</span> Add to Cart
                         </button>
                         <button
                           type="button" onClick={() => addToSale(true)}
