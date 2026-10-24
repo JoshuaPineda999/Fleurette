@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
+import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import transaction
@@ -44,6 +45,67 @@ def _norm_color(value):
     # Blank, null and the 'N/A' placeholder all mean "no color".
     v = _norm(value)
     return '' if v in ('', 'n/a') else v
+
+
+def _matching_product(name, color, category):
+    """Garments considered the same visual product (mirrors the frontend's
+    mergeGarments grouping key), oldest id first."""
+    qs = Garment.objects.filter(name__iexact=_norm(name))
+    matches = []
+    for g in qs:
+        if _norm_color(g.color) != _norm_color(color):
+            continue
+        if category and _norm(g.category) != _norm(category):
+            continue
+        matches.append(g)
+    matches.sort(key=lambda g: g.id)
+    return matches
+
+
+def _take_items(items):
+    """Take stock for sale items inside the caller's transaction.
+
+    Each item is {size, quantity, garment_id} (that exact batch record) or
+    {size, quantity, name, color, category} (oldest batch first across the product).
+    Returns (taken, shortages, error): taken is [(garment, size, pieces)]. When
+    shortages or error is set the caller must roll back.
+    """
+    taken, shortages = [], []
+    for it in items:
+        size = (it or {}).get('size')
+        try:
+            quantity = int((it or {}).get('quantity', 0))
+        except (TypeError, ValueError):
+            quantity = 0
+        if not size or quantity <= 0:
+            return [], [], 'Every item needs a size and a positive quantity'
+
+        if it.get('garment_id'):
+            candidates = list(Garment.objects.filter(id=it['garment_id']))
+            label = candidates[0].name if candidates else f"item {it['garment_id']}"
+        else:
+            candidates = _matching_product(it.get('name'), it.get('color'), it.get('category'))
+            label = it.get('name') or 'item'
+        stocks = {
+            st.garment_id: st
+            for st in SizeStock.objects.select_for_update().filter(garment_id__in=[g.id for g in candidates], size=size)
+        }
+        available = sum(stocks[g.id].quantity for g in candidates if g.id in stocks)
+        if available < quantity:
+            shortages.append({'item': label, 'color': it.get('color') or '', 'size': size, 'requested': quantity, 'available': available})
+            continue
+
+        remaining = quantity
+        for g in candidates:
+            stock = stocks.get(g.id)
+            if remaining <= 0 or not stock or stock.quantity <= 0:
+                continue
+            take = min(stock.quantity, remaining)
+            stock.quantity -= take
+            stock.save()
+            remaining -= take
+            taken.append((g, size, take))
+    return taken, shortages, None
 
 
 class GarmentViewSet(viewsets.ModelViewSet):
@@ -91,18 +153,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Size not found'}, status=status.HTTP_404_NOT_FOUND)
 
     def _matching_garments(self, name, color, category):
-        """Garments considered the same visual product (mirrors the frontend's
-        mergeGarments grouping key), oldest id first."""
-        qs = Garment.objects.filter(name__iexact=_norm(name))
-        matches = []
-        for g in qs:
-            if _norm_color(g.color) != _norm_color(color):
-                continue
-            if category and _norm(g.category) != _norm(category):
-                continue
-            matches.append(g)
-        matches.sort(key=lambda g: g.id)
-        return matches
+        return _matching_product(name, color, category)
 
     @action(detail=False, methods=['post'], url_path='set-batch-status')
     def set_batch_status(self, request):
@@ -205,6 +256,59 @@ class GarmentViewSet(viewsets.ModelViewSet):
 
         return Response({'deducted': deducted_total, 'requested': quantity, 'allocations': allocations})
 
+    @action(detail=False, methods=['post'], url_path='record-sale')
+    def record_sale(self, request):
+        """Record one sale of one or more items, all or nothing.
+
+        items: [{size, quantity, garment_id}] to sell from that exact batch record, or
+               [{size, quantity, name, color, category}] to sell oldest batch first across
+               every batch of that product.
+        discount / promo_code: one discount (pesos) for the whole sale, shared across its
+               records in proportion to their amounts.
+        Every record written gets the same sale_group. If any item is short on stock,
+        nothing is sold and a 400 lists what is short.
+        """
+        items = request.data.get('items')
+        if not isinstance(items, list) or not items:
+            return Response({'error': 'items must be a non-empty list'}, status=status.HTTP_400_BAD_REQUEST)
+        discount, promo_code = _sale_discount(request)
+        if discount is None:
+            return Response({'error': 'Discount must be a number of pesos, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            sales, shortages, error = _take_items(items)
+            if error:
+                transaction.set_rollback(True)
+                return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+
+            if shortages:
+                transaction.set_rollback(True)
+                return Response({'error': 'Not enough stock', 'shortages': shortages}, status=status.HTTP_400_BAD_REQUEST)
+
+            grosses = [g.selling_price * pieces for g, _, pieces in sales]
+            if discount > sum(grosses):
+                transaction.set_rollback(True)
+                return Response({'error': 'Discount cannot be more than the sale amount'}, status=status.HTTP_400_BAD_REQUEST)
+
+            sale_group = uuid.uuid4().hex
+            logs = []
+            for (g, size, pieces), gross, share in zip(sales, grosses, _split_discount(discount, grosses)):
+                logs.append(SaleLog.objects.create(
+                    garment_name=g.name,
+                    size=size,
+                    quantity_sold=pieces,
+                    profit_earned=g.profit_per_piece * pieces - share,
+                    amount_sold=gross - share,
+                    discount=share,
+                    promo_code=promo_code,
+                    sale_group=sale_group,
+                    sold_at=timezone.localdate(),
+                    batch_name=g.batch_name,
+                    garment_id=g.id,
+                ))
+
+        return Response({'sale_group': sale_group, 'records': SaleLogSerializer(logs, many=True).data, 'total': str(sum(grosses) - discount)})
+
     @action(detail=False, methods=['post'], url_path='fifo-restore')
     def fifo_restore(self, request):
         """Atomically restore `quantity` of `size` to the newest batch of a
@@ -246,6 +350,125 @@ def daily_sales_summary(request):
         'total_pieces_sold': total_pieces,
         'total_profit_earned': round(float(total_profit), 2)
     })
+
+def _sale_return_garment(record):
+    """The batch record a sale took its stock from: its garment_id, else the same name in the
+    same batch (newest first). None when that batch no longer has the style."""
+    if record.garment_id:
+        g = Garment.objects.filter(id=record.garment_id).first()
+        if g:
+            return g
+    qs = Garment.objects.filter(name__iexact=_norm(record.garment_name))
+    if record.batch_name:
+        qs = qs.filter(batch_name__iexact=_norm(record.batch_name))
+    return qs.order_by('-id').first()
+
+
+@api_view(['POST'])
+def edit_sale(request):
+    """Change a recorded sale, all or nothing.
+
+    record_ids: the sale's records. keep: [{id, quantity}] new quantity per record (a record
+    left out, or set to 0, is removed). add: new items, same shape as record-sale items.
+    discount / promo_code: the sale's discount, re-shared across the final records.
+
+    Removed or reduced pieces go back to the batch record they were taken from; increases
+    are taken from that same batch record; new items are taken oldest batch first. Existing
+    records keep the price they sold at; new items use the current selling price.
+    """
+    record_ids = request.data.get('record_ids') or []
+    try:
+        keep = {int(k['id']): int(k['quantity']) for k in (request.data.get('keep') or [])}
+        record_ids = [int(i) for i in record_ids]
+    except (TypeError, ValueError, KeyError):
+        return Response({'error': 'record_ids and keep quantities must be numbers'}, status=status.HTTP_400_BAD_REQUEST)
+    add_items = request.data.get('add') or []
+    if not record_ids:
+        return Response({'error': 'record_ids is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if any(q < 0 for q in keep.values()):
+        return Response({'error': 'Quantities cannot be negative'}, status=status.HTTP_400_BAD_REQUEST)
+    discount, promo_code = _sale_discount(request)
+    if discount is None:
+        return Response({'error': 'Discount must be a number of pesos, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
+
+    def fail(body):
+        transaction.set_rollback(True)
+        return Response(body, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        records = list(SaleLog.objects.select_for_update().filter(id__in=record_ids).order_by('id'))
+        if len(records) != len(set(record_ids)):
+            return fail({'error': 'Some of this sale\'s records no longer exist. Refresh and try again.'})
+
+        sale_date = min(r.sold_at for r in records)
+        sale_status = records[0].status
+        sale_group = next((r.sale_group for r in records if r.sale_group), '') or uuid.uuid4().hex
+        lines, shortages = [], []  # lines: [record or None, garment, size, qty, unit_price, unit_profit]
+
+        for r in records:
+            old_qty = r.quantity_sold or 0
+            new_qty = keep.get(r.id, 0)
+            garment = _sale_return_garment(r)
+            # Price and profit per piece as sold (adding back this record's discount share).
+            share = r.discount or Decimal('0')
+            if r.amount_sold is not None and old_qty:
+                unit_price = (r.amount_sold + share) / old_qty
+            else:
+                unit_price = garment.selling_price if garment else Decimal('0')
+            unit_profit = (r.profit_earned + share) / old_qty if old_qty else Decimal('0')
+
+            change = new_qty - old_qty
+            if change:
+                if garment is None:
+                    return fail({'error': f'"{r.garment_name}" can no longer be changed: its batch "{r.batch_name or "Uncategorized"}" no longer has it.'})
+                stock, _ = SizeStock.objects.select_for_update().get_or_create(garment=garment, size=r.size)
+                if change < 0:
+                    stock.quantity += -change
+                elif stock.quantity < change:
+                    shortages.append({'item': r.garment_name, 'color': garment.color or '', 'size': r.size, 'requested': change, 'available': stock.quantity})
+                    continue
+                else:
+                    stock.quantity -= change
+                stock.save()
+
+            if new_qty == 0:
+                r.delete()
+            else:
+                lines.append([r, garment, r.size, new_qty, unit_price, unit_profit])
+
+        taken, more_shortages, error = _take_items(add_items)
+        if error:
+            return fail({'error': error})
+        shortages += more_shortages
+        if shortages:
+            return fail({'error': 'Not enough stock', 'shortages': shortages})
+        for g, size, pieces in taken:
+            lines.append([None, g, size, pieces, g.selling_price, g.profit_per_piece])
+        if not lines:
+            return fail({'error': 'A sale needs at least one item. Delete the sale instead.'})
+
+        grosses = [(price * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) for _, _, _, qty, price, _ in lines]
+        if discount > sum(grosses):
+            return fail({'error': 'Discount cannot be more than the sale amount'})
+
+        saved = []
+        for (record, g, size, qty, price, unit_profit), gross, share in zip(lines, grosses, _split_discount(discount, grosses)):
+            profit = (unit_profit * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) - share
+            if record is None:
+                record = SaleLog(garment_name=g.name, size=size, batch_name=g.batch_name, garment_id=g.id,
+                                 sold_at=sale_date, status=sale_status)
+            record.quantity_sold = qty
+            record.amount_sold = gross - share
+            record.profit_earned = profit
+            record.discount = share
+            record.promo_code = promo_code
+            record.sale_group = sale_group
+            record.save()
+            saved.append(record)
+
+    return Response({'sale_group': sale_group, 'records': SaleLogSerializer(saved, many=True).data,
+                     'total': str(sum(grosses) - discount)})
+
 
 @api_view(['GET'])
 def sales_history_list(request):

@@ -69,6 +69,8 @@ class SaleLog(models.Model):
     # Promo code / voucher discount taken off this sale record, and the code that was used.
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     promo_code = models.CharField(max_length=100, blank=True, default='')
+    # Records written by one checkout share this id, so a multi-item sale is listed as one sale.
+    sale_group = models.CharField(max_length=40, blank=True, default='', db_index=True)
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):

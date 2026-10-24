@@ -199,6 +199,39 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Fleurette's social pages, shown in the customer page footer.
+const SOCIAL_LINKS = [
+  {
+    name: 'Facebook',
+    href: 'https://www.facebook.com/profile.php?id=61588796373437',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
+        <path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z" />
+      </svg>
+    ),
+  },
+  {
+    name: 'Instagram',
+    href: 'https://www.instagram.com/fleurettecdo/',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" />
+        <circle cx="12" cy="12" r="4.3" />
+        <circle cx="17.6" cy="6.4" r="0.9" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    name: 'TikTok',
+    href: 'https://www.tiktok.com/@fleurette.ph',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
+        <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+      </svg>
+    ),
+  },
+];
+
 function CustomerView() {
   const [garments, setGarments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -283,6 +316,32 @@ function CustomerView() {
           </div>
         )}
       </main>
+
+      <footer className="bg-white border-t border-stone-200 mt-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col items-center text-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🌸</span>
+            <span className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</span>
+          </div>
+          <p className="text-sm text-stone-500 max-w-sm">Follow us for new arrivals, restocks and promos.</p>
+          <div className="flex items-center gap-3">
+            {SOCIAL_LINKS.map(link => (
+              <a
+                key={link.name}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Fleurette on ${link.name}`}
+                title={link.name}
+                className="w-11 h-11 rounded-full bg-pink-600 hover:bg-pink-700 text-white flex items-center justify-center shadow-md transition hover:-translate-y-0.5"
+              >
+                {link.icon}
+              </a>
+            ))}
+          </div>
+          <span className="text-xs font-bold text-stone-400">© {new Date().getFullYear()} Fleurette. All rights reserved.</span>
+        </div>
+      </footer>
 
       {zoomedImage && (
         <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
@@ -757,6 +816,13 @@ function AdminDashboard() {
   const [batchRenameState, setBatchRenameState] = useState({ oldName: '', newName: '' });
 
   const [productModal, setProductModal] = useState({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
+  // The sale being put together: one line per product + size, recorded together as one sale.
+  const [saleCart, setSaleCart] = useState([]);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutPromo, setCheckoutPromo] = useState({ promo_code: '', discount_type: 'amount', discount_value: '' });
+  const [recordingSale, setRecordingSale] = useState(false);
+  // A recorded sale being edited: its records (new quantities), new items, and its promo discount.
+  const [editSale, setEditSale] = useState(null);
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
@@ -853,52 +919,80 @@ function AdminDashboard() {
   };
 
   // Sale total before and after the promo discount, which applies once to the whole sale.
-  const saleTotals = (modal) => {
-    const subtotal = (parseFloat(modal?.garment?.selling_price) || 0) * (parseInt(modal?.quantity) || 0);
-    const value = parseFloat(modal?.discount_value) || 0;
-    const discount = Math.max(0, Math.round((modal?.discount_type === 'percent' ? subtotal * value / 100 : value) * 100) / 100);
+  const cartTotals = (cart, promo) => {
+    const subtotal = (cart || []).reduce((sum, line) => sum + line.unit_price * line.quantity, 0);
+    const value = parseFloat(promo?.discount_value) || 0;
+    const discount = Math.max(0, Math.round((promo?.discount_type === 'percent' ? subtotal * value / 100 : value) * 100) / 100);
     return { subtotal, discount, total: subtotal - discount };
   };
+  const cartPieces = saleCart.reduce((sum, line) => sum + line.quantity, 0);
 
-  const handleSellSubmit = async (e) => {
-    e.preventDefault();
+  // Adds the product open in the sell screen to the current sale (same product + size adds up on one line).
+  const addToSale = (openCheckout) => {
+    const g = productModal.garment;
+    const quantity = parseInt(productModal.quantity) || 0;
+    if (!g || quantity <= 0) return;
+    const isMerged = g.underlying_garments && g.underlying_garments.length > 0;
+    const key = isMerged
+      ? `m|${normNameKey(g.name)}|${normColorKey(g.color)}|${normNameKey(g.category)}|${productModal.size}`
+      : `g|${g.id}|${productModal.size}`;
+    const inStock = parseInt(parseSafeArray(g.sizes).find(s => s?.size === productModal.size)?.quantity) || 0;
+    const alreadyInSale = saleCart.find(line => line.key === key)?.quantity || 0;
+    if (alreadyInSale + quantity > inStock) {
+      alert(`Only ${inStock} of ${g.name} (${displaySize(productModal.size)}) in stock${alreadyInSale ? `, and ${alreadyInSale} already in this sale` : ''}.`);
+      return;
+    }
+    const line = {
+      key, quantity, size: productModal.size,
+      name: g.name, color: g.color, category: g.category,
+      garment_id: isMerged ? null : g.id,
+      batch_name: isMerged ? '' : g.batch_name,
+      unit_price: parseFloat(g.selling_price) || 0,
+      image: g.image || null,
+      max: inStock
+    };
+    setSaleCart(prev => prev.some(l => l.key === key)
+      ? prev.map(l => l.key === key ? { ...l, quantity: l.quantity + quantity } : l)
+      : [...prev, line]);
+    setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
+    if (openCheckout) setShowCheckout(true);
+    else showToast(`🛍️ Added ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) to the sale`);
+  };
+
+  const changeCartQuantity = (key, quantity) => setSaleCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, Math.min(l.max, quantity)) } : l));
+  const removeFromCart = (key) => setSaleCart(prev => prev.filter(l => l.key !== key));
+
+  // Records every item in the current sale as one sale (all or nothing on the server).
+  const handleRecordCartSale = async () => {
+    if (saleCart.length === 0 || recordingSale) return;
+    const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
+    if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
+    setRecordingSale(true);
     try {
-      const g = productModal.garment;
-      const isMergedGarment = g.underlying_garments && g.underlying_garments.length > 0;
-      const quantity = parseInt(productModal.quantity);
-      const { subtotal, discount, total } = saleTotals(productModal);
-      if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
-      const promo = { discount: discount.toFixed(2), promo_code: String(productModal.promo_code || '').trim() };
-
-      if (isMergedGarment) {
-        // Atomic FIFO deduction across all batches sharing this name+color+category.
-        // strict:true means this either fully succeeds or nothing is deducted.
-        await fifoDeduct({
-          name: g.name, color: g.color, category: g.category,
-          size: productModal.size, quantity, is_sale: true, strict: true, ...promo
-        });
-      } else {
-        // Standard unmerged sale (from Batch Tracker) — targets this exact batch only.
-        await axios.patch(`${API_BASE}garments/${g.id}/update_stock/`, {
-          size: productModal.size, change: -quantity, is_sale: true, ...promo
-        });
-      }
-
-      setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-      showToast(`🌸 Sale Recorded! Sold ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
+      await axios.post(`${API_BASE}garments/record-sale/`, {
+        items: saleCart.map(l => l.garment_id
+          ? { garment_id: l.garment_id, size: l.size, quantity: l.quantity }
+          : { name: l.name, color: l.color, category: l.category, size: l.size, quantity: l.quantity }),
+        discount: discount.toFixed(2),
+        promo_code: String(checkoutPromo.promo_code || '').trim()
+      });
+      showToast(`🌸 Sale Recorded! ${cartPieces} pc(s) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
+      setSaleCart([]);
+      setCheckoutPromo({ promo_code: '', discount_type: 'amount', discount_value: '' });
+      setShowCheckout(false);
       await fetchData(true);
     } catch (error) {
-      const available = error.response?.data?.available;
-      if (available !== undefined) {
-        alert(`Not enough stock: requested ${error.response.data.requested}, only ${available} available across all batches.`);
+      const data = error.response?.data;
+      if (Array.isArray(data?.shortages)) {
+        alert(`Not enough stock, so nothing was recorded:\n\n${data.shortages.map(sh => `• ${sh.item}${sh.color ? ` (${sh.color})` : ''} size ${displaySize(sh.size)}: ${sh.requested} wanted, only ${sh.available} in stock`).join('\n')}`);
       } else {
-        // Not a stock shortage (the server didn't report one), so show what actually failed.
-        const data = error.response?.data;
-        const serverMessage = data && typeof data === 'object' ? (data.error || data.detail) : null;
-        const detail = serverMessage
+        const detail = (data && typeof data === 'object' ? (data.error || data.detail) : null)
           || (error.response ? `server responded HTTP ${error.response.status}` : error.message);
-        alert(`Could not complete sale: ${detail}`);
+        alert(`Could not record the sale: ${detail}`);
       }
+      await fetchData(true);
+    } finally {
+      setRecordingSale(false);
     }
   };
 
@@ -1491,6 +1585,103 @@ function AdminDashboard() {
     setLoading(false);
   };
 
+  // Opens the Edit Sale screen for a History sale row (one record, or every record of a multi-item sale).
+  const openEditSale = (row) => {
+    const ids = row.isSaleGroup ? row.logIds : [row.originalId];
+    const records = ids.map(id => (salesHistory || []).find(s => s?.id === id)).filter(Boolean);
+    if (records.length === 0) return;
+    const lines = records.map(r => {
+      const garment = (garments || []).find(g => g?.id === r.garment_id);
+      const qty = parseInt(r.quantity_sold) || 0;
+      const amount = parseFloat(r.amount_sold);
+      // Price per piece as sold: what the record brought in plus its share of the discount.
+      const unitPrice = !isNaN(amount) && qty ? (amount + (parseFloat(r.discount) || 0)) / qty : (parseFloat(garment?.selling_price) || 0);
+      return { id: r.id, name: r.garment_name, color: garment?.color || '', size: r.size, batch_name: r.batch_name || '', qty, origQty: qty, unit_price: unitPrice, max: qty + (parseInt(parseSafeArray(garment?.sizes).find(s => s?.size === r.size)?.quantity) || 0) };
+    });
+    const totalDiscount = records.reduce((sum, r) => sum + (parseFloat(r.discount) || 0), 0);
+    setEditSale({
+      logIds: ids, lines, add: [],
+      promo_code: records.find(r => r.promo_code)?.promo_code || '',
+      discount_type: 'amount',
+      discount_value: totalDiscount > 0 ? totalDiscount.toFixed(2) : ''
+    });
+  };
+
+  // Sale lines (existing + new) priced for the Edit Sale screen.
+  const editSaleLines = (sale) => [
+    ...(sale?.lines || []).map(l => ({ price: l.unit_price, qty: l.qty })),
+    ...(sale?.add || []).filter(a => a.item_name && a.size && parseInt(a.quantity) > 0).map(a => ({
+      price: parseFloat((styleVariant(a.item_name, a.color) || styleVariants(a.item_name)[0])?.selling_price) || 0,
+      qty: parseInt(a.quantity) || 0
+    }))
+  ];
+
+  const handleSaveEditSale = async () => {
+    if (!editSale || recordingSale) return;
+    const priced = editSaleLines(editSale);
+    const { subtotal, discount } = cartTotals(priced.map(l => ({ unit_price: l.price, quantity: l.qty })), editSale);
+    if (priced.every(l => l.qty <= 0)) { alert('A sale needs at least one item. Use Delete to remove the whole sale.'); return; }
+    if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
+    const incomplete = editSale.add.filter(a => (a.item_name || a.size) && !(a.item_name && a.size && parseInt(a.quantity) > 0));
+    if (incomplete.length > 0) { alert('Finish or remove the new item rows (each needs a style, size and quantity).'); return; }
+    setRecordingSale(true);
+    try {
+      await axios.post(`${API_BASE}sales/edit/`, {
+        record_ids: editSale.logIds,
+        keep: editSale.lines.map(l => ({ id: l.id, quantity: l.qty })),
+        add: editSale.add.filter(a => a.item_name && a.size && parseInt(a.quantity) > 0).map(a => {
+          const variant = styleVariant(a.item_name, a.color) || styleVariants(a.item_name)[0];
+          return { name: variant?.name || a.item_name, color: variant?.color || a.color, category: variant?.category, size: a.size, quantity: parseInt(a.quantity) };
+        }),
+        discount: discount.toFixed(2),
+        promo_code: String(editSale.promo_code || '').trim()
+      });
+      showToast('✏️ Sale updated & stock adjusted!');
+      setEditSale(null);
+    } catch (error) {
+      const data = error.response?.data;
+      if (Array.isArray(data?.shortages)) {
+        alert(`Not enough stock, so nothing was changed:\n\n${data.shortages.map(sh => `• ${sh.item}${sh.color ? ` (${sh.color})` : ''} size ${displaySize(sh.size)}: ${sh.requested} more wanted, only ${sh.available} in stock`).join('\n')}`);
+      } else {
+        alert(`Could not update the sale: ${(data && typeof data === 'object' ? (data.error || data.detail) : null) || error.message}`);
+      }
+    } finally {
+      setRecordingSale(false);
+      await fetchData(true);
+    }
+  };
+
+  // A multi-item sale's status is kept the same on every one of its records.
+  const handleUpdateSaleGroupStatus = async (logIds, newStatus) => {
+    setSalesHistory(prev => (prev || []).map(s => logIds.includes(s?.id) ? { ...s, status: newStatus } : s));
+    try {
+      for (const id of logIds) await axios.patch(`${API_BASE}sales/history/${id}/`, { status: newStatus });
+      showToast(`📦 Sale marked as ${newStatus}!`);
+    } catch (error) {
+      alert(`Could not save the status for every item.\n\n${JSON.stringify(error.response?.data || error.message)}`);
+    }
+    await fetchData(true);
+  };
+
+  // Deletes a whole multi-item sale, returning each item to the batch it was sold from.
+  const handleDeleteSaleGroup = async (logIds) => {
+    if (!window.confirm(`Delete this whole sale (${logIds.length} records)? Every item will be returned to its batch's stock.`)) return;
+    try {
+      let kept = 0;
+      for (const id of logIds) {
+        const log = (salesHistory || []).find(s => s?.id === id);
+        if (!log) continue;
+        const target = findSaleReturnGarment(log);
+        if (!target) { kept++; continue; }
+        await axios.patch(`${API_BASE}garments/${target.id}/update_stock/`, { size: log.size, change: log.quantity_sold, is_sale: false });
+        await axios.delete(`${API_BASE}sales/history/${id}/`);
+      }
+      if (kept > 0) alert(`${kept} item(s) were kept because their batch no longer exists, so their stock could not be returned.`);
+      showToast("🗑️ Sale deleted & stock restored.");
+    } catch (error) { alert('Could not delete every item in this sale.'); }
+    await fetchData(true);
+  };
+
   const handleUpdateFulfillmentStatus = async (isPreOrder, originalId, newStatus) => {
     if (isPreOrder) { setPreOrders(prev => (prev || []).map(p => p?.id === originalId ? { ...p, status: newStatus } : p)); } 
     else { setSalesHistory(prev => (prev || []).map(s => s?.id === originalId ? { ...s, status: newStatus } : s)); }
@@ -1561,8 +1752,28 @@ function AdminDashboard() {
       status: log?.status ? String(log.status) : 'Pending',
       batch_name: log?.batch_name ? String(log.batch_name) : '',
       discount: parseFloat(log?.discount) || 0,
-      promo_code: log?.promo_code ? String(log.promo_code) : ''
+      promo_code: log?.promo_code ? String(log.promo_code) : '',
+      sale_group: log?.sale_group ? String(log.sale_group) : '',
+      garment_id: log?.garment_id || null
     };
+  });
+
+  // History lists a multi-item sale (records sharing a sale_group) as one row.
+  const groupedSaleRows = [];
+  const saleGroupRows = {};
+  mappedSales.forEach(row => {
+    if (!row.sale_group) { groupedSaleRows.push(row); return; }
+    const existing = saleGroupRows[row.sale_group];
+    if (!existing) {
+      saleGroupRows[row.sale_group] = { ...row, id: `salegroup-${row.sale_group}`, isSaleGroup: true, logIds: [row.originalId], lines: [row] };
+      groupedSaleRows.push(saleGroupRows[row.sale_group]);
+    } else {
+      existing.logIds.push(row.originalId);
+      existing.lines.push(row);
+      existing.qty += row.qty;
+      existing.earned += row.earned;
+      existing.discount += row.discount;
+    }
   });
 
   const unifiedHistory = [...mappedSales, ...mappedPreOrders].sort((a, b) => {
@@ -1606,7 +1817,13 @@ function AdminDashboard() {
   const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
   const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
-  const filteredUnifiedHistory = unifiedHistory.filter(log => {
+  const historyRows = [...groupedSaleRows, ...mappedPreOrders].sort((a, b) => {
+    const timeA = new Date(a?.date || 0).getTime();
+    const timeB = new Date(b?.date || 0).getTime();
+    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+  });
+
+  const filteredUnifiedHistory = historyRows.filter(log => {
     if (!log) return false;
     const matchDate = historyFilterDate ? log.date === historyFilterDate : true;
     const matchStatus = historyFilterStatus === 'All' ? true : (log.status || 'Pending') === historyFilterStatus;
@@ -1723,6 +1940,232 @@ function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#f9f6f0] text-stone-800 flex flex-col md:flex-row relative font-sans">
       
+      {saleCart.length > 0 && !showCheckout && (
+        <button type="button" onClick={() => setShowCheckout(true)} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
+          <span>🛍️</span> Current Sale
+          <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
+        </button>
+      )}
+
+      {showCheckout && (() => {
+        const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
+        return (
+          <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowCheckout(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center p-6 pb-4 border-b border-stone-100">
+                <div>
+                  <h2 className="text-xl font-black text-stone-900">🛍️ Current Sale</h2>
+                  <p className="text-stone-500 text-xs mt-0.5">All items are recorded together as one sale.</p>
+                </div>
+                <button onClick={() => setShowCheckout(false)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
+              </div>
+
+              <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-5">
+                {saleCart.length === 0 ? (
+                  <p className="text-center text-stone-400 font-bold py-6">No items yet. Open a product and press "Add to Sale".</p>
+                ) : (
+                  <div className="space-y-2">
+                    {saleCart.map(line => (
+                      <div key={line.key} className="flex items-center gap-3 bg-[#f9f6f0] border border-stone-200 rounded-xl p-2.5">
+                        <div className="w-12 h-12 rounded-lg bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center">
+                          {line.image ? <img src={line.image} alt={line.name} className="w-full h-full object-cover" /> : <span className="text-xl">👗</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="block font-black text-sm text-stone-900 truncate">{line.name}</span>
+                          <span className="block text-[11px] font-bold text-stone-500">
+                            {normColorKey(line.color) ? `${line.color} · ` : ''}Size {displaySize(line.size)}{line.batch_name ? ` · Batch ${line.batch_name}` : ''} · ₱{line.unit_price.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center border border-stone-300 rounded-lg bg-white shrink-0">
+                          <button type="button" onClick={() => changeCartQuantity(line.key, line.quantity - 1)} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900">-</button>
+                          <span className="w-6 text-center font-black text-sm">{line.quantity}</span>
+                          <button type="button" onClick={() => changeCartQuantity(line.key, line.quantity + 1)} disabled={line.quantity >= line.max} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900 disabled:text-stone-300">+</button>
+                        </div>
+                        <span className="w-20 text-right font-black text-sm text-stone-900 shrink-0">₱{(line.unit_price * line.quantity).toFixed(2)}</span>
+                        <button type="button" onClick={() => removeFromCart(line.key)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" title="Remove from sale">&times;</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
+                    Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional, for the whole sale)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text" placeholder="Code (e.g. FLEUR50)"
+                      value={checkoutPromo.promo_code}
+                      onChange={(e) => setCheckoutPromo({ ...checkoutPromo, promo_code: e.target.value.toUpperCase() })}
+                      className="flex-1 min-w-0 border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold uppercase bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    />
+                    <input
+                      type="number" min="0" step="0.01" placeholder="0"
+                      value={checkoutPromo.discount_value}
+                      onChange={(e) => setCheckoutPromo({ ...checkoutPromo, discount_value: e.target.value })}
+                      className="w-24 border border-stone-300 rounded-xl px-3 py-2 text-sm font-black text-right bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      title="Discount for the whole sale"
+                    />
+                    <div className="flex bg-[#f2ece4] p-1 rounded-xl shrink-0">
+                      {[['amount', '₱'], ['percent', '%']].map(([type, label]) => (
+                        <button
+                          key={`disc-type-${type}`} type="button"
+                          onClick={() => setCheckoutPromo({ ...checkoutPromo, discount_type: type })}
+                          className={`w-9 rounded-lg text-sm font-black transition ${checkoutPromo.discount_type === type ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
+                  <div className="flex justify-between"><span>Subtotal ({cartPieces} pc{cartPieces === 1 ? '' : 's'})</span><span>₱{subtotal.toFixed(2)}</span></div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-pink-700">
+                      <span>Discount{checkoutPromo.promo_code ? ` (${checkoutPromo.promo_code})` : ''}</span><span>-₱{discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className={`flex justify-between pt-1 border-t border-stone-200 text-sm font-black ${discount > subtotal ? 'text-rose-600' : 'text-stone-900'}`}>
+                    <span>{discount > subtotal ? 'Discount is more than the sale' : 'Total to record'}</span><span>₱{Math.max(0, total).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center gap-3 p-6 pt-4 border-t border-stone-100">
+                <button type="button" onClick={() => { if (window.confirm('Remove every item from the current sale?')) { setSaleCart([]); setShowCheckout(false); } }} disabled={saleCart.length === 0} className="text-xs font-extrabold text-stone-500 hover:text-rose-600 disabled:opacity-40 transition">Clear sale</button>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShowCheckout(false)} className="px-4 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100">Add more items</button>
+                  <button type="button" onClick={handleRecordCartSale} disabled={saleCart.length === 0 || recordingSale || discount > subtotal} className="bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white font-black px-5 py-2.5 rounded-xl shadow-lg shadow-pink-500/30 text-sm transition active:scale-95">
+                    {recordingSale ? 'Recording…' : '🌸 Record Sale'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {editSale && (() => {
+        const priced = editSaleLines(editSale);
+        const { subtotal, discount, total } = cartTotals(priced.map(l => ({ unit_price: l.price, quantity: l.qty })), editSale);
+        const pieces = priced.reduce((sum, l) => sum + l.qty, 0);
+        const setLine = (id, qty) => setEditSale({ ...editSale, lines: editSale.lines.map(l => l.id === id ? { ...l, qty: Math.max(0, Math.min(l.max, qty)) } : l) });
+        const setAdd = (idx, field, value) => setEditSale({ ...editSale, add: editSale.add.map((a, i) => i === idx ? changePreOrderItem(a, field, value) : a) });
+        return (
+          <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setEditSale(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center p-6 pb-4 border-b border-stone-100">
+                <div>
+                  <h2 className="text-xl font-black text-stone-900">✏️ Edit Sale</h2>
+                  <p className="text-stone-500 text-xs mt-0.5">Removed pieces go back to the batch they came from; added pieces are taken from stock.</p>
+                </div>
+                <button onClick={() => setEditSale(null)} className="text-stone-400 hover:text-stone-600 font-bold text-xl">&times;</button>
+              </div>
+
+              <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-5">
+                <div className="space-y-2">
+                  {editSale.lines.map(line => (
+                    <div key={`es-${line.id}`} className={`flex items-center gap-3 border rounded-xl p-2.5 ${line.qty === 0 ? 'bg-rose-50 border-rose-200 opacity-70' : 'bg-[#f9f6f0] border-stone-200'}`}>
+                      <div className="flex-1 min-w-0">
+                        <span className={`block font-black text-sm truncate ${line.qty === 0 ? 'line-through text-stone-500' : 'text-stone-900'}`}>{line.name}</span>
+                        <span className="block text-[11px] font-bold text-stone-500">
+                          {normColorKey(line.color) ? `${line.color} · ` : ''}Size {displaySize(line.size)}{line.batch_name ? ` · Batch ${line.batch_name}` : ''} · ₱{line.unit_price.toFixed(2)}
+                          {line.qty !== line.origQty && <span className="text-pink-700"> · was {line.origQty}</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center border border-stone-300 rounded-lg bg-white shrink-0">
+                        <button type="button" onClick={() => setLine(line.id, line.qty - 1)} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900">-</button>
+                        <span className="w-6 text-center font-black text-sm">{line.qty}</span>
+                        <button type="button" onClick={() => setLine(line.id, line.qty + 1)} disabled={line.qty >= line.max} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900 disabled:text-stone-300">+</button>
+                      </div>
+                      {line.qty > 0 ? (
+                        <button type="button" onClick={() => setLine(line.id, 0)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" title="Remove from sale">&times;</button>
+                      ) : (
+                        <button type="button" onClick={() => setLine(line.id, line.origQty)} className="text-[10px] font-black text-stone-500 hover:text-stone-800 px-1 uppercase" title="Keep this item">Undo</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-extrabold text-stone-500 uppercase">Add Items</label>
+                    <button type="button" onClick={() => setEditSale({ ...editSale, add: [...editSale.add, emptyPreOrderItem()] })} className="text-[10px] font-black text-pink-600 hover:text-pink-700 uppercase">+ Add Item</button>
+                  </div>
+                  {editSale.add.length === 0 && <p className="text-[11px] font-bold text-stone-400">No new items.</p>}
+                  <div className="space-y-2">
+                    {editSale.add.map((a, idx) => {
+                      const variants = styleVariants(a.item_name);
+                      const hasPlain = variants.some(v => normColorKey(v?.color) === '');
+                      const colors = variants.map(v => String(v?.color || '')).filter(c => normColorKey(c) !== '');
+                      const variant = styleVariant(a.item_name, a.color);
+                      return (
+                        <div key={`es-add-${idx}`} className="bg-[#f9f6f0] p-3 rounded-xl border border-stone-200 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <select value={a.item_name} onChange={(e) => setAdd(idx, 'item_name', e.target.value)} className="flex-1 border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white">
+                              <option value="" disabled>-- Select a Style --</option>
+                              {preOrderStyleNames.map(name => <option key={`es-opt-${idx}-${name}`} value={name}>{name}</option>)}
+                            </select>
+                            <button type="button" onClick={() => setEditSale({ ...editSale, add: editSale.add.filter((_, i) => i !== idx) })} className="text-rose-500 hover:text-rose-700 font-black text-lg leading-none px-1" title="Remove item">&times;</button>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <select value={a.color || ''} onChange={(e) => setAdd(idx, 'color', e.target.value)} disabled={!a.item_name} className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white">
+                              <option value="" disabled={!hasPlain}>{hasPlain ? 'No color' : 'Color'}</option>
+                              {colors.map(c => <option key={`es-clr-${idx}-${c}`} value={c}>{c}</option>)}
+                            </select>
+                            <select value={a.size || ''} onChange={(e) => setAdd(idx, 'size', e.target.value)} disabled={!variant} className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white">
+                              <option value="" disabled>Size</option>
+                              {parseSafeArray(variant?.sizes).map(sz => (
+                                <option key={`es-sz-${idx}-${sz?.size}`} value={sz?.size} disabled={sz?.quantity <= 0}>{displaySize(sz?.size)} {sz?.quantity <= 0 ? '(Out)' : `(${sz.quantity})`}</option>
+                              ))}
+                            </select>
+                            <input type="number" min="1" value={a.quantity} onChange={(e) => setAdd(idx, 'quantity', e.target.value)} className="border border-stone-300 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
+                    Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional, for the whole sale)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Code (e.g. FLEUR50)" value={editSale.promo_code} onChange={(e) => setEditSale({ ...editSale, promo_code: e.target.value.toUpperCase() })} className="flex-1 min-w-0 border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold uppercase bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                    <input type="number" min="0" step="0.01" placeholder="0" value={editSale.discount_value} onChange={(e) => setEditSale({ ...editSale, discount_value: e.target.value })} className="w-24 border border-stone-300 rounded-xl px-3 py-2 text-sm font-black text-right bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                    <div className="flex bg-[#f2ece4] p-1 rounded-xl shrink-0">
+                      {[['amount', '₱'], ['percent', '%']].map(([type, label]) => (
+                        <button key={`es-disc-${type}`} type="button" onClick={() => setEditSale({ ...editSale, discount_type: type })} className={`w-9 rounded-lg text-sm font-black transition ${editSale.discount_type === type ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
+                  <div className="flex justify-between"><span>Subtotal ({pieces} pc{pieces === 1 ? '' : 's'})</span><span>₱{subtotal.toFixed(2)}</span></div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-pink-700"><span>Discount{editSale.promo_code ? ` (${editSale.promo_code})` : ''}</span><span>-₱{discount.toFixed(2)}</span></div>
+                  )}
+                  <div className={`flex justify-between pt-1 border-t border-stone-200 text-sm font-black ${discount > subtotal ? 'text-rose-600' : 'text-stone-900'}`}>
+                    <span>{discount > subtotal ? 'Discount is more than the sale' : 'New total'}</span><span>₱{Math.max(0, total).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end items-center gap-2 p-6 pt-4 border-t border-stone-100">
+                <button type="button" onClick={() => setEditSale(null)} className="px-4 py-2.5 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-100">Cancel</button>
+                <button type="button" onClick={handleSaveEditSale} disabled={recordingSale || discount > subtotal} className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black px-5 py-2.5 rounded-xl shadow-md text-sm transition active:scale-95">
+                  {recordingSale ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {toastMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-pink-600 text-white px-6 py-3.5 rounded-2xl shadow-2xl font-black text-sm md:text-base border-2 border-pink-400 flex items-center gap-3 animate-bounce">
           <span>{String(toastMessage)}</span>
@@ -2151,6 +2594,23 @@ function AdminDashboard() {
                                 )}
                               </span>
                             </div>
+                          ) : log?.isSaleGroup && log.lines.length > 1 ? (
+                            <div className="flex flex-col w-fit">
+                              <span className="text-pink-600 mb-1">🛍️ Sale · {log.lines.length} items</span>
+                              {log.lines.map((line, i) => {
+                                const color = (garments || []).find(g => g?.id === line.garment_id)?.color;
+                                return (
+                                  <span key={`sl-${i}`} className="text-xs text-stone-800 font-bold block leading-snug">
+                                    • {line.name}{normColorKey(color) ? ` (${color})` : ''} ×{line.qty}
+                                  </span>
+                                );
+                              })}
+                              {log.discount > 0 && (
+                                <span className="block w-fit mt-1.5 bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                  {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <>
                               {String(log?.name || '')}
@@ -2164,7 +2624,15 @@ function AdminDashboard() {
                         </td>
 
                         <td className="p-4 text-center align-top">
-                          {log?.isPreOrder && log.itemsArray && log.itemsArray.length > 0 ? (
+                          {log?.isSaleGroup && log.lines.length > 1 ? (
+                            <div className="flex flex-col gap-1 items-center mt-6">
+                              {log.lines.map((line, i) => (
+                                <span key={`gsz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
+                                  {displaySize(line.size)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : log?.isPreOrder && log.itemsArray && log.itemsArray.length > 0 ? (
                             <div className="flex flex-col gap-1 items-center mt-6">
                               {log.itemsArray.map((it, i) => (
                                 <span key={`sz-${i}`} className="bg-[#f2ece4] text-stone-800 font-black text-[10px] px-2 py-0.5 rounded border border-stone-300">
@@ -2184,7 +2652,7 @@ function AdminDashboard() {
                         <td className="p-4 text-center align-top">
                           <select 
                             value={currentStatus} 
-                            onChange={(e) => handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
+                            onChange={(e) => log.isSaleGroup ? handleUpdateSaleGroupStatus(log.logIds, e.target.value) : handleUpdateFulfillmentStatus(log.isPreOrder, log.originalId, e.target.value)}
                             className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer transition shadow-2xs ${
                               currentStatus === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                               currentStatus === 'Shipped' ? 'bg-sky-50 text-sky-700 border-sky-200' :
@@ -2201,13 +2669,22 @@ function AdminDashboard() {
                           {log?.isPreOrder ? (
                             <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
                           ) : (
+                            <div className="flex justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditSale(log)}
+                              className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition"
+                              title="Edit Sale"
+                            >
+                              ✏️
+                            </button>
                             <button 
-                              onClick={() => handleDeleteSalesHistory(log.originalId)} 
+                              onClick={() => log.isSaleGroup && log.logIds.length > 1 ? handleDeleteSaleGroup(log.logIds) : handleDeleteSalesHistory(log.originalId)} 
                               className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition" 
                               title="Delete Sales Record"
                             >
                               🗑️
                             </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -2636,43 +3113,12 @@ function AdminDashboard() {
                     ))}
                   </div>
 
-                  {productModal.mode === 'sell' && (
-                    <div className="mb-6">
-                      <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                        2. Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional)</span>:
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text" placeholder="Code (e.g. FLEUR50)"
-                          value={productModal.promo_code || ''}
-                          onChange={(e) => setProductModal({ ...productModal, promo_code: e.target.value.toUpperCase() })}
-                          className="flex-1 min-w-0 border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold uppercase bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
-                        />
-                        <input
-                          type="number" min="0" step="0.01" placeholder="0"
-                          value={productModal.discount_value || ''}
-                          onChange={(e) => setProductModal({ ...productModal, discount_value: e.target.value })}
-                          className="w-24 border border-stone-300 rounded-xl px-3 py-2 text-sm font-black text-right bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500"
-                          title="Discount for the whole sale"
-                        />
-                        <div className="flex bg-[#f2ece4] p-1 rounded-xl shrink-0">
-                          {[['amount', '₱'], ['percent', '%']].map(([type, label]) => (
-                            <button
-                              key={`disc-type-${type}`} type="button"
-                              onClick={() => setProductModal({ ...productModal, discount_type: type })}
-                              className={`w-9 rounded-lg text-sm font-black transition ${(productModal.discount_type || 'amount') === type ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
-                    {productModal.mode === 'sell' ? '3' : '2'}. Quantity &amp; Confirm:
+                    2. Quantity &amp; Confirm:
                   </label>
+                  {productModal.mode === 'sell' && saleCart.length > 0 && (
+                    <p className="text-[11px] font-bold text-pink-700 mb-2">🛍️ {cartPieces} pc(s) already in the current sale</p>
+                  )}
                   <div className="flex gap-3 items-center">
                     <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] px-2 py-1 shrink-0">
                       <button 
@@ -2698,12 +3144,20 @@ function AdminDashboard() {
                     </div>
 
                     {productModal.mode === 'sell' ? (
-                      <button 
-                        onClick={handleSellSubmit}
-                        className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-black py-3.5 px-6 rounded-xl shadow-lg shadow-pink-500/30 text-base flex items-center justify-center gap-2 transition active:scale-95"
-                      >
-                        <span>🌸</span> Record Sale
-                      </button>
+                      <div className="flex-1 flex gap-2">
+                        <button
+                          type="button" onClick={() => addToSale(false)}
+                          className="flex-1 bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-500 font-black py-3 px-3 rounded-xl text-sm flex items-center justify-center gap-1.5 transition active:scale-95"
+                        >
+                          <span>➕</span> Add to Sale
+                        </button>
+                        <button
+                          type="button" onClick={() => addToSale(true)}
+                          className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-black py-3 px-3 rounded-xl shadow-lg shadow-pink-500/30 text-sm flex items-center justify-center gap-1.5 transition active:scale-95"
+                        >
+                          <span>🌸</span> Checkout
+                        </button>
+                      </div>
                     ) : (
                       <button 
                         onClick={handleRestockSubmit}
@@ -2714,22 +3168,6 @@ function AdminDashboard() {
                     )}
                   </div>
 
-                  {productModal.mode === 'sell' && (() => {
-                    const { subtotal, discount, total } = saleTotals(productModal);
-                    return (
-                      <div className="mt-3 bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
-                        <div className="flex justify-between"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
-                        {discount > 0 && (
-                          <div className="flex justify-between text-pink-700">
-                            <span>Discount{productModal.promo_code ? ` (${productModal.promo_code})` : ''}</span><span>-₱{discount.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className={`flex justify-between pt-1 border-t border-stone-200 text-sm font-black ${discount > subtotal ? 'text-rose-600' : 'text-stone-900'}`}>
-                          <span>{discount > subtotal ? 'Discount is more than the sale' : 'Total to record'}</span><span>₱{Math.max(0, total).toFixed(2)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               </div>
 
