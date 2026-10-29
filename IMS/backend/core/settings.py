@@ -128,6 +128,12 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# The API only ever answers in JSON. DRF's browsable HTML pages need static CSS files that are
+# not collected on Render, so a browser (or UptimeRobot, which asks for HTML) got a 500 instead.
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
+}
+
 # Print server errors (with their traceback) to the console, so they show in Render's logs.
 # Without this, Django only emails errors when DEBUG is off and the logs show a bare "500".
 LOGGING = {
