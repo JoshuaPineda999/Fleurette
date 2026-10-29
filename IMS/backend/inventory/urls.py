@@ -11,6 +11,7 @@ router.register(r'preorders', PreOrderViewSet, basename='preorder')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('health/', views.health, name='health'),
     path('sales/daily_summary/', daily_sales_summary, name='daily_sales_summary'),
     path('sales/history/', sales_history_list, name='sales_history_list'),
     path('sales/edit/', views.edit_sale, name='edit_sale'),

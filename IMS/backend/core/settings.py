@@ -77,6 +77,9 @@ DATABASES = {
     'default': dj_database_url.config(
         default=os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3'),
         conn_max_age=600,
+        # Check a kept-open connection before reusing it: the hosted database closes idle
+        # connections, and reusing a closed one fails the request with a 500.
+        conn_health_checks=True,
         ssl_require=True if os.environ.get('DATABASE_URL') else False
     )
 }
@@ -124,6 +127,20 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Print server errors (with their traceback) to the console, so they show in Render's logs.
+# Without this, Django only emails errors when DEBUG is off and the logs show a bare "500".
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+        'inventory': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
 
 # Modern Django 6.0 Storage Configuration
 # Cloudinary automatically reads the 'CLOUDINARY_URL' from your Render environment variables

@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view
+import logging
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Sum
 from .models import Garment, SizeStock, SaleLog, Expense
 
@@ -337,6 +339,23 @@ class GarmentViewSet(viewsets.ModelViewSet):
             stock.save()
 
         return Response({'restored': quantity, 'garment_id': newest.id})
+
+
+logger = logging.getLogger(__name__)
+
+
+@api_view(['GET', 'HEAD'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def health(request):
+    """Tiny public check for uptime monitors: the app is running and can reach the database."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except Exception:
+        logger.exception('Health check: the database could not be reached')
+        return Response({'status': 'database unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({'status': 'ok'})
 
 
 @api_view(['GET'])
