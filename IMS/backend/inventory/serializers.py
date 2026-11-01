@@ -1,7 +1,7 @@
 import json
 from django.conf import settings
 from rest_framework import serializers
-from .models import Garment, SizeStock, SaleLog, Expense, PreOrder
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,6 +12,12 @@ class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
         fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group']
+
+class GarmentPhotoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GarmentPhoto
+        fields = ['id', 'image']
+
 
 class SizeStockSerializer(serializers.ModelSerializer):
     class Meta:
@@ -26,6 +32,7 @@ def _norm_color(value):
 
 class GarmentSerializer(serializers.ModelSerializer):
     sizes = SizeStockSerializer(many=True, read_only=True)
+    photos = GarmentPhotoSerializer(many=True, read_only=True)
     profit_per_piece = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_pieces = serializers.IntegerField(read_only=True)
     total_potential_profit = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
@@ -34,7 +41,7 @@ class GarmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'batch_status', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 
+            'id', 'batch_name', 'batch_status', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 'photos', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
@@ -99,11 +106,12 @@ class GarmentSerializer(serializers.ModelSerializer):
 class CatalogGarmentSerializer(serializers.ModelSerializer):
     """What the public customer page may see: no cost price or profit."""
     sizes = SizeStockSerializer(many=True, read_only=True)
+    photos = GarmentPhotoSerializer(many=True, read_only=True)
     total_pieces = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Garment
-        fields = ['id', 'name', 'category', 'color', 'selling_price', 'image', 'batch_status', 'sizes', 'total_pieces']
+        fields = ['id', 'name', 'category', 'color', 'selling_price', 'image', 'photos', 'batch_status', 'sizes', 'total_pieces']
 
 
 class PreOrderSerializer(serializers.ModelSerializer):

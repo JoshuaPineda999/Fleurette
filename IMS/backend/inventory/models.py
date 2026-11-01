@@ -34,6 +34,16 @@ class Garment(models.Model):
     def __str__(self):
         return self.name
 
+class GarmentPhoto(models.Model):
+    """Extra photos of a garment, shown after its main photo (`Garment.image`)."""
+    garment = models.ForeignKey(Garment, related_name='photos', on_delete=models.CASCADE)
+    image = models.ImageField(upload_to='garments/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+
 class SizeStock(models.Model):
     SIZE_CHOICES = [
         ('S', 'Small'),

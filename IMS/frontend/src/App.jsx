@@ -86,6 +86,86 @@ const formatImageUrl = (url) => {
   return url.startsWith('/') ? `${hostUrl}${url}` : `${hostUrl}/${url}`;
 };
 
+// 3b. EXTRA PHOTOS. Each garment has a main photo (image) plus optional extra photos (photos[]).
+const formatPhotos = (photos) => (Array.isArray(photos) ? photos : [])
+  .map(ph => ({ ...ph, image: formatImageUrl(ph?.image) }))
+  .filter(ph => ph.image);
+
+// Every photo of a colour variant, main photo first, then extras from each of its batches (no repeats).
+const variantPhotoUrls = (variant) => {
+  const urls = [];
+  const add = (url) => { if (url && !urls.includes(url)) urls.push(url); };
+  add(variant?.image);
+  (variant?.underlying_garments || [variant]).forEach(g => {
+    add(g?.image);
+    (g?.photos || []).forEach(ph => add(ph?.image));
+  });
+  return urls;
+};
+
+// Shrinks a photo on this device before upload (longest side 1600 px, JPEG), so uploads and pages stay fast.
+const shrinkImageFile = (file, maxSide = 1600) => new Promise(resolve => {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      URL.revokeObjectURL(url);
+      resolve(blob ? new File([blob], `${String(file.name || 'photo').replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' }) : file);
+    }, 'image/jpeg', 0.85);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+  img.src = url;
+});
+
+// Full-screen photo viewer: arrows (or keyboard arrows) move between photos; clicking outside closes it.
+function PhotoViewer({ photos, startIndex = 0, onClose }) {
+  const [index, setIndex] = useState(startIndex);
+  const count = photos.length;
+  const go = (step) => setIndex(i => (i + step + count) % count);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' && count > 1) setIndex(i => (i + 1) % count);
+      if (e.key === 'ArrowLeft' && count > 1) setIndex(i => (i - 1 + count) % count);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [count, onClose]);
+  if (count === 0) return null;
+  return (
+    <div onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
+      <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center cursor-default" onClick={(e) => e.stopPropagation()}>
+        <div className="relative w-full flex items-center justify-center">
+          <img src={photos[index]} alt={`Photo ${index + 1} of ${count}`} className="max-w-full max-h-[74vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
+          {count > 1 && (
+            <>
+              <button type="button" onClick={() => go(-1)} aria-label="Previous photo" className="absolute left-1 sm:left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">‹</button>
+              <button type="button" onClick={() => go(1)} aria-label="Next photo" className="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">›</button>
+            </>
+          )}
+        </div>
+        {count > 1 && (
+          <div className="flex gap-2 mt-3 overflow-x-auto max-w-full px-1 py-1">
+            {photos.map((url, i) => (
+              <button key={`thumb-${i}`} type="button" onClick={() => setIndex(i)} className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${i === index ? 'border-pink-500' : 'border-white/20 opacity-60 hover:opacity-100'}`}>
+                <img src={url} alt={`Thumbnail ${i + 1}`} className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">
+          {count > 1 ? `${index + 1} / ${count} · ` : ''}✖ Click outside the photo to close
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // 4. Strict JSON Array Parser
 const parseSafeArray = (data) => {
   if (Array.isArray(data)) return data;
@@ -289,7 +369,7 @@ function CustomerView() {
         // Public catalogue: no login needed, and no cost or profit figures.
         const res = await axios.get(`${API_BASE}catalog/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
+        setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image), photos: formatPhotos(g?.photos) })));
       } catch (error) {
         console.error("Error fetching garments:", error);
       } finally {
@@ -393,12 +473,7 @@ function CustomerView() {
       </footer>
 
       {zoomedImage && (
-        <div onClick={() => setZoomedImage(null)} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img src={zoomedImage} alt="Zoomed clothing" className="max-w-full max-h-[82vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
-            <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">✖ Click anywhere on screen to close</span>
-          </div>
-        </div>
+        <PhotoViewer photos={zoomedImage.photos} startIndex={zoomedImage.index} onClose={() => setZoomedImage(null)} />
       )}
     </div>
   );
@@ -408,9 +483,14 @@ function CustomerView() {
 function CustomerDesignCard({ design, onZoom }) {
   // Start on the first colour that still has stock.
   const [selectedIdx, setSelectedIdx] = useState(() => Math.max(0, design.variants.findIndex(v => v?.total_pieces > 0)));
+  const [photoIdx, setPhotoIdx] = useState(0);
   const item = design.variants[selectedIdx] || design.variants[0];
   const hasMultipleColors = design.variants.length > 1;
-  const image = item?.image || design.variants.find(v => v?.image)?.image || null;
+  // Photos of the selected colour; a colour with none borrows the first photo of another colour.
+  const ownPhotos = variantPhotoUrls(item);
+  const photos = ownPhotos.length > 0 ? ownPhotos : [design.variants.find(v => v?.image)?.image].filter(Boolean);
+  const image = photos[Math.min(photoIdx, photos.length - 1)] || null;
+  const stepPhoto = (e, step) => { e.stopPropagation(); setPhotoIdx(i => (i + step + photos.length) % photos.length); };
   const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
   // Stock per size, split into batches that have arrived (on hand) and batches still on pre-order.
   const sizeStock = { S: { onHand: 0, preOrder: 0 }, M: { onHand: 0, preOrder: 0 }, L: { onHand: 0, preOrder: 0 }, XL: { onHand: 0, preOrder: 0 } };
@@ -426,7 +506,7 @@ function CustomerDesignCard({ design, onZoom }) {
   const preOrderOnly = onHandTotal === 0 && preOrderTotal > 0;
 
   return (
-    <div onClick={() => { if (image) onZoom(image); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
+    <div onClick={() => { if (image) onZoom({ photos, index: Math.min(photoIdx, photos.length - 1) }); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
       {item?.total_pieces === 0 && (
         <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
       )}
@@ -441,6 +521,17 @@ function CustomerDesignCard({ design, onZoom }) {
           </>
         ) : (
           <span className="text-6xl text-stone-300">👗</span>
+        )}
+        {photos.length > 1 && (
+          <>
+            <button type="button" onClick={(e) => stepPhoto(e, -1)} aria-label="Previous photo" className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-lg shadow-md z-10">‹</button>
+            <button type="button" onClick={(e) => stepPhoto(e, 1)} aria-label="Next photo" className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-lg shadow-md z-10">›</button>
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+              {photos.map((_, i) => (
+                <span key={`dot-${i}`} className={`h-1.5 rounded-full transition-all ${i === Math.min(photoIdx, photos.length - 1) ? 'w-4 bg-pink-600' : 'w-1.5 bg-white/90'}`} />
+              ))}
+            </div>
+          </>
         )}
       </div>
       <div className="p-5 flex flex-col flex-1">
@@ -459,7 +550,7 @@ function CustomerDesignCard({ design, onZoom }) {
                 <button
                   key={`cust-color-${v?.id}-${i}`}
                   type="button"
-                  onClick={() => setSelectedIdx(i)}
+                  onClick={() => { setSelectedIdx(i); setPhotoIdx(0); }}
                   className={`text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border transition ${
                     i === selectedIdx ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
                   } ${v?.total_pieces === 0 ? 'line-through opacity-60' : ''}`}
@@ -942,7 +1033,7 @@ function AdminDashboard() {
     try {
       const garmentsRes = await axios.get(`${API_BASE}garments/`);
       const gData = Array.isArray(garmentsRes.data) ? garmentsRes.data : (garmentsRes.data?.results || []);
-      const formattedGarments = (gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) }));
+      const formattedGarments = (gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image), photos: formatPhotos(g?.photos) }));
       setGarments(formattedGarments);
 
       if (productModal.show && productModal.garment) {
@@ -1197,7 +1288,7 @@ function AdminDashboard() {
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
-    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap });
+    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -1210,6 +1301,39 @@ function AdminDashboard() {
       await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setShowEditModal(false); showToast("✏️ Style details updated!"); await fetchData(true);
     } catch (error) { alert('Error saving changes. Check your inputs.'); }
+  };
+
+  // Extra photos are saved straight away (they don't wait for "Save Changes").
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const MAX_EXTRA_PHOTOS = 6;
+  const handleAddExtraPhotos = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0 || !editGarment.id) return;
+    const room = MAX_EXTRA_PHOTOS - (editGarment.photos || []).length;
+    if (files.length > room) { alert(`An item can have up to ${MAX_EXTRA_PHOTOS} extra photos. You can add ${Math.max(room, 0)} more.`); return; }
+    setPhotoUploading(true);
+    try {
+      const formData = new FormData();
+      for (const f of files) formData.append('images', await shrinkImageFile(f));
+      const { data } = await axios.post(`${API_BASE}garments/${editGarment.id}/photos/`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+      setEditGarment(prev => ({ ...prev, photos: formatPhotos(data.photos) }));
+      showToast(`📸 ${files.length} photo(s) added`);
+      await fetchData(true);
+    } catch (error) {
+      alert(`Could not add the photo(s): ${error.response?.data?.error || error.message}`);
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+  const handleDeleteExtraPhoto = async (photoId) => {
+    if (!window.confirm('Remove this photo?')) return;
+    try {
+      const { data } = await axios.delete(`${API_BASE}garments/${editGarment.id}/photos/${photoId}/`);
+      setEditGarment(prev => ({ ...prev, photos: formatPhotos(data.photos) }));
+      await fetchData(true);
+    } catch (error) {
+      alert(`Could not remove the photo: ${error.response?.data?.error || error.message}`);
+    }
   };
 
   const handleDeleteGarment = async (id) => {
@@ -3515,6 +3639,29 @@ function AdminDashboard() {
                   accent="amber"
                   onChange={(f) => setEditGarment({ ...editGarment, image: f })}
                 />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-stone-600 uppercase">More Photos (Optional)</label>
+                  <span className="text-[10px] font-bold text-stone-400">{(editGarment.photos || []).length} / {MAX_EXTRA_PHOTOS}</span>
+                </div>
+                <p className="text-[11px] text-stone-500 mb-2">Extra angles or details. Customers can swipe through them. Saved as soon as you add or remove one.</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {(editGarment.photos || []).map(ph => (
+                    <div key={`xp-${ph.id}`} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200 bg-[#f2ece4]">
+                      <img src={ph.image} alt="Extra" className="w-full h-full object-cover" />
+                      <button type="button" onClick={() => handleDeleteExtraPhoto(ph.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 hover:bg-white text-rose-600 font-black text-sm leading-none shadow" title="Remove photo">&times;</button>
+                    </div>
+                  ))}
+                  {(editGarment.photos || []).length < MAX_EXTRA_PHOTOS && (
+                    <label className={`aspect-square rounded-lg border-2 border-dashed border-stone-300 flex flex-col items-center justify-center text-stone-500 text-[11px] font-black transition ${photoUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:border-amber-500 hover:text-amber-600'}`}>
+                      <span className="text-xl leading-none">{photoUploading ? '⏳' : '＋'}</span>
+                      {photoUploading ? 'Uploading…' : 'Add photos'}
+                      <input type="file" accept="image/*" multiple disabled={photoUploading} className="hidden" onChange={(e) => { handleAddExtraPhotos(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -8,7 +8,10 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Sum
-from .models import Garment, SizeStock, SaleLog, Expense
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import serializers as drf_serializers
 
 from rest_framework.permissions import IsAdminUser
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
@@ -118,7 +121,7 @@ def _take_items(items):
 
 class CatalogViewSet(viewsets.ReadOnlyModelViewSet):
     """Public, read-only product list for the customer page (no costs or profit)."""
-    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes')
+    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes', 'photos')
     serializer_class = CatalogGarmentSerializer
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
@@ -136,8 +139,43 @@ class RefreshLoginView(TokenRefreshView):
 
 
 class GarmentViewSet(viewsets.ModelViewSet):
-    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes')
+    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes', 'photos')
     serializer_class = GarmentSerializer
+
+    MAX_EXTRA_PHOTOS = 6
+
+    @action(detail=True, methods=['post'], url_path='photos')
+    def add_photos(self, request, pk=None):
+        """Add extra photos (multipart field `images`, one or more files) to a garment."""
+        garment = self.get_object()
+        files = request.FILES.getlist('images')
+        if not files:
+            return Response({'error': 'Choose at least one photo'}, status=status.HTTP_400_BAD_REQUEST)
+        room = self.MAX_EXTRA_PHOTOS - garment.photos.count()
+        if len(files) > room:
+            return Response({'error': f'An item can have up to {self.MAX_EXTRA_PHOTOS} extra photos ({max(room, 0)} more allowed)'}, status=status.HTTP_400_BAD_REQUEST)
+        checker = drf_serializers.ImageField()
+        for f in files:
+            try:
+                checker.run_validation(f)  # rejects files that are not images
+            except (drf_serializers.ValidationError, DjangoValidationError):
+                return Response({'error': f'"{f.name}" is not a photo'}, status=status.HTTP_400_BAD_REQUEST)
+            if f.size > settings.MAX_IMAGE_UPLOAD_BYTES:
+                return Response({'error': f'"{f.name}" is too large (5 MB maximum)'}, status=status.HTTP_400_BAD_REQUEST)
+        for f in files:
+            GarmentPhoto.objects.create(garment=garment, image=f)
+        garment = self.get_queryset().get(pk=garment.pk)
+        return Response(GarmentSerializer(garment).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'photos/(?P<photo_id>\d+)')
+    def delete_photo(self, request, pk=None, photo_id=None):
+        """Remove one extra photo from a garment."""
+        garment = self.get_object()
+        deleted, _ = GarmentPhoto.objects.filter(garment=garment, id=photo_id).delete()
+        if not deleted:
+            return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
+        garment = self.get_queryset().get(pk=garment.pk)
+        return Response(GarmentSerializer(garment).data)
 
     @action(detail=True, methods=['patch'])
     def update_stock(self, request, pk=None):
