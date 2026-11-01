@@ -524,8 +524,9 @@ function CustomerDesignCard({ design, onZoom }) {
         )}
         {photos.length > 1 && (
           <>
-            <button type="button" onClick={(e) => stepPhoto(e, -1)} aria-label="Previous photo" className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-lg shadow-md z-10">‹</button>
-            <button type="button" onClick={(e) => stepPhoto(e, 1)} aria-label="Next photo" className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-lg shadow-md z-10">›</button>
+            {/* Small arrows at the frame's edges: faint on phones, shown on hover on computers. */}
+            <button type="button" onClick={(e) => stepPhoto(e, -1)} aria-label="Previous photo" className="absolute left-0.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/75 hover:bg-white text-stone-800 font-black text-sm leading-none shadow-sm z-10 transition opacity-70 sm:opacity-0 sm:group-hover:opacity-100">‹</button>
+            <button type="button" onClick={(e) => stepPhoto(e, 1)} aria-label="Next photo" className="absolute right-0.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/75 hover:bg-white text-stone-800 font-black text-sm leading-none shadow-sm z-10 transition opacity-70 sm:opacity-0 sm:group-hover:opacity-100">›</button>
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
               {photos.map((_, i) => (
                 <span key={`dot-${i}`} className={`h-1.5 rounded-full transition-all ${i === Math.min(photoIdx, photos.length - 1) ? 'w-4 bg-pink-600' : 'w-1.5 bg-white/90'}`} />
