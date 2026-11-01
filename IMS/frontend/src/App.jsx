@@ -138,7 +138,7 @@ function PhotoViewer({ photos, startIndex = 0, onClose }) {
   }, [count, onClose]);
   if (count === 0) return null;
   return (
-    <div onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-pointer animate-fade-in">
+    <div onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-[60] cursor-pointer animate-fade-in">
       <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center cursor-default" onClick={(e) => e.stopPropagation()}>
         <div className="relative w-full flex items-center justify-center">
           <img src={photos[index]} alt={`Photo ${index + 1} of ${count}`} className="max-w-full max-h-[74vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
@@ -865,15 +865,32 @@ const groupGarmentDesigns = (mergedList) => {
 // opens the sell/restock modal for whichever color is currently selected.
 function DesignCard({ design, onOpen }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [photoIdx, setPhotoIdx] = useState(0);
   const variant = design.variants[selectedIdx] || design.variants[0];
   const hasMultipleColors = design.variants.length > 1;
-  const image = variant?.image || design.variants.find(v => v?.image)?.image || null;
+  // Photos of the selected colour (main + extras from every batch); a colour with none borrows another's photo.
+  const ownPhotos = variantPhotoUrls(variant);
+  const photos = ownPhotos.length > 0 ? ownPhotos : [design.variants.find(v => v?.image)?.image].filter(Boolean);
+  const shownIdx = Math.min(photoIdx, Math.max(photos.length - 1, 0));
+  const image = photos[shownIdx] || null;
+  const stepPhoto = (e, step) => { e.stopPropagation(); setPhotoIdx(i => (i + step + photos.length) % photos.length); };
   const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
 
   return (
     <div onClick={() => onOpen(variant)} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
       <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
-        {image ? (<img src={image} alt={design.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+        {image ? (<img key={image} src={image} alt={design.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+        {photos.length > 1 && (
+          <>
+            <button type="button" onClick={(e) => stepPhoto(e, -1)} aria-label="Previous photo" className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/75 hover:bg-white text-stone-800 font-black text-sm leading-none shadow-sm z-10 transition opacity-70 sm:opacity-0 sm:group-hover:opacity-100">‹</button>
+            <button type="button" onClick={(e) => stepPhoto(e, 1)} aria-label="Next photo" className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/75 hover:bg-white text-stone-800 font-black text-sm leading-none shadow-sm z-10 transition opacity-70 sm:opacity-0 sm:group-hover:opacity-100">›</button>
+            <div className="absolute bottom-3 left-3 flex gap-1.5 z-10">
+              {photos.map((_, i) => (
+                <span key={`adot-${i}`} className={`h-1.5 rounded-full transition-all ${i === shownIdx ? 'w-4 bg-pink-600' : 'w-1.5 bg-white/90'}`} />
+              ))}
+            </div>
+          </>
+        )}
         <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{variant?.total_pieces} pcs left</div>
       </div>
       <div className="p-5 flex flex-col justify-between flex-1">
@@ -894,7 +911,7 @@ function DesignCard({ design, onOpen }) {
                 <button
                   key={`color-${v?.id}-${i}`}
                   type="button"
-                  onClick={() => setSelectedIdx(i)}
+                  onClick={() => { setSelectedIdx(i); setPhotoIdx(0); }}
                   className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border transition ${
                     i === selectedIdx ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'
                   } ${v?.total_pieces === 0 ? 'line-through opacity-60' : ''}`}
@@ -950,7 +967,8 @@ function AdminDashboard() {
   
   const [analyticsFilterBatch, setAnalyticsFilterBatch] = useState('All');
 
-  const [zoomedImage, setZoomedImage] = useState(null);
+  const [zoomedImage, setZoomedImage] = useState(null); // { photos, index } shown in the photo viewer
+  const [modalPhotoIdx, setModalPhotoIdx] = useState(0);
   const [viewPreOrder, setViewPreOrder] = useState(null); 
 
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
@@ -1068,6 +1086,7 @@ function AdminDashboard() {
     const safeSizes = parseSafeArray(item?.sizes);
     const defaultSize = safeSizes.find(s => s?.quantity > 0)?.size || 'S';
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
+    setModalPhotoIdx(0);
   };
 
   // Sale total before and after the promo discount, which applies once to the whole sale.
@@ -2373,6 +2392,10 @@ function AdminDashboard() {
         );
       })()}
 
+      {zoomedImage && (
+        <PhotoViewer photos={zoomedImage.photos} startIndex={zoomedImage.index} onClose={() => setZoomedImage(null)} />
+      )}
+
       {toastMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-pink-600 text-white px-6 py-3.5 rounded-2xl shadow-2xl font-black text-sm md:text-base border-2 border-pink-400 flex items-center gap-3 animate-bounce">
           <span>{String(toastMessage)}</span>
@@ -3242,16 +3265,39 @@ function AdminDashboard() {
             </button>
 
             <div className="w-full md:w-1/2 bg-gradient-to-br from-[#f9f6f0] to-[#e6dece] p-8 flex flex-col items-center justify-center relative min-h-[280px] md:min-h-full border-b md:border-b-0 md:border-r border-stone-200">
-              {productModal.garment.image ? (
-                <img 
-                  src={productModal.garment.image} alt={productModal.garment.name} 
-                  onClick={() => setZoomedImage(productModal.garment.image)}
-                  className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
-                  title="Click to fullscreen zoom" 
-                />
-              ) : (
-                <div className="text-8xl select-none py-12">👗</div>
-              )}
+              {(() => {
+                const photos = variantPhotoUrls(productModal.garment);
+                if (photos.length === 0) return <div className="text-8xl select-none py-12">👗</div>;
+                const shown = Math.min(modalPhotoIdx, photos.length - 1);
+                const step = (n) => setModalPhotoIdx((shown + n + photos.length) % photos.length);
+                return (
+                  <>
+                    <div className="relative w-full flex items-center justify-center">
+                      <img
+                        key={photos[shown]} src={photos[shown]} alt={productModal.garment.name}
+                        onClick={() => setZoomedImage({ photos, index: shown })}
+                        className="max-w-full max-h-[360px] object-contain drop-shadow-2xl cursor-pointer hover:scale-105 transition duration-300"
+                        title="Click to view full screen"
+                      />
+                      {photos.length > 1 && (
+                        <>
+                          <button type="button" onClick={() => step(-1)} aria-label="Previous photo" className="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/85 hover:bg-white text-stone-800 font-black text-base leading-none shadow">‹</button>
+                          <button type="button" onClick={() => step(1)} aria-label="Next photo" className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/85 hover:bg-white text-stone-800 font-black text-base leading-none shadow">›</button>
+                        </>
+                      )}
+                    </div>
+                    {photos.length > 1 && (
+                      <div className="flex gap-1.5 mt-4 overflow-x-auto max-w-full px-1 py-1">
+                        {photos.map((url, i) => (
+                          <button key={`pm-thumb-${i}`} type="button" onClick={() => setModalPhotoIdx(i)} className={`w-11 h-11 rounded-lg overflow-hidden shrink-0 border-2 transition ${i === shown ? 'border-pink-500' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                            <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               
               <span className="mt-4 text-xs font-bold text-stone-600 bg-white/90 px-3 py-1 rounded-full shadow-2xs border border-stone-200">
                 Fleurette Stock: <strong className="text-stone-900">{productModal.garment.total_pieces} pcs</strong>
