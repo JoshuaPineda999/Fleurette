@@ -10,7 +10,13 @@ from django.db import connection, transaction
 from django.db.models import Sum
 from .models import Garment, SizeStock, SaleLog, Expense
 
-from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer
+from rest_framework.permissions import IsAdminUser
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
+import io
+from django.core.management import call_command
+from django.http import HttpResponse
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer
 
 
 def _norm(value):
@@ -110,6 +116,25 @@ def _take_items(items):
     return taken, shortages, None
 
 
+class CatalogViewSet(viewsets.ReadOnlyModelViewSet):
+    """Public, read-only product list for the customer page (no costs or profit)."""
+    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes')
+    serializer_class = CatalogGarmentSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+
+class LoginView(TokenObtainPairView):
+    """Admin login: username + password in, access + refresh tokens out (10 tries a minute)."""
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+
+class RefreshLoginView(TokenRefreshView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+
 class GarmentViewSet(viewsets.ModelViewSet):
     queryset = Garment.objects.all().order_by('id').prefetch_related('sizes')
     serializer_class = GarmentSerializer
@@ -118,7 +143,10 @@ class GarmentViewSet(viewsets.ModelViewSet):
     def update_stock(self, request, pk=None):
         garment = self.get_object()
         size_label = request.data.get('size')
-        change = int(request.data.get('change', 0))
+        try:
+            change = int(request.data.get('change', 0))
+        except (TypeError, ValueError):
+            return Response({'error': 'change must be a whole number'}, status=status.HTTP_400_BAD_REQUEST)
         is_sale = request.data.get('is_sale', False)
         discount, promo_code = _sale_discount(request)
         if discount is None:
@@ -356,6 +384,22 @@ def health(request):
         logger.exception('Health check: the database could not be reached')
         return Response({'status': 'database unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     return Response({'status': 'ok'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def backup(request):
+    """Download every shop record (styles, stock, sales, pre-orders, expenses) as one JSON file.
+
+    Restore into an empty database with: python manage.py loaddata <file>.json
+    Login accounts are left out, so the file holds no passwords.
+    """
+    buffer = io.StringIO()
+    call_command('dumpdata', 'inventory', indent=2, stdout=buffer)
+    filename = f"fleurette-backup-{timezone.localdate().isoformat()}.json"
+    response = HttpResponse(buffer.getvalue(), content_type='application/json')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 @api_view(['GET'])

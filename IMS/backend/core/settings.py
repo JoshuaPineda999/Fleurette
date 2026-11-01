@@ -11,15 +11,33 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'your-fallback-development-secret-key')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# The secret key signs login tokens, so production must set its own (Render > Environment).
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'insecure-local-development-key'
+    else:
+        raise ImproperlyConfigured('Set the SECRET_KEY environment variable.')
+
+
+def _env_list(name, default):
+    value = os.environ.get(name)
+    return [v.strip() for v in value.split(',') if v.strip()] if value else default
+
+
+# Only answer requests addressed to this backend (Render sets RENDER_EXTERNAL_HOSTNAME).
+ALLOWED_HOSTS = _env_list('ALLOWED_HOSTS', ['localhost', '127.0.0.1', 'fleurettesdajkdhashjkdasfjadsfa.onrender.com'])
+if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
 
 
 # Application definition
@@ -119,20 +137,54 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-# Allow Vercel and all incoming frontend connections
-CORS_ALLOW_ALL_ORIGINS = True
+# Only the Fleurette website (and local development) may call the API from a browser.
+CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', [
+    'https://fleurettecdo.vercel.app',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+])
+
+# Every API endpoint needs a logged-in admin unless the view says otherwise (the public catalogue and login).
+REST_FRAMEWORK = {
+    # The API only ever answers in JSON. DRF's browsable HTML pages need static CSS files that are
+    # not collected on Render, so a browser (or UptimeRobot, which asks for HTML) got a 500 instead.
+    'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
+    'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework_simplejwt.authentication.JWTAuthentication'],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/min',
+        'user': '3000/hour',
+        'login': '10/min',
+    },
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+}
+
+# HTTPS-only settings for production (Render terminates HTTPS and forwards the original scheme).
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Largest product photo accepted (the admin's cropper uploads much smaller JPEGs).
+MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# The API only ever answers in JSON. DRF's browsable HTML pages need static CSS files that are
-# not collected on Render, so a browser (or UptimeRobot, which asks for HTML) got a 500 instead.
-REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
-}
 
 # Print server errors (with their traceback) to the console, so they show in Render's logs.
 # Without this, Django only emails errors when DEBUG is off and the logs show a bare "500".

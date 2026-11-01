@@ -1,4 +1,5 @@
 import json
+from django.conf import settings
 from rest_framework import serializers
 from .models import Garment, SizeStock, SaleLog, Expense, PreOrder
 
@@ -37,6 +38,11 @@ class GarmentSerializer(serializers.ModelSerializer):
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
+
+    def validate_image(self, image):
+        if image and getattr(image, 'size', 0) > settings.MAX_IMAGE_UPLOAD_BYTES:
+            raise serializers.ValidationError('Photo is too large (5 MB maximum).')
+        return image
 
     @staticmethod
     def _existing_photo_garment(name, color, category):
@@ -89,6 +95,16 @@ class GarmentSerializer(serializers.ModelSerializer):
                         stock.save()
                     except (ValueError, TypeError): pass
         return instance
+
+class CatalogGarmentSerializer(serializers.ModelSerializer):
+    """What the public customer page may see: no cost price or profit."""
+    sizes = SizeStockSerializer(many=True, read_only=True)
+    total_pieces = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Garment
+        fields = ['id', 'name', 'category', 'color', 'selling_price', 'image', 'batch_status', 'sizes', 'total_pieces']
+
 
 class PreOrderSerializer(serializers.ModelSerializer):
     class Meta:

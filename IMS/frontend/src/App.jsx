@@ -19,6 +19,50 @@ if (!BACKEND_URL || BACKEND_URL.includes('vercel.app')) {
 // 2. Safely format the API route
 const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_URL}/api/`;
 
+// 2b. ADMIN LOGIN TOKENS. The backend issues an access token (1 hour) and a refresh token (7 days);
+// every API request sends the access token, and an expired one is renewed once before giving up.
+const AUTH_ACCESS_KEY = 'fleurette_access';
+const AUTH_REFRESH_KEY = 'fleurette_refresh';
+const readStore = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+const writeStore = (key, value) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
+const clearAuth = () => {
+  try { [AUTH_ACCESS_KEY, AUTH_REFRESH_KEY, 'isAdmin'].forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
+};
+const isLoggedIn = () => !!(readStore(AUTH_ACCESS_KEY) || readStore(AUTH_REFRESH_KEY));
+const isAuthUrl = (url) => String(url || '').includes('auth/token');
+
+axios.interceptors.request.use(config => {
+  const token = readStore(AUTH_ACCESS_KEY);
+  if (token && String(config.url || '').startsWith(API_BASE) && !isAuthUrl(config.url)) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+let refreshInFlight = null;
+axios.interceptors.response.use(response => response, async error => {
+  const original = error.config;
+  if (error.response?.status === 401 && original && !original._retried && !isAuthUrl(original.url)) {
+    original._retried = true;
+    const refresh = readStore(AUTH_REFRESH_KEY);
+    if (refresh) {
+      try {
+        refreshInFlight = refreshInFlight || axios.post(`${API_BASE}auth/token/refresh/`, { refresh }).finally(() => { refreshInFlight = null; });
+        const { data } = await refreshInFlight;
+        writeStore(AUTH_ACCESS_KEY, data.access);
+        if (data.refresh) writeStore(AUTH_REFRESH_KEY, data.refresh);
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${data.access}`;
+        return axios(original);
+      } catch { /* refresh failed: fall through to logging out */ }
+    }
+    clearAuth();
+    if (window.location.pathname.startsWith('/admin')) window.location.assign('/login');
+  }
+  return Promise.reject(error);
+});
+
 // 3. Ultra-Safe Image Formatter
 const formatImageUrl = (url) => {
   if (!url) return null;
@@ -242,7 +286,8 @@ function CustomerView() {
   useEffect(() => {
     const fetchGarments = async () => {
       try {
-        const res = await axios.get(`${API_BASE}garments/`);
+        // Public catalogue: no login needed, and no cost or profit figures.
+        const res = await axios.get(`${API_BASE}catalog/`);
         const gData = Array.isArray(res.data) ? res.data : (res.data?.results || []);
         setGarments((gData || []).map(g => ({ ...g, sizes: parseSafeArray(g?.sizes), image: formatImageUrl(g?.image) })));
       } catch (error) {
@@ -452,20 +497,30 @@ function CustomerDesignCard({ design, onZoom }) {
 }
 
 function LoginScreen() {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [signingIn, setSigningIn] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  // The backend checks the username and password and returns login tokens.
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const securePassword = import.meta.env.VITE_ADMIN_PASSWORD;
-
-    if (securePassword && password === securePassword) {
-      localStorage.setItem('isAdmin', 'true');
+    setError('');
+    setSigningIn(true);
+    try {
+      const { data } = await axios.post(`${API_BASE}auth/token/`, { username: username.trim(), password });
+      writeStore(AUTH_ACCESS_KEY, data.access);
+      writeStore(AUTH_REFRESH_KEY, data.refresh);
       navigate('/admin');
-    } else {
-      setError('Incorrect password. Please try again.');
+    } catch (err) {
+      const status = err.response?.status;
+      setError(status === 401 ? 'Incorrect username or password.'
+        : status === 429 ? 'Too many attempts. Please wait a minute and try again.'
+        : 'Could not reach the server. It may be waking up, so try again in a moment.');
+    } finally {
+      setSigningIn(false);
     }
   };
 
@@ -474,15 +529,16 @@ function LoginScreen() {
       <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-stone-200 text-center">
         <div className="text-4xl mb-4">🌸</div>
         <h2 className="text-2xl font-black text-stone-900 mb-1">Boutique Admin</h2>
-        <p className="text-stone-500 text-sm mb-6">Enter password to access the POS system</p>
+        <p className="text-stone-500 text-sm mb-6">Sign in to access the POS system</p>
         
         <form onSubmit={handleLogin} className="space-y-4">
+          <input type="text" placeholder="Username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required className="w-full border border-stone-300 rounded-xl p-3 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"/>
           <div className="relative">
-            <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"/>
+            <input type={showPassword ? "text" : "password"} placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-stone-300 rounded-xl p-3 pr-12 text-center font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"/>
             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 text-base select-none transition" title={showPassword ? "Hide password" : "Show password"}>{showPassword ? '👁️' : '👁️‍🗨️'}</button>
           </div>
           {error && <p className="text-rose-500 text-xs font-bold">{error}</p>}
-          <button type="submit" className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">Login to Workspace</button>
+          <button type="submit" disabled={signingIn} className="w-full bg-stone-900 hover:bg-black disabled:opacity-60 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">{signingIn ? 'Signing in…' : 'Login to Workspace'}</button>
         </form>
         <div className="mt-6 pt-6 border-t border-stone-100">
           <Link to="/" className="text-xs font-bold text-stone-400 hover:text-stone-600 transition">← Back to Customer Catalog</Link>
@@ -859,7 +915,7 @@ function AdminDashboard() {
   });
 
   const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
-  const handleLogout = () => { localStorage.removeItem('isAdmin'); navigate('/'); };
+  const handleLogout = () => { clearAuth(); navigate('/'); };
 
   // A batch is Pre-order while any of its garments is still marked Pre-order.
   const batchStatusOf = (batchName) => (garments || []).some(g =>
@@ -1161,9 +1217,31 @@ function AdminDashboard() {
     try { await axios.delete(`${API_BASE}garments/${id}/`); setShowEditModal(false); setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 }); showToast("🗑️ Garment style removed."); await fetchData(true); } catch (error) { alert('Could not delete garment. Please try again.'); }
   };
 
+  // Saves every shop record to a JSON file on this computer. Returns true when the file was saved.
+  const downloadBackup = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}backup/`, { responseType: 'blob', timeout: 120000 });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `fleurette-backup-${getLocalDate()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast('💾 Backup downloaded. Keep it somewhere safe (e.g. Google Drive).');
+      return true;
+    } catch (error) {
+      alert(`Could not download the backup: ${error.response ? `server responded HTTP ${error.response.status}` : error.message}`);
+      return false;
+    }
+  };
+
   const handleFactoryReset = async () => {
-    const confirmText = window.prompt('⚠️ WARNING: This will permanently delete ALL data including Batches, Garments, Pre-orders, Expenses, and Sales History.\n\nType "DELETE" to confirm:');
+    const confirmText = window.prompt('⚠️ WARNING: This will permanently delete ALL data including Batches, Garments, Pre-orders, Expenses, and Sales History.\n\nA backup file will be downloaded first.\n\nType "DELETE" to confirm:');
     if (confirmText === 'DELETE') {
+      // Never wipe without a backup on this computer first.
+      if (!(await downloadBackup())) { alert('Factory reset cancelled because the backup could not be saved.'); return; }
       setLoading(true);
       try {
         for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`); for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`); for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`); for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
@@ -2216,6 +2294,9 @@ function AdminDashboard() {
           </button>
           <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             Log Out
+          </button>
+          <button onClick={downloadBackup} className="w-full bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs" title="Save all shop data to a file on this computer">
+            💾 Download Backup
           </button>
           <button onClick={handleFactoryReset} className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             <span className="text-sm">🧨</span> Factory Reset
@@ -4090,8 +4171,8 @@ function AdminDashboard() {
 }
 
 function ProtectedRoute({ children }) {
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
-  return isAdmin ? children : <Navigate to="/login" replace />;
+  // Only a quick check that a login exists; the backend refuses every admin request without a valid token.
+  return isLoggedIn() ? children : <Navigate to="/login" replace />;
 }
 
 export default function App() {
