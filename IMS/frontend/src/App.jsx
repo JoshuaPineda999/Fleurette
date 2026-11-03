@@ -418,6 +418,10 @@ function CustomerView() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeSize, setActiveSize] = useState('All');
   const [activeAvailability, setActiveAvailability] = useState('All');
+  const [cart, setCart] = useState([]);
+  const [orderItem, setOrderItem] = useState(null);
+  const [showOrder, setShowOrder] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState(0); // bump to reload stock after an order
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
 
@@ -435,7 +439,19 @@ function CustomerView() {
       }
     };
     fetchGarments();
-  }, []);
+  }, [catalogVersion]);
+
+  const addToCart = (item, size, quantity, left) => {
+    const key = orderLineKey(item, size);
+    setCart(prev => prev.some(l => l.key === key)
+      ? prev.map(l => l.key === key ? { ...l, quantity: l.quantity + quantity } : l)
+      : [...prev, {
+          key, name: item.name, color: item.color, category: item.category, size, quantity,
+          unit_price: parseFloat(item.selling_price) || 0, image: item.image || null, max: left,
+        }]);
+    setOrderItem(null);
+  };
+  const cartPieces = cart.reduce((sum, l) => sum + l.quantity, 0);
 
   const mergedGarmentsList = mergeGarments(garments);
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
@@ -504,7 +520,7 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {groupGarmentDesigns(filteredGarments).map(design => (
-              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} />
+              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} onOrder={setOrderItem} />
             ))}
           </div>
         )}
@@ -540,6 +556,15 @@ function CustomerView() {
         </div>
       </footer>
 
+      {cartPieces > 0 && !showOrder && (
+        <button type="button" onClick={() => setShowOrder(true)} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
+          My Order
+          <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
+        </button>
+      )}
+      {orderItem && <OrderItemModal item={orderItem} cart={cart} onAdd={addToCart} onClose={() => setOrderItem(null)} />}
+      {showOrder && <OrderCheckoutModal cart={cart} setCart={setCart} onClose={() => setShowOrder(false)} onPlaced={() => setCatalogVersion(v => v + 1)} />}
+
       {zoomedImage && (
         <PhotoViewer photos={zoomedImage.photos} startIndex={zoomedImage.index} onClose={() => setZoomedImage(null)} />
       )}
@@ -547,8 +572,180 @@ function CustomerView() {
   );
 }
 
+// Where customers are sent to send their order. The ref carries the order code for the Messenger bot.
+const MESSENGER_URL = 'https://m.me/61588796373437';
+const messengerOrderUrl = (order) => `${MESSENGER_URL}?ref=${encodeURIComponent(order.code)}&text=${encodeURIComponent(order.summary)}`;
+
+const copyText = async (text) => {
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+};
+
+// Pick a size and quantity for one colour of a style, then add it to the order.
+function OrderItemModal({ item, cart, onAdd, onClose }) {
+  const stockFor = (size) => {
+    let onHand = 0, preOrder = 0;
+    (item.underlying_garments || []).forEach(g => parseSafeArray(g?.sizes).forEach(sz => {
+      if (sz?.size !== size) return;
+      if (g?.batch_status === 'Pre-order') preOrder += parseInt(sz?.quantity) || 0;
+      else onHand += parseInt(sz?.quantity) || 0;
+    }));
+    return { onHand, preOrder, total: onHand + preOrder };
+  };
+  const inCart = (size) => cart.filter(l => l.key === orderLineKey(item, size)).reduce((sum, l) => sum + l.quantity, 0);
+  const sizes = parseSafeArray(item.sizes).map(sz => ({ size: sz?.size, ...stockFor(sz?.size) }));
+  const [size, setSize] = useState(() => sizes.find(sz => sz.total - inCart(sz.size) > 0)?.size || '');
+  const [quantity, setQuantity] = useState(1);
+  const left = size ? stockFor(size).total - inCart(size) : 0;
+  const hasColor = normColorKey(item.color) !== '';
+  return (
+    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-xl font-black text-stone-900 leading-tight">{item.name}</h2>
+            <p className="text-sm font-bold text-stone-500">{hasColor ? `${item.color} · ` : ''}₱{parseFloat(item.selling_price || 0).toFixed(2)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-600 font-bold text-xl" aria-label="Close">&times;</button>
+        </div>
+        <span className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Size</span>
+        <div className="grid grid-cols-4 gap-2 mb-2">
+          {sizes.map(sz => {
+            const out = sz.total - inCart(sz.size) <= 0;
+            return (
+              <button key={`oi-${sz.size}`} type="button" disabled={out} onClick={() => { setSize(sz.size); setQuantity(1); }}
+                className={`py-2 rounded-xl border text-sm font-black transition ${size === sz.size ? 'bg-pink-600 border-pink-600 text-white' : out ? 'bg-stone-50 border-stone-100 text-stone-300 line-through cursor-not-allowed' : sz.onHand === 0 ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-[#f9f6f0] border-stone-300 text-stone-700 hover:bg-stone-100'}`}>
+                {displaySize(sz.size)}
+              </button>
+            );
+          })}
+        </div>
+        {size && stockFor(size).onHand === 0 && <p className="text-[11px] font-bold text-pink-700 mb-2">This size is on pre-order.</p>}
+        <span className="block text-xs font-extrabold text-stone-500 uppercase mt-4 mb-2">Quantity</span>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0]">
+            <button type="button" onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-10 h-10 font-black text-stone-600">-</button>
+            <span className="w-8 text-center font-black">{quantity}</span>
+            <button type="button" onClick={() => setQuantity(q => Math.min(left, q + 1))} disabled={quantity >= left} className="w-10 h-10 font-black text-stone-600 disabled:text-stone-300">+</button>
+          </div>
+        </div>
+        <button type="button" disabled={!size || left <= 0} onClick={() => onAdd(item, size, quantity, left)} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
+          Add to Order
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const orderLineKey = (item, size) => `${normNameKey(item.name)}|${normColorKey(item.color)}|${normNameKey(item.category)}|${size}`;
+
+// The customer's order: items, name and contact, then sending it to the shop's Messenger.
+function OrderCheckoutModal({ cart, setCart, onClose, onPlaced }) {
+  const [name, setName] = useState('');
+  const [contact, setContact] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [placed, setPlaced] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const total = cart.reduce((sum, l) => sum + l.unit_price * l.quantity, 0);
+  const changeQty = (key, q) => setCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, Math.min(l.max, q)) } : l));
+  const remove = (key) => setCart(prev => prev.filter(l => l.key !== key));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (sending || cart.length === 0) return;
+    setSending(true);
+    setError('');
+    try {
+      const { data } = await axios.post(`${API_BASE}online-orders/place/`, {
+        customer_name: name.trim(), contact_number: contact.trim(),
+        items: cart.map(l => ({ name: l.name, color: l.color, category: l.category, size: l.size, quantity: l.quantity })),
+      });
+      setPlaced(data);
+      setCart([]);
+      onPlaced();
+      // Go to Messenger straight away when the order is safely copied; otherwise the button below copies and opens it.
+      const ok = await copyText(data.summary);
+      setCopied(ok);
+      if (ok) setTimeout(() => { window.location.href = messengerOrderUrl(data); }, 1500);
+    } catch (err) {
+      const d = err.response?.data;
+      if (Array.isArray(d?.shortages)) {
+        setError(`Sorry, not enough stock: ${d.shortages.map(sh => `${sh.item}${normColorKey(sh.color) ? ` (${sh.color})` : ''} size ${displaySize(sh.size)}, ${sh.available} left`).join('; ')}.`);
+        onPlaced();
+      } else if (err.response?.status === 429) {
+        setError('Too many orders from this device. Please wait a while or message us directly.');
+      } else {
+        setError(d?.error || 'Could not send your order. Please check your connection and try again.');
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={placed ? undefined : onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        {placed ? (
+          <div className="p-6 overflow-y-auto">
+            <h2 className="text-xl font-black text-stone-900 mb-1">Your items are on hold!</h2>
+            <p className="text-sm text-stone-500 mb-4">Order <strong className="text-stone-900">{placed.code}</strong>. We'll keep them for 24 hours. Send us your order on Messenger, then wait for our reply.</p>
+            <pre className="whitespace-pre-wrap text-xs font-bold text-stone-700 bg-[#f9f6f0] border border-stone-200 rounded-xl p-3 mb-3 font-sans">{placed.summary}</pre>
+            <p className="text-xs font-bold text-pink-700 mb-4">{copied ? 'Your order is copied. If it isn\'t already in the chat, just paste and send. Opening Messenger...' : 'Tap the button to copy your order and open Messenger, then paste and send.'}</p>
+            <button type="button" onClick={async () => { setCopied(await copyText(placed.summary)); window.location.href = messengerOrderUrl(placed); }} className="w-full bg-pink-600 hover:bg-pink-700 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95 mb-2">
+              Copy Order &amp; Open Messenger
+            </button>
+            <button type="button" onClick={onClose} className="w-full py-2 text-sm font-bold text-stone-500 hover:text-stone-800">Back to shop</button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col min-h-0">
+            <div className="flex justify-between items-center p-6 pb-4 border-b border-stone-100">
+              <h2 className="text-xl font-black text-stone-900">My Order</h2>
+              <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-600 font-bold text-xl" aria-label="Close">&times;</button>
+            </div>
+            <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-4">
+              {cart.length === 0 ? (
+                <p className="text-center text-stone-400 font-bold py-6">Your order is empty.</p>
+              ) : (
+                <div className="space-y-2">
+                  {cart.map(l => (
+                    <div key={l.key} className="flex items-center gap-3 bg-[#f9f6f0] border border-stone-200 rounded-xl p-2.5">
+                      <div className="w-12 h-12 rounded-lg bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center">
+                        {l.image ? <img src={l.image} alt={l.name} className="w-full h-full object-cover" /> : <span className="text-xl">👗</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="block font-black text-sm text-stone-900 truncate">{l.name}</span>
+                        <span className="block text-[11px] font-bold text-stone-500">{normColorKey(l.color) ? `${l.color} · ` : ''}Size {displaySize(l.size)} · ₱{l.unit_price.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center border border-stone-300 rounded-lg bg-white shrink-0">
+                        <button type="button" onClick={() => changeQty(l.key, l.quantity - 1)} className="w-7 h-8 font-black text-stone-600">-</button>
+                        <span className="w-6 text-center font-black text-sm">{l.quantity}</span>
+                        <button type="button" onClick={() => changeQty(l.key, l.quantity + 1)} disabled={l.quantity >= l.max} className="w-7 h-8 font-black text-stone-600 disabled:text-stone-300">+</button>
+                      </div>
+                      <button type="button" onClick={() => remove(l.key)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" aria-label={`Remove ${l.name}`}>&times;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-between items-center font-black text-stone-900"><span>Total</span><span>₱{total.toFixed(2)}</span></div>
+              <input type="text" required maxLength={255} placeholder="Your name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-stone-300 rounded-xl p-3 text-sm font-bold bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+              <input type="tel" required placeholder="Contact number" autoComplete="tel" pattern="[0-9+()\-\s]{7,20}" title="Numbers only, for example 0917 123 4567" value={contact} onChange={(e) => setContact(e.target.value)} className="w-full border border-stone-300 rounded-xl p-3 text-sm font-bold bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+              <p className="text-[11px] font-bold text-stone-500">We'll hold your items for 24 hours. You'll be sent to our Messenger to send your order, then we'll reply to confirm.</p>
+              {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+            </div>
+            <div className="p-6 pt-4 border-t border-stone-100">
+              <button type="submit" disabled={sending || cart.length === 0} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
+                {sending ? 'Sending...' : 'Send via Messenger'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // One customer card per design; the colour buttons switch the photo, price and sizes shown.
-function CustomerDesignCard({ design, onZoom }) {
+function CustomerDesignCard({ design, onZoom, onOrder }) {
   // Start on the first colour that still has stock.
   const [selectedIdx, setSelectedIdx] = useState(() => Math.max(0, design.variants.findIndex(v => v?.total_pieces > 0)));
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -649,6 +846,11 @@ function CustomerDesignCard({ design, onZoom }) {
           </div>
           {preOrderTotal > 0 && onHandTotal > 0 && Object.values(sizeStock).some(v => v.onHand === 0 && v.preOrder > 0) && (
             <span className="block text-[10px] font-bold text-pink-700 mt-2">Pink sizes are available on pre-order</span>
+          )}
+          {item?.total_pieces > 0 && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item); }} className="w-full mt-4 bg-pink-600 hover:bg-pink-700 text-white font-black py-2.5 rounded-xl text-sm shadow-sm transition active:scale-95">
+              Add to Order
+            </button>
           )}
         </div>
       </div>
@@ -1011,6 +1213,7 @@ function AdminDashboard() {
   const [garments, setGarments] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [onlineOrders, setOnlineOrders] = useState([]);
   const [preOrders, setPreOrders] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -1138,6 +1341,7 @@ function AdminDashboard() {
       await fetchSalesHistory();
       await fetchExpenses();
       await fetchPreOrders();
+      await fetchOnlineOrders();
       if (!isBackgroundRefresh) setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -1147,6 +1351,7 @@ function AdminDashboard() {
 
   const fetchSalesHistory = async () => { try { const res = await axios.get(`${API_BASE}sales/history/`); setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
   const fetchExpenses = async () => { try { const res = await axios.get(`${API_BASE}expenses/`); const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []); setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) }))); } catch (error) {} };
+  const fetchOnlineOrders = async () => { try { const res = await axios.get(`${API_BASE}online-orders/`); setOnlineOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
   const fetchPreOrders = async () => { try { const res = await axios.get(`${API_BASE}preorders/`); setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
 
   useEffect(() => { fetchData(); }, []);
@@ -1450,6 +1655,17 @@ function AdminDashboard() {
     }
   };
 
+  const handleOnlineOrderAction = async (order, action) => {
+    if (action === 'cancel' && !window.confirm(`Cancel order ${order.code}? Its held items go back to their batches.`)) return;
+    try {
+      await axios.post(`${API_BASE}online-orders/${order.id}/${action}/`);
+      showToast(action === 'confirm' ? `Order ${order.code} is now a pre-order` : `Order ${order.code} cancelled & stock returned`);
+    } catch (error) {
+      alert(`Could not update order ${order.code}: ${error.response?.data?.error || error.message}`);
+    }
+    await fetchData(true);
+  };
+
   const handleFactoryReset = async () => {
     const confirmText = window.prompt('⚠️ WARNING: This will permanently delete ALL data including Batches, Garments, Pre-orders, Expenses, and Sales History.\n\nA backup file will be downloaded first.\n\nType "DELETE" to confirm:');
     if (confirmText === 'DELETE') {
@@ -1457,6 +1673,7 @@ function AdminDashboard() {
       if (!(await downloadBackup())) { alert('Factory reset cancelled because the backup could not be saved.'); return; }
       setLoading(true);
       try {
+        for (const o of onlineOrders) await axios.delete(`${API_BASE}online-orders/${o?.id}/`);
         for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`); for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`); for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`); for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
         setActiveTab('inventory'); showToast("🧨 All data has been completely wiped. Fresh start!"); await fetchData(true);
       } catch (error) { alert('Error wiping data. Check connection.'); }
@@ -2152,7 +2369,7 @@ function AdminDashboard() {
 
   const batchMap = {};
   const batchEntry = (bName) => {
-    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, value_left: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0, expenses: 0 }; }
+    if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, value_left: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0, expenses: 0, held_pieces: 0, held_value: 0 }; }
     return batchMap[bName];
   };
   (garments || []).forEach(g => {
@@ -2206,12 +2423,22 @@ function AdminDashboard() {
       }
     });
   });
+  // Pieces held by unconfirmed online orders left "remaining" but aren't sold yet; count them so batch totals stay whole.
+  (onlineOrders || []).filter(o => o?.status === 'Awaiting').forEach(o => {
+    (o.items || []).forEach(it => (it.allocations || []).forEach(a => {
+      const garment = (garments || []).find(g => g?.id === a.garment_id);
+      const entry = batchEntry(String(garment?.batch_name || a.batch_name || 'Uncategorized'));
+      const pieces = parseInt(a.quantity) || 0;
+      entry.held_pieces += pieces;
+      entry.held_value += (parseFloat(garment?.selling_price) || 0) * pieces;
+    }));
+  });
   (expenses || []).forEach(e => {
     if (e?.batch_name && batchMap[e.batch_name]) batchMap[e.batch_name].expenses += (parseFloat(e.amount) || 0);
   });
   Object.values(batchMap).forEach(b => {
     // Potential profit: every piece in the batch (sold + remaining) at its selling price, minus the batch's expenses.
-    b.potential_profit = b.profit_earned + b.value_left - b.expenses;
+    b.potential_profit = b.profit_earned + b.value_left + b.held_value - b.expenses;
   });
   Object.values(batchMap).forEach(b => {
     b.status = batchStatusOf(b.name);
@@ -2499,6 +2726,12 @@ function AdminDashboard() {
             <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📈</span> Net Profit Analytics
             </button>
+            <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg">🛒</span> Online Orders
+              {onlineOrders.filter(o => o?.status === 'Awaiting').length > 0 && (
+                <span className={`ml-auto text-[11px] font-black rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center ${activeTab === 'onlineorders' ? 'bg-white text-pink-600' : 'bg-pink-600 text-white'}`}>{onlineOrders.filter(o => o?.status === 'Awaiting').length}</span>
+              )}
+            </button>
             <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📝</span> Custom Pre-Orders
             </button>
@@ -2729,7 +2962,8 @@ function AdminDashboard() {
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Total Sold</span>
                               <span className="text-3xl font-black text-emerald-600">{batch?.pieces_sold || 0} <span className="text-sm font-bold text-stone-400">pcs</span></span>
-                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} / ₱{(parseFloat(batch?.profit_earned || 0) + parseFloat(batch?.value_left || 0)).toFixed(2)} earned</span>
+                              <span className="block text-xs font-bold text-stone-500 mt-0.5">₱{parseFloat(batch?.profit_earned || 0).toFixed(2)} / ₱{(parseFloat(batch?.profit_earned || 0) + parseFloat(batch?.value_left || 0) + parseFloat(batch?.held_value || 0)).toFixed(2)} earned</span>
+                              {batch?.held_pieces > 0 && <span className="block text-xs font-bold text-pink-700 mt-0.5">{batch.held_pieces} pcs held for online orders</span>}
                             </div>
                             <div>
                               <span className="text-xs font-bold text-stone-400 uppercase block mb-0.5">Potential Profit</span>
@@ -3098,6 +3332,54 @@ function AdminDashboard() {
         )}
 
         {/* TAB 4: PRE-ORDERS VIEW */}
+        {activeTab === 'onlineorders' && (
+          <div className="animate-fade-in max-w-6xl mx-auto">
+            <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Online Orders</h2>
+            <p className="text-stone-500 text-sm mt-1 mb-6">Orders customers placed on the website. Their items are held for 24 hours. Confirm one to turn it into a pre-order.</p>
+            {onlineOrders.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center text-stone-400 font-bold">No online orders yet.</div>
+            ) : (
+              <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-x-auto">
+                <table className="w-full text-left min-w-[760px]">
+                  <thead className="bg-[#f2ece4] text-xs font-black uppercase tracking-wider text-stone-600">
+                    <tr><th className="p-4">Order</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Total</th><th className="p-4 text-center">Status</th><th className="p-4 text-center">Actions</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-200/80">
+                    {onlineOrders.map(o => {
+                      const hoursLeft = Math.max(0, Math.ceil((new Date(o.expires_at).getTime() - Date.now()) / 3600000));
+                      const statusClass = o.status === 'Awaiting' ? 'bg-amber-50 text-amber-700 border-amber-200' : o.status === 'Confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-100 text-stone-500 border-stone-200';
+                      return (
+                        <tr key={`oo-${o.id}`} className="align-top hover:bg-[#f9f6f0] transition">
+                          <td className="p-4"><span className="block font-black text-stone-900">{o.code}</span><span className="block text-xs font-bold text-stone-500">{new Date(o.created_at).toLocaleString()}</span></td>
+                          <td className="p-4"><span className="block font-black text-stone-900">{o.customer_name}</span><span className="block text-xs font-bold text-stone-500">{o.contact_number}</span></td>
+                          <td className="p-4">{(o.items || []).map((it, i) => (
+                            <span key={`ooi-${o.id}-${i}`} className="block text-xs font-bold text-stone-800 leading-snug">• {it.item_name}{normColorKey(it.color) ? ` (${it.color})` : ''}, {displaySize(it.size)} ×{it.quantity}</span>
+                          ))}</td>
+                          <td className="p-4 text-right font-black text-pink-600">₱{parseFloat(o.total || 0).toFixed(2)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${statusClass}`}>{o.status}</span>
+                            {o.status === 'Awaiting' && <span className="block text-[11px] font-bold text-stone-500 mt-1">{hoursLeft}h left</span>}
+                          </td>
+                          <td className="p-4 text-center">
+                            {o.status === 'Awaiting' ? (
+                              <div className="flex justify-center gap-1.5">
+                                <button type="button" onClick={() => handleOnlineOrderAction(o, 'confirm')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Confirm</button>
+                                <button type="button" onClick={() => handleOnlineOrderAction(o, 'cancel')} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
+                              </div>
+                            ) : o.status === 'Confirmed' ? (
+                              <span className="text-[10px] text-stone-400 font-bold uppercase">Pre-Order Tab</span>
+                            ) : <span className="text-stone-300">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'preorders' && (
           <div className="animate-fade-in max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">

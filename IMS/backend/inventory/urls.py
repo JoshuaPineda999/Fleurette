@@ -9,8 +9,10 @@ router.register(r'garments', GarmentViewSet, basename='garment')
 router.register(r'catalog', views.CatalogViewSet, basename='catalog')
 router.register(r'expenses', ExpenseViewSet, basename='expense') # NEW ROUTE
 router.register(r'preorders', PreOrderViewSet, basename='preorder')
+router.register(r'online-orders', views.OnlineOrderViewSet, basename='online-order')
 
 urlpatterns = [
+    path('online-orders/place/', views.place_online_order, name='place_online_order'),
     path('', include(router.urls)),
     path('health/', views.health, name='health'),
     path('backup/', views.backup, name='backup'),

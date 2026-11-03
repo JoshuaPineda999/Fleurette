@@ -1,7 +1,7 @@
 import json
 from django.conf import settings
 from rest_framework import serializers
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -121,6 +121,37 @@ class CatalogGarmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Garment
         fields = ['id', 'name', 'category', 'color', 'selling_price', 'image', 'photos', 'batch_status', 'sizes', 'total_pieces']
+
+
+def online_order_summary(order):
+    """The order written out for a Messenger chat."""
+    lines = []
+    for it in order.items:
+        color = str(it.get('color') or '').strip()
+        size = 'FS' if it.get('size') == 'XL' else it.get('size')
+        color_text = f" ({color})" if color and color.upper() != 'N/A' else ''
+        lines.append(f"- {it.get('item_name')}{color_text}, size {size} x{it.get('quantity')}: ₱{it.get('amount')}")
+    return '\n'.join([
+        f"Hi Fleurette! I'd like to order. (Order {order.code})",
+        f"Name: {order.customer_name}",
+        f"Contact: {order.contact_number}",
+        '',
+        *lines,
+        '',
+        f"Total: ₱{order.total}",
+    ])
+
+
+class OnlineOrderSerializer(serializers.ModelSerializer):
+    summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OnlineOrder
+        fields = ['id', 'code', 'customer_name', 'contact_number', 'items', 'total', 'status',
+                  'created_at', 'expires_at', 'preorder_id', 'summary']
+
+    def get_summary(self, order):
+        return online_order_summary(order)
 
 
 class PreOrderSerializer(serializers.ModelSerializer):

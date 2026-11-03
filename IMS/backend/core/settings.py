@@ -159,6 +159,7 @@ REST_FRAMEWORK = {
         'anon': '120/min',
         'user': '3000/hour',
         'login': '10/min',
+        'online_order': '10/hour',
     },
 }
 

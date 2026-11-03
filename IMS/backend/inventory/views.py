@@ -1,14 +1,17 @@
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 import logging
-from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+import re
+import secrets
 import uuid
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Q, Sum
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers
@@ -19,7 +22,7 @@ import io
 from django.core.management import call_command
 from django.http import HttpResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer
+from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer, OnlineOrderSerializer
 
 
 def _norm(value):
@@ -73,13 +76,13 @@ def _matching_product(name, color, category):
     return matches
 
 
-def _take_items(items):
+def _take_items(items, visible_only=False):
     """Take stock for sale items inside the caller's transaction.
 
     Each item is {size, quantity, garment_id} (that exact batch record) or
     {size, quantity, name, color, category} (oldest batch first across the product).
     Returns (taken, shortages, error): taken is [(garment, size, pieces)]. When
-    shortages or error is set the caller must roll back.
+    shortages or error is set the caller must roll back. visible_only leaves out hidden batches.
     """
     taken, shortages = [], []
     for it in items:
@@ -96,6 +99,8 @@ def _take_items(items):
             label = candidates[0].name if candidates else f"item {it['garment_id']}"
         else:
             candidates = _matching_product(it.get('name'), it.get('color'), it.get('category'))
+            if visible_only:
+                candidates = [g for g in candidates if not g.batch_hidden]
             label = it.get('name') or 'item'
         stocks = {
             st.garment_id: st
@@ -119,12 +124,170 @@ def _take_items(items):
     return taken, shortages, None
 
 
+ONLINE_ORDER_HOLD_HOURS = 24
+ONLINE_ORDER_MAX_LINES = 20
+ONLINE_ORDER_MAX_PIECES_PER_LINE = 20
+
+
+def _release_online_order_stock(order):
+    """Give an online order's held pieces back to the batches they came from."""
+    for it in order.items:
+        for a in it.get('allocations') or []:
+            if Garment.objects.filter(id=a.get('garment_id')).exists():
+                stock, _ = SizeStock.objects.select_for_update().get_or_create(garment_id=a['garment_id'], size=it.get('size'))
+                stock.quantity += int(a.get('quantity') or 0)
+                stock.save()
+
+
+def release_expired_online_orders():
+    """Expire unconfirmed orders past their hold. Render's free tier has no scheduled jobs, so
+    this runs whenever stock is about to be read."""
+    due = OnlineOrder.objects.filter(status='Awaiting', expires_at__lte=timezone.now())
+    if not due.exists():
+        return
+    with transaction.atomic():
+        for order in due.select_for_update():
+            _release_online_order_stock(order)
+            order.status = 'Expired'
+            order.save(update_fields=['status'])
+
+
+class OnlineOrderThrottle(AnonRateThrottle):
+    scope = 'online_order'
+
+
+def _new_order_code():
+    alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'  # no look-alikes (0/O, 1/I/L)
+    while True:
+        code = 'FL-' + ''.join(secrets.choice(alphabet) for _ in range(6))
+        if not OnlineOrder.objects.filter(code=code).exists():
+            return code
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([OnlineOrderThrottle])
+def place_online_order(request):
+    """A customer places an order: all of it is held, or nothing is. Prices come from the server.
+
+    customer_name, contact_number, items: [{name, color, category, size, quantity}]
+    """
+    name = str(request.data.get('customer_name') or '').strip()
+    contact = str(request.data.get('contact_number') or '').strip()
+    items = request.data.get('items')
+    if not name or len(name) > 255:
+        return Response({'error': 'Please enter your name.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not re.fullmatch(r'[0-9+()\-\s]{7,20}', contact):
+        return Response({'error': 'Please enter a valid contact number.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(items, list) or not items or len(items) > ONLINE_ORDER_MAX_LINES:
+        return Response({'error': f'An order needs 1 to {ONLINE_ORDER_MAX_LINES} items.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    release_expired_online_orders()
+    with transaction.atomic():
+        lines, shortages = [], []
+        for it in items:
+            if not isinstance(it, dict):
+                transaction.set_rollback(True)
+                return Response({'error': 'Invalid item.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                quantity = int(it.get('quantity', 0))
+            except (TypeError, ValueError):
+                quantity = 0
+            if quantity < 1 or quantity > ONLINE_ORDER_MAX_PIECES_PER_LINE:
+                transaction.set_rollback(True)
+                return Response({'error': f'Each item can have 1 to {ONLINE_ORDER_MAX_PIECES_PER_LINE} pieces.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Only product details are read from the customer (never a garment id or a price).
+            clean = {'name': it.get('name'), 'color': it.get('color'), 'category': it.get('category'), 'size': it.get('size'), 'quantity': quantity}
+            taken, short, error = _take_items([clean], visible_only=True)
+            if error:
+                transaction.set_rollback(True)
+                return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+            shortages += short
+            if taken:
+                first = taken[0][0]
+                lines.append({
+                    'item_name': first.name, 'color': first.color or '', 'category': first.category or '',
+                    'size': clean['size'], 'quantity': quantity,
+                    'amount': str(sum(g.selling_price * pieces for g, _, pieces in taken)),
+                    'allocations': [{'garment_id': g.id, 'batch_name': g.batch_name, 'quantity': pieces} for g, _, pieces in taken],
+                })
+        if shortages:
+            transaction.set_rollback(True)
+            return Response({'error': 'Not enough stock', 'shortages': shortages}, status=status.HTTP_400_BAD_REQUEST)
+
+        order = OnlineOrder.objects.create(
+            code=_new_order_code(), customer_name=name, contact_number=contact, items=lines,
+            total=sum(Decimal(line['amount']) for line in lines),
+            expires_at=timezone.now() + timedelta(hours=ONLINE_ORDER_HOLD_HOURS),
+        )
+    return Response(OnlineOrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class OnlineOrderViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+    """Admin view of website orders: list, confirm into a pre-order, or cancel."""
+    queryset = OnlineOrder.objects.all().order_by('-id')
+    serializer_class = OnlineOrderSerializer
+
+    def list(self, request, *args, **kwargs):
+        release_expired_online_orders()
+        return super().list(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            order = OnlineOrder.objects.select_for_update().get(pk=instance.pk)
+            if order.status == 'Awaiting':
+                _release_online_order_stock(order)
+            order.delete()
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        """Turn an awaiting order into a pre-order, which takes over the held stock."""
+        release_expired_online_orders()
+        with transaction.atomic():
+            order = OnlineOrder.objects.select_for_update().get(pk=self.get_object().pk)
+            if order.status != 'Awaiting':
+                return Response({'error': f'This order is already {order.status.lower()}.'}, status=status.HTTP_400_BAD_REQUEST)
+            items = [{
+                'item_name': it['item_name'], 'size': it['size'], 'color': it.get('color') or 'N/A',
+                'quantity': it['quantity'], 'reserved': it['quantity'], 'allocations': it.get('allocations') or [],
+            } for it in order.items]
+            first = items[0]
+            preorder = PreOrder.objects.create(
+                customer_name=order.customer_name, contact_number=order.contact_number,
+                item_name=f"{first['item_name']} +{len(items) - 1} more" if len(items) > 1 else first['item_name'],
+                size=first['size'], color=first['color'], items=items,
+                price=order.total, down_payment=0, balance=order.total, is_paid=False,
+            )
+            order.status = 'Confirmed'
+            order.preorder_id = preorder.id
+            order.save(update_fields=['status', 'preorder_id'])
+        return Response(OnlineOrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel an awaiting order and give its stock back to its batches."""
+        with transaction.atomic():
+            order = OnlineOrder.objects.select_for_update().get(pk=self.get_object().pk)
+            if order.status != 'Awaiting':
+                return Response({'error': f'This order is already {order.status.lower()}.'}, status=status.HTTP_400_BAD_REQUEST)
+            _release_online_order_stock(order)
+            order.status = 'Cancelled'
+            order.save(update_fields=['status'])
+        return Response(OnlineOrderSerializer(order).data)
+
+
 class CatalogViewSet(viewsets.ReadOnlyModelViewSet):
     """Public, read-only product list for the customer page (no costs or profit)."""
     queryset = Garment.objects.filter(batch_hidden=False).order_by('id').prefetch_related('sizes', 'photos')
     serializer_class = CatalogGarmentSerializer
+    authentication_classes = []  # public: an old admin token in the browser must not cause a 401
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
+
+    def list(self, request, *args, **kwargs):
+        release_expired_online_orders()
+        return super().list(request, *args, **kwargs)
 
 
 class LoginView(TokenObtainPairView):
@@ -143,6 +306,10 @@ class GarmentViewSet(viewsets.ModelViewSet):
     serializer_class = GarmentSerializer
 
     MAX_EXTRA_PHOTOS = 6
+
+    def list(self, request, *args, **kwargs):
+        release_expired_online_orders()
+        return super().list(request, *args, **kwargs)
 
     @action(detail=True, methods=['post'], url_path='photos')
     def add_photos(self, request, pk=None):

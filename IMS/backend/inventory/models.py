@@ -122,3 +122,27 @@ class PreOrder(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} - {self.item_name}"
+
+
+class OnlineOrder(models.Model):
+    """An order a customer placed on the website. Its stock is held until an admin confirms it
+    (it becomes a PreOrder), cancels it, or the hold expires."""
+    STATUS_CHOICES = [
+        ('Awaiting', 'Awaiting'),
+        ('Confirmed', 'Confirmed'),
+        ('Cancelled', 'Cancelled'),
+        ('Expired', 'Expired'),
+    ]
+    code = models.CharField(max_length=20, unique=True)
+    customer_name = models.CharField(max_length=255)
+    contact_number = models.CharField(max_length=50)
+    # [{item_name, color, category, size, quantity, amount, allocations: [{garment_id, batch_name, quantity}]}]
+    items = models.JSONField(default=list)
+    total = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Awaiting', db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    preorder_id = models.IntegerField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.customer_name}"
