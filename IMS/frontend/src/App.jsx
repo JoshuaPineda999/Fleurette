@@ -166,6 +166,60 @@ function PhotoViewer({ photos, startIndex = 0, onClose }) {
   );
 }
 
+// Open eye (visible to customers) or crossed-out eye (hidden from customers).
+function VisibilityIcon({ hidden, className = 'w-4 h-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      {hidden && <path d="M4 20 20 4" strokeWidth="2.5" />}
+    </svg>
+  );
+}
+
+// Filters button with a dropdown panel of option groups; closes when clicking outside it.
+// groups: [{ label, value, onChange, options: [[value, text], ...] }]; 'All' means a group is not filtering.
+function FiltersButton({ groups, onClear, buttonClassName = 'px-4 py-2 rounded-xl text-sm' }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const activeCount = groups.filter(g => g.value !== 'All').length;
+  return (
+    <div className="relative shrink-0" ref={rootRef}>
+      <button type="button" onClick={() => setOpen(v => !v)} className={`flex items-center gap-2 border font-black shadow-sm transition ${buttonClassName} ${activeCount > 0 ? 'bg-pink-600 border-pink-600 text-white' : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'}`}>
+        Filters
+        {activeCount > 0 && <span className="bg-white text-pink-600 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center">{activeCount}</span>}
+        <span className="text-[10px]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-72 max-w-[85vw] bg-white rounded-2xl shadow-xl border border-stone-200 p-4 z-30 space-y-4 text-left">
+          {groups.map(g => (
+            <div key={`filter-group-${g.label}`}>
+              <span className="block text-[11px] font-extrabold text-stone-400 uppercase tracking-widest mb-2">{g.label}</span>
+              <div className="flex flex-wrap gap-1.5">
+                {g.options.map(([value, text]) => (
+                  <button key={`${g.label}-${value}`} type="button" onClick={() => g.onChange(value)} className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition ${g.value === value ? 'bg-pink-600 border-pink-600 text-white' : 'bg-[#f9f6f0] border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-between items-center pt-3 border-t border-stone-100">
+            <button type="button" onClick={onClear} className="text-xs font-extrabold text-stone-500 hover:text-pink-600 transition">Clear all</button>
+            <button type="button" onClick={() => setOpen(false)} className="bg-stone-900 hover:bg-black text-white text-xs font-black px-4 py-1.5 rounded-lg transition">Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 4. Strict JSON Array Parser
 const parseSafeArray = (data) => {
   if (Array.isArray(data)) return data;
@@ -183,6 +237,8 @@ const parseSafeArray = (data) => {
 // 4b. DISPLAY LABEL FOR SIZES. The stored size stays 'XL' (so existing stock and sales still match);
 // it is only shown as 'FS' in the UI.
 const displaySize = (size) => (String(size ?? '') === 'XL' ? 'FS' : String(size ?? ''));
+
+const SIZE_FILTER_OPTIONS = ['All', 'S', 'M', 'L', 'XL'].map(size => [size, size === 'All' ? 'All' : displaySize(size)]);
 
 // 5. Get accurate Local Date String (YYYY-MM-DD)
 const getLocalDate = () => {
@@ -360,6 +416,8 @@ function CustomerView() {
   const [garments, setGarments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
+  const [activeSize, setActiveSize] = useState('All');
+  const [activeAvailability, setActiveAvailability] = useState('All');
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
 
@@ -389,7 +447,11 @@ function CustomerView() {
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
-      return matchesSearch && matchesCategory;
+      // Size and availability look at the same stock: e.g. size M must itself be in a pre-order batch for "Pre-Order".
+      const matchesStock = (activeSize === 'All' && activeAvailability === 'All') || (item.underlying_garments || []).some(g =>
+        (activeAvailability === 'All' || (activeAvailability === 'Pre-order') === (g?.batch_status === 'Pre-order')) &&
+        parseSafeArray(g?.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0));
+      return matchesSearch && matchesCategory && matchesStock;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
@@ -411,28 +473,34 @@ function CustomerView() {
         <div className="text-center max-w-2xl mx-auto mb-8">
           <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
           <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
-          <div className="mt-6 relative max-w-md mx-auto">
-            <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-stone-400">🔍</span>
-            <input 
-              type="text" placeholder="Search styles..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-white border border-stone-300 rounded-2xl text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+          <div className="mt-6 flex items-center gap-2 max-w-lg mx-auto">
+            <div className="relative flex-1 min-w-0">
+              <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-stone-400">🔍</span>
+              <input
+                type="text" placeholder="Search styles..."
+                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-white border border-stone-300 rounded-2xl text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+              />
+            </div>
+            <FiltersButton
+              buttonClassName="px-4 py-3 rounded-2xl text-sm"
+              groups={[
+                { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
+                { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
+                { label: 'Availability', value: activeAvailability, onChange: setActiveAvailability, options: [['All', 'All'], ['On-hand', 'In Stock'], ['Pre-order', 'Pre-Order']] },
+              ]}
+              onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveAvailability('All'); }}
             />
           </div>
         </div>
 
-        {!loading && categories.length > 1 && (
-          <div className="flex flex-wrap justify-center gap-2 mb-10">
-            {categories.map(cat => (
-              <button key={String(cat)} onClick={() => setActiveCategory(cat)} className={`px-5 py-2 rounded-full text-xs font-black tracking-wider uppercase transition shadow-sm border ${ activeCategory === cat ? 'bg-pink-600 text-white border-pink-600 scale-105' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100' }`}>
-                {String(cat)}
-              </button>
-            ))}
-          </div>
-        )}
-
         {loading ? (
           <div className="text-center text-stone-500 font-bold py-20">Loading Fleurette Collection...</div>
+        ) : filteredGarments.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-stone-500 font-bold mb-3">No styles match your search and filters.</p>
+            <button type="button" onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveSize('All'); setActiveAvailability('All'); }} className="text-sm font-black text-pink-600 hover:text-pink-700">Clear search and filters</button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {groupGarmentDesigns(filteredGarments).map(design => (
@@ -951,15 +1019,6 @@ function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeSize, setActiveSize] = useState('All');
-  const [showFilters, setShowFilters] = useState(false);
-  const filtersRef = useRef(null);
-  useEffect(() => {
-    if (!showFilters) return;
-    // Close the filters panel when clicking anywhere outside it.
-    const close = (e) => { if (filtersRef.current && !filtersRef.current.contains(e.target)) setShowFilters(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [showFilters]);
   const [selectedDate, setSelectedDate] = useState(getLocalDate());
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -1030,6 +1089,16 @@ function AdminDashboard() {
   // A batch is Pre-order while any of its garments is still marked Pre-order.
   const batchStatusOf = (batchName) => (garments || []).some(g =>
     String(g?.batch_name || 'Uncategorized') === String(batchName) && g?.batch_status === 'Pre-order') ? 'Pre-order' : 'On-hand';
+
+  const handleSetBatchHidden = async (batchName, hidden) => {
+    try {
+      await axios.post(`${API_BASE}garments/set-batch-visibility/`, { batch_name: batchName, hidden });
+      showToast(hidden ? `Batch "${batchName}" is now hidden from customers` : `Batch "${batchName}" is now visible to customers`);
+      await fetchData(true);
+    } catch (error) {
+      alert(`Could not change the batch visibility: ${JSON.stringify(error.response?.data || error.message)}`);
+    }
+  };
 
   const handleSetBatchStatus = async (batchName, batchStatus) => {
     try {
@@ -2144,7 +2213,10 @@ function AdminDashboard() {
     // Potential profit: every piece in the batch (sold + remaining) at its selling price, minus the batch's expenses.
     b.potential_profit = b.profit_earned + b.value_left - b.expenses;
   });
-  Object.values(batchMap).forEach(b => { b.status = batchStatusOf(b.name); });
+  Object.values(batchMap).forEach(b => {
+    b.status = batchStatusOf(b.name);
+    b.hidden = (garments || []).some(g => String(g?.batch_name || 'Uncategorized') === b.name && g?.batch_hidden);
+  });
   const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
   const preOrderStyleNames = uniqueByName((mergedGarmentsList || []).map(g => g?.name));
@@ -2471,41 +2543,13 @@ function AdminDashboard() {
                   <input type="text" placeholder="Search styles..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-8 py-2 bg-white border border-stone-300 rounded-xl text-sm font-bold text-stone-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500" />
                   {searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-stone-400 hover:text-stone-600 font-bold text-sm" title="Clear search">✖</button>)}
                 </div>
-                <div className="relative shrink-0" ref={filtersRef}>
-                  {(() => {
-                    const activeCount = (activeCategory !== 'All' ? 1 : 0) + (activeSize !== 'All' ? 1 : 0);
-                    return (
-                      <button type="button" onClick={() => setShowFilters(v => !v)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-black shadow-sm transition ${activeCount > 0 ? 'bg-pink-600 border-pink-600 text-white' : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'}`}>
-                        Filters
-                        {activeCount > 0 && <span className="bg-white text-pink-600 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center">{activeCount}</span>}
-                        <span className="text-[10px]">{showFilters ? '▲' : '▼'}</span>
-                      </button>
-                    );
-                  })()}
-                  {showFilters && (
-                    <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-stone-200 p-4 z-30 space-y-4">
-                      {[
-                        { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
-                        { label: 'Size', value: activeSize, onChange: setActiveSize, options: ['All', 'S', 'M', 'L', 'XL'].map(size => [size, size === 'All' ? 'All' : displaySize(size)]) },
-                      ].map(f => (
-                        <div key={`filter-group-${f.label}`}>
-                          <span className="block text-[11px] font-extrabold text-stone-400 uppercase tracking-widest mb-2">{f.label}</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {f.options.map(([value, text]) => (
-                              <button key={`${f.label}-${value}`} type="button" onClick={() => f.onChange(value)} className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition ${f.value === value ? 'bg-pink-600 border-pink-600 text-white' : 'bg-[#f9f6f0] border-stone-200 text-stone-600 hover:bg-stone-100'}`}>
-                                {text}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      <div className="flex justify-between items-center pt-3 border-t border-stone-100">
-                        <button type="button" onClick={() => { setActiveCategory('All'); setActiveSize('All'); }} className="text-xs font-extrabold text-stone-500 hover:text-pink-600 transition">Clear all</button>
-                        <button type="button" onClick={() => setShowFilters(false)} className="bg-stone-900 hover:bg-black text-white text-xs font-black px-4 py-1.5 rounded-lg transition">Done</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <FiltersButton
+                  groups={[
+                    { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
+                    { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
+                  ]}
+                  onClear={() => { setActiveCategory('All'); setActiveSize('All'); }}
+                />
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
             </div>
@@ -2665,13 +2709,14 @@ function AdminDashboard() {
                     {batchTrackerData.map((batch, index) => (
                       <div key={`btd-${index}`} className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-xl hover:border-pink-300 transition group">
                         <div onClick={() => setSelectedBatch(batch.name)} className="cursor-pointer">
-                          <div className="flex justify-between items-start mb-4">
+                          <div className="flex flex-wrap justify-between items-start gap-1.5 mb-4">
                             <span className="bg-stone-100 text-stone-700 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-200 group-hover:bg-pink-50 transition">
                               {batch?.styles_count} Styles Inside
                             </span>
                             <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${batch?.status === 'Pre-order' ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                               {batch?.status === 'Pre-order' ? 'Pre-order' : '📦 On-hand'}
                             </span>
+                            {batch?.hidden && <span className="inline-flex items-center gap-1 bg-stone-800 text-white text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-stone-800"><VisibilityIcon hidden className="w-3.5 h-3.5" /> Hidden</span>}
                             {batch?.pieces_left === 0 && <span className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded border border-red-200">Sold Out</span>}
                           </div>
                           <h3 className="text-xl font-black text-stone-900 leading-tight mb-6 group-hover:text-pink-600 transition">{String(batch?.name || 'Unnamed')}</h3>
@@ -2708,9 +2753,18 @@ function AdminDashboard() {
                             </button>
                           ))}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSetBatchHidden(batch.name, !batch.hidden)}
+                          className={`w-full py-1.5 mb-2 rounded-lg text-[11px] font-black uppercase tracking-wider border transition flex items-center justify-center gap-1.5 ${batch.hidden ? 'bg-stone-800 border-stone-800 text-white hover:bg-black' : 'bg-white border-stone-200 text-stone-500 hover:bg-stone-100'}`}
+                          title={batch.hidden ? 'Customers cannot see this batch. Click to show it.' : 'Customers can see this batch. Click to hide it.'}
+                        >
+                          <VisibilityIcon hidden={batch.hidden} />
+                          {batch.hidden ? 'Hidden from customers · Show' : 'Visible to customers · Hide'}
+                        </button>
                         <div className="flex gap-2">
                           <button onClick={() => setSelectedBatch(batch.name)} className="flex-1 bg-[#f2ece4] hover:bg-[#eae4dc] text-stone-800 font-extrabold py-2 rounded-xl text-xs transition text-center">
-                            👁️ View Items
+                            View Items
                           </button>
                           <button onClick={() => openRenameBatchModal(batch.name)} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 px-3 rounded-xl text-xs transition" title="Rename batch">
                             ✏️

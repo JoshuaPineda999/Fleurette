@@ -41,7 +41,7 @@ class GarmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'batch_status', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 'photos', 
+            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 'photos', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
@@ -70,6 +70,9 @@ class GarmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', {})
+        # A style added to a hidden batch stays hidden with the rest of the batch.
+        if Garment.objects.filter(batch_name=validated_data.get('batch_name'), batch_hidden=True).exists():
+            validated_data['batch_hidden'] = True
         if not validated_data.get('image'):
             # No new photo for this batch: reuse the photo of the same style and colour already in stock.
             existing = self._existing_photo_garment(
@@ -86,6 +89,12 @@ class GarmentSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', None)
+        # A style moved into an existing batch takes on that batch's visibility.
+        new_batch = validated_data.get('batch_name')
+        if new_batch is not None and new_batch != instance.batch_name:
+            siblings = Garment.objects.filter(batch_name=new_batch)
+            if siblings.exists():
+                validated_data['batch_hidden'] = siblings.filter(batch_hidden=True).exists()
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()

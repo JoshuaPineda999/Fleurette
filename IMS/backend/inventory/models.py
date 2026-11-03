@@ -15,6 +15,8 @@ class Garment(models.Model):
         ('Pre-order', 'Pre-order'),
     ]
     batch_status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='On-hand')
+    # Hidden batches are left out of the public customer catalogue.
+    batch_hidden = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # ... rest of the code remains exactly the same

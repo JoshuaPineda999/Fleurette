@@ -7,7 +7,7 @@ import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -121,7 +121,7 @@ def _take_items(items):
 
 class CatalogViewSet(viewsets.ReadOnlyModelViewSet):
     """Public, read-only product list for the customer page (no costs or profit)."""
-    queryset = Garment.objects.all().order_by('id').prefetch_related('sizes', 'photos')
+    queryset = Garment.objects.filter(batch_hidden=False).order_by('id').prefetch_related('sizes', 'photos')
     serializer_class = CatalogGarmentSerializer
     permission_classes = [AllowAny]
     throttle_classes = [AnonRateThrottle]
@@ -222,6 +222,19 @@ class GarmentViewSet(viewsets.ModelViewSet):
 
     def _matching_garments(self, name, color, category):
         return _matching_product(name, color, category)
+
+    @action(detail=False, methods=['post'], url_path='set-batch-visibility')
+    def set_batch_visibility(self, request):
+        """Hide every garment in `batch_name` from the customer catalogue, or show them again."""
+        batch_name = request.data.get('batch_name')
+        hidden = request.data.get('hidden')
+        if not batch_name or not isinstance(hidden, bool):
+            return Response({'error': 'batch_name and hidden (true or false) are required'}, status=status.HTTP_400_BAD_REQUEST)
+        garments = Garment.objects.filter(batch_name=batch_name)
+        if batch_name == 'Uncategorized':
+            garments = Garment.objects.filter(Q(batch_name='Uncategorized') | Q(batch_name__isnull=True) | Q(batch_name=''))
+        updated = garments.update(batch_hidden=hidden)
+        return Response({'updated': updated, 'batch_name': batch_name, 'hidden': hidden})
 
     @action(detail=False, methods=['post'], url_path='set-batch-status')
     def set_batch_status(self, request):
