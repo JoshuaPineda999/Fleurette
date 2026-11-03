@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from django.conf import settings
 from rest_framework import serializers
 from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder
@@ -131,6 +132,10 @@ def online_order_summary(order):
         size = 'FS' if it.get('size') == 'XL' else it.get('size')
         color_text = f" ({color})" if color and color.upper() != 'N/A' else ''
         lines.append(f"- {it.get('item_name')}{color_text}, size {size} x{it.get('quantity')}: ₱{it.get('amount')}")
+    totals = [f"Total: ₱{order.total}"]
+    if order.discount > 0:
+        code = f" ({order.promo_code})" if order.promo_code else ''
+        totals = [f"Subtotal: ₱{order.total + order.discount}", f"Discount{code}: -₱{order.discount}", *totals]
     return '\n'.join([
         f"Hi Fleurette! I'd like to order. (Order {order.code})",
         f"Name: {order.customer_name}",
@@ -138,7 +143,7 @@ def online_order_summary(order):
         '',
         *lines,
         '',
-        f"Total: ₱{order.total}",
+        *totals,
     ])
 
 
@@ -147,7 +152,7 @@ class OnlineOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OnlineOrder
-        fields = ['id', 'code', 'customer_name', 'contact_number', 'items', 'total', 'status',
+        fields = ['id', 'code', 'customer_name', 'contact_number', 'items', 'total', 'discount', 'promo_code', 'status',
                   'created_at', 'expires_at', 'preorder_id', 'summary']
 
     def get_summary(self, order):
@@ -155,6 +160,8 @@ class OnlineOrderSerializer(serializers.ModelSerializer):
 
 
 class PreOrderSerializer(serializers.ModelSerializer):
+    discount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0'), required=False)
+
     class Meta:
         model = PreOrder
-        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number', 'items']
+        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'discount', 'promo_code', 'down_payment', 'is_paid', 'balance', 'order_date', 'status', 'recipient_name', 'contact_number', 'items']

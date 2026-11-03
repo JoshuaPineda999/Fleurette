@@ -35,7 +35,8 @@ def _sale_discount(request):
         discount = Decimal(str(request.data.get('discount') or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError):
         return None, ''
-    if discount < 0:
+    # "NaN" gets through quantize, and comparing it raises an error.
+    if not discount.is_finite() or discount < 0:
         return None, ''
     return discount, str(request.data.get('promo_code') or '').strip()[:100]
 
@@ -257,11 +258,32 @@ class OnlineOrderViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin, viewse
                 customer_name=order.customer_name, contact_number=order.contact_number,
                 item_name=f"{first['item_name']} +{len(items) - 1} more" if len(items) > 1 else first['item_name'],
                 size=first['size'], color=first['color'], items=items,
-                price=order.total, down_payment=0, balance=order.total, is_paid=False,
+                price=order.total, discount=order.discount, promo_code=order.promo_code,
+                down_payment=0, balance=order.total, is_paid=order.total <= 0,
             )
             order.status = 'Confirmed'
             order.preorder_id = preorder.id
             order.save(update_fields=['status', 'preorder_id'])
+        return Response(OnlineOrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], url_path='discount')
+    def set_discount(self, request, pk=None):
+        """Set (or, with 0, remove) the discount on an awaiting order."""
+        discount, promo_code = _sale_discount(request)
+        if discount is None:
+            return Response({'error': 'Enter a valid discount.'}, status=status.HTTP_400_BAD_REQUEST)
+        release_expired_online_orders()
+        with transaction.atomic():
+            order = OnlineOrder.objects.select_for_update().get(pk=self.get_object().pk)
+            if order.status != 'Awaiting':
+                return Response({'error': f'This order is already {order.status.lower()}.'}, status=status.HTTP_400_BAD_REQUEST)
+            subtotal = order.total + order.discount
+            if discount > subtotal:
+                return Response({'error': f'The discount is more than the order (₱{subtotal}).'}, status=status.HTTP_400_BAD_REQUEST)
+            order.discount = discount
+            order.promo_code = promo_code if discount > 0 else ''
+            order.total = subtotal - discount
+            order.save(update_fields=['discount', 'promo_code', 'total'])
         return Response(OnlineOrderSerializer(order).data)
 
     @action(detail=True, methods=['post'])

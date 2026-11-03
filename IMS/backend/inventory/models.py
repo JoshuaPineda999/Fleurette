@@ -106,6 +106,9 @@ class PreOrder(models.Model):
     # NEW FIELDS:
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     down_payment = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    # Promo code / voucher discount; price and balance are already after it.
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    promo_code = models.CharField(max_length=100, blank=True, default='')
     
     is_paid = models.BooleanField(default=False)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -139,6 +142,9 @@ class OnlineOrder(models.Model):
     # [{item_name, color, category, size, quantity, amount, allocations: [{garment_id, batch_name, quantity}]}]
     items = models.JSONField(default=list)
     total = models.DecimalField(max_digits=10, decimal_places=2)
+    # Discount an admin gave this order; total is already after it.
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    promo_code = models.CharField(max_length=100, blank=True, default='')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Awaiting', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(db_index=True)

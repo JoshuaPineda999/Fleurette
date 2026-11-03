@@ -325,6 +325,20 @@ const matchColor = (color) => (!color || color === 'N/A' ? '' : color);
 
 // 8. One line item within a (possibly multi-item) pre-order
 const emptyPreOrderItem = () => ({ item_name: '', size: '', color: '', quantity: 1 });
+const NO_PROMO = { promo_code: '', discount_type: 'amount', discount_value: '' };
+
+// Promo code, amount, and peso/percent switch for a pre-order or online order discount.
+const PromoFields = ({ value, onChange }) => (
+  <div className="flex gap-2">
+    <input type="text" placeholder="Code (optional)" value={value.promo_code} onChange={(e) => onChange({ promo_code: e.target.value.toUpperCase() })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold uppercase bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+    <input type="number" min="0" step="0.01" placeholder="0" value={value.discount_value} onChange={(e) => onChange({ discount_value: e.target.value })} className="w-20 border border-stone-300 rounded-lg px-2 py-2 text-sm font-black text-right bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+    <div className="flex bg-[#f2ece4] p-1 rounded-lg shrink-0">
+      {[['amount', '₱'], ['percent', '%']].map(([type, label]) => (
+        <button key={type} type="button" onClick={() => onChange({ discount_type: type })} className={`w-8 rounded-md text-sm font-black transition ${value.discount_type === type ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}>{label}</button>
+      ))}
+    </div>
+  </div>
+);
 
 // A legacy pre-order (created before multi-item support) only has flat item_name/size/color/quantity.
 // Newer ones carry an `items` array — this normalizes either shape to an array for display/logic.
@@ -1221,6 +1235,8 @@ function AdminDashboard() {
   const [salesHistory, setSalesHistory] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [onlineOrders, setOnlineOrders] = useState([]);
+  // The online order whose discount is being set, with the discount inputs.
+  const [discountOrder, setDiscountOrder] = useState(null);
   const [preOrders, setPreOrders] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -1285,12 +1301,12 @@ function AdminDashboard() {
   // State for multiple items in Pre-order
   const [newPreOrder, setNewPreOrder] = useState({
     customer_name: '', recipient_name: '', contact_number: '', address: '',
-    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO
   });
 
   const [editPreOrder, setEditPreOrder] = useState({
     id: null, customer_name: '', recipient_name: '', contact_number: '', address: '',
-    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: ''
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO
   });
 
   const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
@@ -1662,6 +1678,27 @@ function AdminDashboard() {
     }
   };
 
+  const openOrderDiscount = (order) => {
+    const saved = parseFloat(order.discount) || 0;
+    setDiscountOrder({ order, promo_code: order.promo_code || '', discount_type: 'amount', discount_value: saved > 0 ? saved.toFixed(2) : '' });
+  };
+  // Order total before and after the discount being entered.
+  const orderDiscountTotals = (entry) => cartTotals([{ unit_price: (parseFloat(entry.order.total) || 0) + (parseFloat(entry.order.discount) || 0), quantity: 1 }], entry);
+
+  const handleSaveOrderDiscount = async () => {
+    const { subtotal, discount } = orderDiscountTotals(discountOrder);
+    if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the order (₱${subtotal.toFixed(2)}).`); return; }
+    const { order, promo_code } = discountOrder;
+    try {
+      await axios.post(`${API_BASE}online-orders/${order.id}/discount/`, { discount: discount.toFixed(2), promo_code: String(promo_code || '').trim() });
+      showToast(discount > 0 ? `₱${discount.toFixed(2)} off order ${order.code}` : `Discount removed from order ${order.code}`);
+      setDiscountOrder(null);
+    } catch (error) {
+      alert(`Could not update order ${order.code}: ${error.response?.data?.error || error.message}`);
+    }
+    await fetchData(true);
+  };
+
   const handleOnlineOrderAction = async (order, action) => {
     if (action === 'cancel' && !window.confirm(`Cancel order ${order.code}? Its held items go back to their batches.`)) return;
     try {
@@ -1764,30 +1801,33 @@ function AdminDashboard() {
     return sum + unit * (parseInt(it.quantity) || 0);
   }, 0);
 
-  const recalcPreOrderPricing = (items, downPayment) => {
-    const total = suggestedPreOrderPrice(items);
-    const bal = Math.max(0, total - parseFloat(downPayment || 0));
-    return { price: total.toFixed(2), balance: bal.toFixed(2), is_paid: bal <= 0 && total > 0 };
+  // The form's price is before the discount; the order is saved with the price after it.
+  const preOrderTotals = (form) => cartTotals([{ unit_price: parseFloat(form.price) || 0, quantity: 1 }], form);
+  const withPreOrderBalance = (form) => {
+    const { subtotal, total } = preOrderTotals(form);
+    const bal = Math.max(0, total - parseFloat(form.down_payment || 0));
+    return { ...form, balance: bal.toFixed(2), is_paid: bal <= 0 && subtotal > 0 };
   };
+  const withSuggestedPrice = (form, items) => withPreOrderBalance({ ...form, items, price: suggestedPreOrderPrice(items).toFixed(2) });
 
   const updateNewPreOrderItem = (index, field, value) => {
     const items = newPreOrder.items.map((it, i) => i === index ? changePreOrderItem(it, field, value) : it);
-    setNewPreOrder({ ...newPreOrder, items, ...recalcPreOrderPricing(items, newPreOrder.down_payment) });
+    setNewPreOrder(withSuggestedPrice(newPreOrder, items));
   };
   const addNewPreOrderItemRow = () => setNewPreOrder({ ...newPreOrder, items: [...newPreOrder.items, emptyPreOrderItem()] });
   const removeNewPreOrderItemRow = (index) => {
     const items = newPreOrder.items.filter((_, i) => i !== index);
-    setNewPreOrder({ ...newPreOrder, items, ...recalcPreOrderPricing(items, newPreOrder.down_payment) });
+    setNewPreOrder(withSuggestedPrice(newPreOrder, items));
   };
 
   const updateEditPreOrderItem = (index, field, value) => {
     const items = editPreOrder.items.map((it, i) => i === index ? changePreOrderItem(it, field, value) : it);
-    setEditPreOrder({ ...editPreOrder, items, ...recalcPreOrderPricing(items, editPreOrder.down_payment) });
+    setEditPreOrder(withSuggestedPrice(editPreOrder, items));
   };
   const addEditPreOrderItemRow = () => setEditPreOrder({ ...editPreOrder, items: [...editPreOrder.items, emptyPreOrderItem()] });
   const removeEditPreOrderItemRow = (index) => {
     const items = editPreOrder.items.filter((_, i) => i !== index);
-    setEditPreOrder({ ...editPreOrder, items, ...recalcPreOrderPricing(items, editPreOrder.down_payment) });
+    setEditPreOrder(withSuggestedPrice(editPreOrder, items));
   };
 
   // Reserves stock for each line item via the atomic FIFO endpoint. Deliberately
@@ -1919,6 +1959,7 @@ function AdminDashboard() {
     if (validItems.length === 0) return null;
 
     const primary = validItems[0];
+    const { discount, total } = preOrderTotals(form);
     return {
       items: validItems,
       customer_name: form.customer_name,
@@ -1929,13 +1970,16 @@ function AdminDashboard() {
       size: primary.size,
       color: primary.color,
       // Blank amounts are sent as 0: the server rejects blanks, and a rejected save must not happen after stock is taken.
-      price: parseFloat(form.price) || 0, down_payment: parseFloat(form.down_payment) || 0,
+      price: Number(total.toFixed(2)), discount, promo_code: discount > 0 ? String(form.promo_code || '').trim() : '',
+      down_payment: parseFloat(form.down_payment) || 0,
       is_paid: !!form.is_paid, balance: parseFloat(form.balance) || 0
     };
   };
 
   const handleCreatePreOrder = async (e) => {
     e.preventDefault();
+    const { subtotal: preOrderSubtotal, discount: preOrderDiscount } = preOrderTotals(newPreOrder);
+    if (preOrderDiscount > preOrderSubtotal) { alert(`The discount (₱${preOrderDiscount.toFixed(2)}) is more than the price (₱${preOrderSubtotal.toFixed(2)}).`); return; }
     try {
       const draftPayload = buildPreOrderPayload(newPreOrder);
       if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
@@ -1957,7 +2001,7 @@ function AdminDashboard() {
       if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
 
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '' });
+      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO });
       showToast("📝 Pre-order added & stock reserved!");
       await fetchData(true);
     } catch (error) {
@@ -1971,6 +2015,7 @@ function AdminDashboard() {
       color: resolvePreOrderColor({ ...it, color: !it.color || it.color === 'N/A' ? '' : it.color }),
       quantity: it.quantity || 1
     }));
+    const savedDiscount = parseFloat(item.discount) || 0;
     setEditPreOrder({
       id: item.originalId || item.id,
       customer_name: item.customer_name || '',
@@ -1978,10 +2023,13 @@ function AdminDashboard() {
       contact_number: item.contact_number || '',
       address: item.address || '',
       items: items.length > 0 ? items : [emptyPreOrderItem()],
-      price: item.price || '',
+      price: savedDiscount > 0 ? ((parseFloat(item.price) || 0) + savedDiscount).toFixed(2) : (item.price || ''),
       down_payment: item.down_payment || '',
       is_paid: item.is_paid || false,
-      balance: item.balance || ''
+      balance: item.balance || '',
+      promo_code: item.promo_code || '',
+      discount_type: 'amount',
+      discount_value: savedDiscount > 0 ? savedDiscount.toFixed(2) : ''
     });
     setShowEditPreOrderModal(true);
   };
@@ -1991,6 +2039,8 @@ function AdminDashboard() {
     if (!editPreOrder.items || editPreOrder.items.length === 0) {
       return alert("Please add at least one style to the pre-order.");
     }
+    const { subtotal: preOrderSubtotal, discount: preOrderDiscount } = preOrderTotals(editPreOrder);
+    if (preOrderDiscount > preOrderSubtotal) { alert(`The discount (₱${preOrderDiscount.toFixed(2)}) is more than the price (₱${preOrderSubtotal.toFixed(2)}).`); return; }
 
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
@@ -2239,6 +2289,8 @@ function AdminDashboard() {
       address: order?.address ? String(order.address) : '',
       qty: safeItems.length, 
       price: parseFloat(order?.price) || 0,
+      discount: parseFloat(order?.discount) || 0,
+      promo_code: order?.promo_code ? String(order.promo_code) : '',
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
       balance: parseFloat(order?.balance) || 0,
@@ -2408,9 +2460,18 @@ function AdminDashboard() {
     const bName = String(garment?.batch_name || batchName || 'Uncategorized');
     batchEntry(bName);
     batchMap[bName].pieces_sold += qty;
-    batchMap[bName].profit_earned += (parseFloat(garment?.selling_price) || 0) * qty;
+    const value = (parseFloat(garment?.selling_price) || 0) * qty;
+    batchMap[bName].profit_earned += value;
+    return { batch: bName, value };
+  };
+  // An order's discount comes off its batches, in proportion to the value each one supplied.
+  const takeOrderDiscount = (order, supplied, field) => {
+    const discount = parseFloat(order?.discount) || 0;
+    const gross = supplied.reduce((sum, line) => sum + line.value, 0);
+    if (discount > 0 && gross > 0) supplied.forEach(line => { batchMap[line.batch][field] -= discount * line.value / gross; });
   };
   (preOrders || []).forEach(order => {
+    const supplied = [];
     preOrderItemList(order).forEach(it => {
       // Only pieces the order actually took from stock count as sold.
       const qty = heldPreOrderQty(it);
@@ -2419,26 +2480,32 @@ function AdminDashboard() {
       allocations.forEach(a => {
         const aQty = parseInt(a?.quantity) || 0;
         if (aQty <= 0) return;
-        addBatchSold((garments || []).find(g => g?.id === a.garment_id), a.batch_name, aQty);
+        supplied.push(addBatchSold((garments || []).find(g => g?.id === a.garment_id), a.batch_name, aQty));
         counted += aQty;
       });
       // Pieces with no recorded batch (older pre-orders) go to the oldest batch of that
       // style and colour, the same batch a reservation takes from first.
       if (qty > counted) {
         const match = preOrderOriginGarment(garments, it);
-        if (match) addBatchSold(match, match.batch_name, qty - counted);
+        if (match) supplied.push(addBatchSold(match, match.batch_name, qty - counted));
       }
     });
+    takeOrderDiscount(order, supplied, 'profit_earned');
   });
   // Pieces held by unconfirmed online orders left "remaining" but aren't sold yet; count them so batch totals stay whole.
   (onlineOrders || []).filter(o => o?.status === 'Awaiting').forEach(o => {
+    const supplied = [];
     (o.items || []).forEach(it => (it.allocations || []).forEach(a => {
       const garment = (garments || []).find(g => g?.id === a.garment_id);
-      const entry = batchEntry(String(garment?.batch_name || a.batch_name || 'Uncategorized'));
+      const batch = String(garment?.batch_name || a.batch_name || 'Uncategorized');
+      const entry = batchEntry(batch);
       const pieces = parseInt(a.quantity) || 0;
+      const value = (parseFloat(garment?.selling_price) || 0) * pieces;
       entry.held_pieces += pieces;
-      entry.held_value += (parseFloat(garment?.selling_price) || 0) * pieces;
+      entry.held_value += value;
+      supplied.push({ batch, value });
     }));
+    takeOrderDiscount(o, supplied, 'held_value');
   });
   (expenses || []).forEach(e => {
     if (e?.batch_name && batchMap[e.batch_name]) batchMap[e.batch_name].expenses += (parseFloat(e.amount) || 0);
@@ -3121,6 +3188,11 @@ function AdminDashboard() {
                                    </span>
                                 )}
                               </span>
+                              {log.discount > 0 && (
+                                <span className="block w-fit mt-1.5 bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                  {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
+                                </span>
+                              )}
                             </div>
                           ) : log?.isSaleGroup && log.lines.length > 1 ? (
                             <div className="flex flex-col w-fit">
@@ -3362,7 +3434,14 @@ function AdminDashboard() {
                           <td className="p-4">{(o.items || []).map((it, i) => (
                             <span key={`ooi-${o.id}-${i}`} className="block text-xs font-bold text-stone-800 leading-snug">• {it.item_name}{normColorKey(it.color) ? ` (${it.color})` : ''}, {displaySize(it.size)} ×{it.quantity}</span>
                           ))}</td>
-                          <td className="p-4 text-right font-black text-pink-600">₱{parseFloat(o.total || 0).toFixed(2)}</td>
+                          <td className="p-4 text-right font-black text-pink-600">
+                            ₱{parseFloat(o.total || 0).toFixed(2)}
+                            {parseFloat(o.discount) > 0 && (
+                              <span className="block w-fit ml-auto mt-1 bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                {o.promo_code ? `${o.promo_code} · ` : ''}-₱{parseFloat(o.discount).toFixed(2)}
+                              </span>
+                            )}
+                          </td>
                           <td className="p-4 text-center">
                             <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${statusClass}`}>{o.status}</span>
                             {o.status === 'Awaiting' && <span className="block text-[11px] font-bold text-stone-500 mt-1">{hoursLeft}h left</span>}
@@ -3371,6 +3450,7 @@ function AdminDashboard() {
                             {o.status === 'Awaiting' ? (
                               <div className="flex justify-center gap-1.5">
                                 <button type="button" onClick={() => handleOnlineOrderAction(o, 'confirm')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Confirm</button>
+                                <button type="button" onClick={() => openOrderDiscount(o)} className="bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Discount</button>
                                 <button type="button" onClick={() => handleOnlineOrderAction(o, 'cancel')} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
                               </div>
                             ) : o.status === 'Confirmed' ? (
@@ -3460,6 +3540,11 @@ function AdminDashboard() {
                         </td>
                         <td className="p-4 text-right font-black text-rose-600 text-base align-top">
                           {parseFloat(order?.balance) > 0 ? `₱${(parseFloat(order.balance) || 0).toFixed(2)}` : '₱0.00'}
+                          {parseFloat(order?.discount) > 0 && (
+                            <span className="block w-fit ml-auto mt-1 bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-2 py-0.5 rounded-md">
+                              {order.promo_code ? `${order.promo_code} · ` : ''}-₱{parseFloat(order.discount).toFixed(2)}
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
@@ -3480,6 +3565,30 @@ function AdminDashboard() {
       {/* ========================================== */}
       {/* ZOOM PRE-ORDER MODAL                       */}
       {/* ========================================== */}
+      {discountOrder && (() => {
+        const { subtotal, discount, total } = orderDiscountTotals(discountOrder);
+        return (
+          <div onClick={() => setDiscountOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200" onClick={e => e.stopPropagation()}>
+              <h2 className="text-xl font-black text-stone-900 tracking-tight">Discount for {discountOrder.order.code}</h2>
+              <p className="text-stone-500 text-xs font-bold mt-1 mb-4">{discountOrder.order.customer_name}. Enter 0 to remove the discount.</p>
+              <PromoFields value={discountOrder} onChange={(change) => setDiscountOrder({ ...discountOrder, ...change })} />
+              <div className="mt-4 space-y-1 text-xs font-bold text-stone-600">
+                <div className="flex justify-between"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
+                {discount > 0 && <div className="flex justify-between text-pink-700"><span>Discount</span><span>-₱{discount.toFixed(2)}</span></div>}
+                <div className={`flex justify-between pt-1 border-t border-stone-200 text-sm font-black ${discount > subtotal ? 'text-rose-600' : 'text-stone-900'}`}>
+                  <span>{discount > subtotal ? 'Discount is more than the order' : 'New total'}</span><span>₱{Math.max(0, total).toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-5">
+                <button type="button" onClick={() => setDiscountOrder(null)} className="px-4 py-2 rounded-lg text-sm font-semibold text-stone-600 hover:bg-stone-100">Cancel</button>
+                <button type="button" onClick={handleSaveOrderDiscount} disabled={discount > subtotal} className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-extrabold px-5 py-2.5 rounded-xl shadow text-sm transition">Save Discount</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {viewPreOrder && (
         <div onClick={() => setViewPreOrder(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-stone-200 relative" onClick={e => e.stopPropagation()}>
@@ -3550,6 +3659,11 @@ function AdminDashboard() {
                     <span className={`text-base font-black ${viewPreOrder.is_paid || (viewPreOrder.balance && parseFloat(viewPreOrder.balance) <= 0) ? 'text-emerald-500' : 'text-rose-500'}`}>
                        {viewPreOrder.is_paid || (viewPreOrder.balance && parseFloat(viewPreOrder.balance) <= 0) ? '✅ Fully Paid' : `₱${parseFloat(viewPreOrder.balance).toFixed(2)} Balance`}
                     </span>
+                    {parseFloat(viewPreOrder.discount) > 0 && (
+                      <span className="block text-xs font-black text-pink-700 mt-0.5">
+                        Discount{viewPreOrder.promo_code ? ` (${viewPreOrder.promo_code})` : ''}: -₱{parseFloat(viewPreOrder.discount).toFixed(2)}
+                      </span>
+                    )}
                  </div>
                  <div className="text-right">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase">Fulfillment</span>
@@ -4467,15 +4581,12 @@ function AdminDashboard() {
               <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
+                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Price (₱)</label>
                     <input 
                       type="number" step="0.01" min="0" placeholder="0.00" required
                       value={newPreOrder.price} 
                       onChange={(e) => {
-                        const p = e.target.value;
-                        const dp = newPreOrder.down_payment;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setNewPreOrder({...newPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
+                        setNewPreOrder(withPreOrderBalance({...newPreOrder, price: e.target.value}));
                       }}
                       className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
@@ -4486,14 +4597,22 @@ function AdminDashboard() {
                       type="number" step="0.01" min="0" placeholder="0.00" required
                       value={newPreOrder.down_payment} 
                       onChange={(e) => {
-                        const dp = e.target.value;
-                        const p = newPreOrder.price;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setNewPreOrder({...newPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
+                        setNewPreOrder(withPreOrderBalance({...newPreOrder, down_payment: e.target.value}));
                       }}
                       className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Promo Code / Discount</label>
+                  <PromoFields value={newPreOrder} onChange={(change) => setNewPreOrder(withPreOrderBalance({...newPreOrder, ...change}))} />
+                  {preOrderTotals(newPreOrder).discount > 0 && (
+                    <div className={`flex justify-between mt-2 text-xs font-black ${preOrderTotals(newPreOrder).total < 0 ? 'text-rose-600' : 'text-pink-700'}`}>
+                      <span>{preOrderTotals(newPreOrder).total < 0 ? 'Discount is more than the price' : `Discount -₱${preOrderTotals(newPreOrder).discount.toFixed(2)}`}</span>
+                      <span>Total ₱{Math.max(0, preOrderTotals(newPreOrder).total).toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
@@ -4651,15 +4770,12 @@ function AdminDashboard() {
               <div className="bg-white p-4 rounded-xl border border-stone-300 mt-2">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Total Price (₱)</label>
+                    <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Price (₱)</label>
                     <input 
                       type="number" step="0.01" min="0" placeholder="0.00" required
                       value={editPreOrder.price} 
                       onChange={(e) => {
-                        const p = e.target.value;
-                        const dp = editPreOrder.down_payment;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setEditPreOrder({...editPreOrder, price: p, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
+                        setEditPreOrder(withPreOrderBalance({...editPreOrder, price: e.target.value}));
                       }}
                       className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
@@ -4670,14 +4786,22 @@ function AdminDashboard() {
                       type="number" step="0.01" min="0" placeholder="0.00" required
                       value={editPreOrder.down_payment} 
                       onChange={(e) => {
-                        const dp = e.target.value;
-                        const p = editPreOrder.price;
-                        const bal = Math.max(0, parseFloat(p || 0) - parseFloat(dp || 0));
-                        setEditPreOrder({...editPreOrder, down_payment: dp, balance: bal.toFixed(2), is_paid: bal <= 0 && parseFloat(p || 0) > 0});
+                        setEditPreOrder(withPreOrderBalance({...editPreOrder, down_payment: e.target.value}));
                       }}
                       className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Promo Code / Discount</label>
+                  <PromoFields value={editPreOrder} onChange={(change) => setEditPreOrder(withPreOrderBalance({...editPreOrder, ...change}))} />
+                  {preOrderTotals(editPreOrder).discount > 0 && (
+                    <div className={`flex justify-between mt-2 text-xs font-black ${preOrderTotals(editPreOrder).total < 0 ? 'text-rose-600' : 'text-pink-700'}`}>
+                      <span>{preOrderTotals(editPreOrder).total < 0 ? 'Discount is more than the price' : `Discount -₱${preOrderTotals(editPreOrder).discount.toFixed(2)}`}</span>
+                      <span>Total ₱{Math.max(0, preOrderTotals(editPreOrder).total).toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between bg-[#f9f6f0] p-3 rounded-lg border border-stone-200">
