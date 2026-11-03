@@ -1795,11 +1795,40 @@ function AdminDashboard() {
     return { ...it, [field]: value };
   };
 
-  const suggestedPreOrderPrice = (items) => (items || []).reduce((sum, it) => {
-    const g = styleVariant(it.item_name, it.color) || styleVariants(it.item_name)[0];
-    const unit = g ? parseFloat(g.selling_price || 0) : 0;
-    return sum + unit * (parseInt(it.quantity) || 0);
-  }, 0);
+  // Prices each piece from the batch it will come from: oldest batch with stock first, the order
+  // stock is reserved in. heldItems is stock this order already holds, which is given back on edit.
+  const suggestedPreOrderPrice = (items, heldItems = []) => {
+    const left = {};
+    const addHeld = (garmentId, size, qty) => { left[`${garmentId}|${size}`] = (left[`${garmentId}|${size}`] || 0) + qty; };
+    (heldItems || []).forEach(h => {
+      const allocations = parseSafeArray(h?.allocations);
+      if (allocations.length > 0) allocations.forEach(a => addHeld(a?.garment_id, h?.size, parseInt(a?.quantity) || 0));
+      else {
+        const origin = preOrderOriginGarment(garments, h);
+        if (origin) addHeld(origin.id, h?.size, heldPreOrderQty(h));
+      }
+    });
+    const stockOf = (g, size) => parseSafeArray(g?.sizes)
+      .filter(s => !size || s?.size === size)
+      .reduce((sum, s) => sum + (parseInt(s?.quantity) || 0), 0);
+    const seen = new Set();
+
+    return (items || []).reduce((sum, it) => {
+      const variant = styleVariant(it.item_name, it.color) || styleVariants(it.item_name)[0];
+      const batches = [...(variant?.underlying_garments || [])].sort((a, b) => a.id - b.id);
+      let remaining = parseInt(it.quantity) || 0;
+      batches.forEach(g => {
+        const key = `${g.id}|${it.size}`;
+        if (!seen.has(key)) { seen.add(key); left[key] = (left[key] || 0) + stockOf(g, it.size); }
+        const take = Math.min(Math.max(0, left[key]), remaining);
+        left[key] -= take;
+        remaining -= take;
+        sum += (parseFloat(g.selling_price) || 0) * take;
+      });
+      // Pieces beyond the stock (the form refuses these on save) are priced at the newest batch.
+      return sum + (parseFloat(batches[batches.length - 1]?.selling_price) || 0) * remaining;
+    }, 0);
+  };
 
   // The form's price is before the discount; the order is saved with the price after it.
   const preOrderTotals = (form) => cartTotals([{ unit_price: parseFloat(form.price) || 0, quantity: 1 }], form);
@@ -1808,7 +1837,10 @@ function AdminDashboard() {
     const bal = Math.max(0, total - parseFloat(form.down_payment || 0));
     return { ...form, balance: bal.toFixed(2), is_paid: bal <= 0 && subtotal > 0 };
   };
-  const withSuggestedPrice = (form, items) => withPreOrderBalance({ ...form, items, price: suggestedPreOrderPrice(items).toFixed(2) });
+  const withSuggestedPrice = (form, items) => {
+    const heldItems = form.id ? preOrderItemList((preOrders || []).find(o => o?.id === form.id)) : [];
+    return withPreOrderBalance({ ...form, items, price: suggestedPreOrderPrice(items, heldItems).toFixed(2) });
+  };
 
   const updateNewPreOrderItem = (index, field, value) => {
     const items = newPreOrder.items.map((it, i) => i === index ? changePreOrderItem(it, field, value) : it);
