@@ -449,6 +449,8 @@ function CustomerView() {
           key, name: item.name, color: item.color, category: item.category, size, quantity,
           unit_price: parseFloat(item.selling_price) || 0, image: item.image || null, max: left,
         }]);
+    // Buy Now goes straight to the checkout form.
+    if (orderItem?.buyNow) setShowOrder(true);
     setOrderItem(null);
   };
   const cartPieces = cart.reduce((sum, l) => sum + l.quantity, 0);
@@ -520,7 +522,7 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {groupGarmentDesigns(filteredGarments).map(design => (
-              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} onOrder={setOrderItem} />
+              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })} />
             ))}
           </div>
         )}
@@ -558,11 +560,11 @@ function CustomerView() {
 
       {cartPieces > 0 && !showOrder && (
         <button type="button" onClick={() => setShowOrder(true)} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
-          My Order
+          Cart
           <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
         </button>
       )}
-      {orderItem && <OrderItemModal item={orderItem} cart={cart} onAdd={addToCart} onClose={() => setOrderItem(null)} />}
+      {orderItem && <OrderItemModal item={orderItem.item} cart={cart} actionLabel={orderItem.buyNow ? 'Buy Now' : 'Add to Cart'} onAdd={addToCart} onClose={() => setOrderItem(null)} />}
       {showOrder && <OrderCheckoutModal cart={cart} setCart={setCart} onClose={() => setShowOrder(false)} onPlaced={() => setCatalogVersion(v => v + 1)} />}
 
       {zoomedImage && (
@@ -580,8 +582,8 @@ const copyText = async (text) => {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 };
 
-// Pick a size and quantity for one colour of a style, then add it to the order.
-function OrderItemModal({ item, cart, onAdd, onClose }) {
+// Pick a size and quantity for one colour of a style, then add it to the cart.
+function OrderItemModal({ item, cart, actionLabel, onAdd, onClose }) {
   const stockFor = (size) => {
     let onHand = 0, preOrder = 0;
     (item.underlying_garments || []).forEach(g => parseSafeArray(g?.sizes).forEach(sz => {
@@ -629,7 +631,7 @@ function OrderItemModal({ item, cart, onAdd, onClose }) {
           </div>
         </div>
         <button type="button" disabled={!size || left <= 0} onClick={() => onAdd(item, size, quantity, left)} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
-          Add to Order
+          {actionLabel}
         </button>
       </div>
     </div>
@@ -638,7 +640,7 @@ function OrderItemModal({ item, cart, onAdd, onClose }) {
 
 const orderLineKey = (item, size) => `${normNameKey(item.name)}|${normColorKey(item.color)}|${normNameKey(item.category)}|${size}`;
 
-// The customer's order: items, name and contact, then sending it to the shop's Messenger.
+// The customer's checkout: cart items, name and contact, then sending the order to the shop's Messenger.
 function OrderCheckoutModal({ cart, setCart, onClose, onPlaced }) {
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
@@ -699,12 +701,12 @@ function OrderCheckoutModal({ cart, setCart, onClose, onPlaced }) {
         ) : (
           <form onSubmit={submit} className="flex flex-col min-h-0">
             <div className="flex justify-between items-center p-6 pb-4 border-b border-stone-100">
-              <h2 className="text-xl font-black text-stone-900">My Order</h2>
+              <h2 className="text-xl font-black text-stone-900">Checkout</h2>
               <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-600 font-bold text-xl" aria-label="Close">&times;</button>
             </div>
             <div className="p-6 pt-4 overflow-y-auto flex-1 space-y-4">
               {cart.length === 0 ? (
-                <p className="text-center text-stone-400 font-bold py-6">Your order is empty.</p>
+                <p className="text-center text-stone-400 font-bold py-6">Your cart is empty.</p>
               ) : (
                 <div className="space-y-2">
                   {cart.map(l => (
@@ -727,7 +729,7 @@ function OrderCheckoutModal({ cart, setCart, onClose, onPlaced }) {
                 </div>
               )}
               <div className="flex justify-between items-center font-black text-stone-900"><span>Total</span><span>₱{total.toFixed(2)}</span></div>
-              <input type="text" required maxLength={255} placeholder="Your name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-stone-300 rounded-xl p-3 text-sm font-bold bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+              <input type="text" required autoFocus maxLength={255} placeholder="Your name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-stone-300 rounded-xl p-3 text-sm font-bold bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
               <input type="tel" required placeholder="Contact number" autoComplete="tel" pattern="[0-9+()\-\s]{7,20}" title="Numbers only, for example 0917 123 4567" value={contact} onChange={(e) => setContact(e.target.value)} className="w-full border border-stone-300 rounded-xl p-3 text-sm font-bold bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
               <p className="text-[11px] font-bold text-stone-500">We'll hold your items for 24 hours. You'll be sent to our Messenger to send your order, then we'll reply to confirm.</p>
               {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
@@ -848,9 +850,14 @@ function CustomerDesignCard({ design, onZoom, onOrder }) {
             <span className="block text-[10px] font-bold text-pink-700 mt-2">Pink sizes are available on pre-order</span>
           )}
           {item?.total_pieces > 0 && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item); }} className="w-full mt-4 bg-pink-600 hover:bg-pink-700 text-white font-black py-2.5 rounded-xl text-sm shadow-sm transition active:scale-95">
-              Add to Order
-            </button>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item, false); }} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs transition active:scale-95">
+                Add to Cart
+              </button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item, true); }} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs shadow-sm transition active:scale-95">
+                Buy Now
+              </button>
+            </div>
           )}
         </div>
       </div>
