@@ -1796,38 +1796,44 @@ function AdminDashboard() {
   };
 
   // Prices each piece from the batch it will come from: oldest batch with stock first, the order
-  // stock is reserved in. heldItems is stock this order already holds, which is given back on edit.
-  const suggestedPreOrderPrice = (items, heldItems = []) => {
+  // stock is taken in. stockChanges: [{ garmentId, size, qty }] stock returned (or taken) first.
+  // Returns [{ price, qty }], one entry per batch a line draws from.
+  const piecesFromBatches = (items, stockChanges = []) => {
     const left = {};
-    const addHeld = (garmentId, size, qty) => { left[`${garmentId}|${size}`] = (left[`${garmentId}|${size}`] || 0) + qty; };
-    (heldItems || []).forEach(h => {
-      const allocations = parseSafeArray(h?.allocations);
-      if (allocations.length > 0) allocations.forEach(a => addHeld(a?.garment_id, h?.size, parseInt(a?.quantity) || 0));
-      else {
-        const origin = preOrderOriginGarment(garments, h);
-        if (origin) addHeld(origin.id, h?.size, heldPreOrderQty(h));
-      }
-    });
+    const seen = new Set();
+    stockChanges.forEach(({ garmentId, size, qty }) => { left[`${garmentId}|${size}`] = (left[`${garmentId}|${size}`] || 0) + qty; });
     const stockOf = (g, size) => parseSafeArray(g?.sizes)
       .filter(s => !size || s?.size === size)
       .reduce((sum, s) => sum + (parseInt(s?.quantity) || 0), 0);
-    const seen = new Set();
 
-    return (items || []).reduce((sum, it) => {
+    return (items || []).flatMap(it => {
       const variant = styleVariant(it.item_name, it.color) || styleVariants(it.item_name)[0];
       const batches = [...(variant?.underlying_garments || [])].sort((a, b) => a.id - b.id);
       let remaining = parseInt(it.quantity) || 0;
+      const pieces = [];
       batches.forEach(g => {
         const key = `${g.id}|${it.size}`;
         if (!seen.has(key)) { seen.add(key); left[key] = (left[key] || 0) + stockOf(g, it.size); }
         const take = Math.min(Math.max(0, left[key]), remaining);
         left[key] -= take;
         remaining -= take;
-        sum += (parseFloat(g.selling_price) || 0) * take;
+        if (take > 0) pieces.push({ price: parseFloat(g.selling_price) || 0, qty: take });
       });
-      // Pieces beyond the stock (the form refuses these on save) are priced at the newest batch.
-      return sum + (parseFloat(batches[batches.length - 1]?.selling_price) || 0) * remaining;
-    }, 0);
+      // Pieces beyond the stock (saving refuses these) are priced at the newest batch.
+      if (remaining > 0) pieces.push({ price: parseFloat(batches[batches.length - 1]?.selling_price) || 0, qty: remaining });
+      return pieces;
+    });
+  };
+
+  // heldItems is stock this order already holds, which is given back on edit.
+  const suggestedPreOrderPrice = (items, heldItems = []) => {
+    const stockChanges = (heldItems || []).flatMap(h => {
+      const allocations = parseSafeArray(h?.allocations);
+      if (allocations.length > 0) return allocations.map(a => ({ garmentId: a?.garment_id, size: h?.size, qty: parseInt(a?.quantity) || 0 }));
+      const origin = preOrderOriginGarment(garments, h);
+      return origin ? [{ garmentId: origin.id, size: h?.size, qty: heldPreOrderQty(h) }] : [];
+    });
+    return piecesFromBatches(items, stockChanges).reduce((sum, p) => sum + p.price * p.qty, 0);
   };
 
   // The form's price is before the discount; the order is saved with the price after it.
@@ -2193,11 +2199,15 @@ function AdminDashboard() {
     if (records.length === 0) return;
     const lines = records.map(r => {
       const garment = (garments || []).find(g => g?.id === r.garment_id);
+      // Older records have no garment id: the server finds their batch by name, newest first.
+      const origin = garment || (garments || [])
+        .filter(g => normNameKey(g?.name) === normNameKey(r.garment_name) && (!r.batch_name || normNameKey(g?.batch_name) === normNameKey(r.batch_name)))
+        .sort((a, b) => b.id - a.id)[0];
       const qty = parseInt(r.quantity_sold) || 0;
       const amount = parseFloat(r.amount_sold);
       // Price per piece as sold: what the record brought in plus its share of the discount.
       const unitPrice = !isNaN(amount) && qty ? (amount + (parseFloat(r.discount) || 0)) / qty : (parseFloat(garment?.selling_price) || 0);
-      return { id: r.id, name: r.garment_name, color: garment?.color || '', size: r.size, batch_name: r.batch_name || '', qty, origQty: qty, unit_price: unitPrice, max: qty + (parseInt(parseSafeArray(garment?.sizes).find(s => s?.size === r.size)?.quantity) || 0) };
+      return { id: r.id, name: r.garment_name, color: garment?.color || '', size: r.size, batch_name: r.batch_name || '', garment_id: origin?.id, qty, origQty: qty, unit_price: unitPrice, max: qty + (parseInt(parseSafeArray(garment?.sizes).find(s => s?.size === r.size)?.quantity) || 0) };
     });
     const totalDiscount = records.reduce((sum, r) => sum + (parseFloat(r.discount) || 0), 0);
     setEditSale({
@@ -2209,12 +2219,13 @@ function AdminDashboard() {
   };
 
   // Sale lines (existing + new) priced for the Edit Sale screen.
+  // Existing items change their own batch's stock first, then new items are taken from what is left.
   const editSaleLines = (sale) => [
     ...(sale?.lines || []).map(l => ({ price: l.unit_price, qty: l.qty })),
-    ...(sale?.add || []).filter(a => a.item_name && a.size && parseInt(a.quantity) > 0).map(a => ({
-      price: parseFloat((styleVariant(a.item_name, a.color) || styleVariants(a.item_name)[0])?.selling_price) || 0,
-      qty: parseInt(a.quantity) || 0
-    }))
+    ...piecesFromBatches(
+      (sale?.add || []).filter(a => a.item_name && a.size && parseInt(a.quantity) > 0),
+      (sale?.lines || []).map(l => ({ garmentId: l.garment_id, size: l.size, qty: l.origQty - l.qty }))
+    )
   ];
 
   const handleSaveEditSale = async () => {
