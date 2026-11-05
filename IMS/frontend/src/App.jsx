@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
+import { buildSalesReport, downloadSalesReportCsv, downloadSalesReportExcel, itemLabel } from './salesReport';
 
 // Prevent infinite hangs on requests if Render goes down (60 sec max to allow cold-starts)
 axios.defaults.timeout = 60000;
@@ -326,6 +327,19 @@ const matchColor = (color) => (!color || color === 'N/A' ? '' : color);
 // 8. One line item within a (possibly multi-item) pre-order
 const emptyPreOrderItem = () => ({ item_name: '', size: '', color: '', quantity: 1 });
 const NO_PROMO = { promo_code: '', discount_type: 'amount', discount_value: '' };
+const PAYMENT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash', 'Installment'];
+
+// Mode of payment picker for sales and pre-orders.
+const PaymentMethodSelect = ({ value, onChange }) => (
+  <select aria-label="Mode of payment" value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500">
+    <option value="">Not selected</option>
+    {PAYMENT_METHODS.map(method => <option key={method} value={method}>{method}</option>)}
+  </select>
+);
+
+const PaymentBadge = ({ method, className = '' }) => method ? (
+  <span className={`block w-fit bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Paid via {method}</span>
+) : null;
 
 // Promo code, amount, and peso/percent switch for a pre-order or online order discount.
 const PromoFields = ({ value, onChange }) => (
@@ -1228,6 +1242,164 @@ function DesignCard({ design, onOpen }) {
   );
 }
 
+const ReportStat = ({ label, value, note }) => (
+  <div className="bg-white rounded-3xl p-5 shadow-sm border border-stone-200 min-w-0">
+    <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest block mb-1">{label}</span>
+    <span className="text-2xl font-black text-stone-900 break-words">{value}</span>
+    {note && <span className="block text-[11px] font-bold text-stone-500 mt-1">{note}</span>}
+  </div>
+);
+
+const ReportTable = ({ title, count, emptyText, headers, children }) => (
+  <div className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden mb-6">
+    <div className="p-5 border-b border-stone-200 bg-[#f2ece4] flex justify-between items-center gap-3">
+      <h3 className="font-black text-stone-900 text-base">{title}</h3>
+      {count > 0 && <span className="text-xs font-bold text-stone-600 bg-white px-3 py-1 rounded-lg border border-stone-200 shrink-0">{count}</span>}
+    </div>
+    {count === 0 ? (
+      <p className="p-6 text-center text-sm font-bold text-stone-400">{emptyText}</p>
+    ) : (
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="text-stone-500 text-[11px] uppercase tracking-wider font-extrabold border-b border-stone-200">
+              {headers.map(([label, align]) => <th key={label} className={`p-4 whitespace-nowrap ${align || ''}`}>{label}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-200/80 text-sm font-bold text-stone-700">{children}</tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);
+
+const pesos = (value) => `₱${(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function SalesReport({ transactions }) {
+  const today = getLocalDate();
+  const [mode, setMode] = useState('daily');
+  const [day, setDay] = useState(today);
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const [exporting, setExporting] = useState(false);
+
+  const report = buildSalesReport(transactions, mode === 'daily' ? day : month);
+  const { totals } = report;
+  const months = [...new Set([today.slice(0, 7), month, ...transactions.map(t => String(t.date || '').slice(0, 7)).filter(Boolean)])].sort().reverse();
+  const monthName = (value) => new Date(`${value}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      await downloadSalesReportExcel(report);
+    } catch (error) {
+      alert(`Could not create the Excel file: ${error.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Sales Report</h2>
+        <p className="text-stone-500 text-sm mt-1">Totals, best sellers and promo usage for a day or a month</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <div className="flex bg-[#f2ece4] p-1 rounded-xl">
+          {[['daily', 'Daily'], ['monthly', 'Monthly']].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setMode(value)} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${mode === value ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}>{label}</button>
+          ))}
+        </div>
+        {mode === 'daily' ? (
+          <input type="date" aria-label="Report day" value={day} onChange={(e) => { if (e.target.value) setDay(e.target.value); }} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500" />
+        ) : (
+          <select aria-label="Report month" value={month} onChange={(e) => setMonth(e.target.value)} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500">
+            {months.map(m => <option key={m} value={m}>{monthName(m)}</option>)}
+          </select>
+        )}
+        <div className="flex gap-2 sm:ml-auto">
+          <button type="button" onClick={() => downloadSalesReportCsv(report)} disabled={totals.transactions === 0} className="bg-white hover:bg-stone-50 disabled:opacity-50 border border-stone-300 text-stone-700 font-extrabold px-4 py-2 rounded-xl text-sm transition">Export CSV</button>
+          <button type="button" onClick={exportExcel} disabled={totals.transactions === 0 || exporting} className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-extrabold px-4 py-2 rounded-xl shadow-md text-sm transition">{exporting ? 'Exporting…' : 'Export Excel'}</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
+        <ReportStat label="Revenue Collected" value={pesos(totals.collected)} note={`Sales ${pesos(totals.fromSales)} · Pre-orders ${pesos(totals.fromPreOrders)}`} />
+        <ReportStat label="Pieces Sold" value={totals.pieces} note={`${totals.transactions} transaction${totals.transactions === 1 ? '' : 's'}`} />
+        <ReportStat label="Discounts Given" value={pesos(totals.discount)} />
+        <ReportStat label="Balance to Collect" value={pesos(totals.balance)} note="From these pre-orders" />
+      </div>
+      <p className="text-xs font-bold text-stone-400 mb-6">Pre-orders count the money paid so far, under the date the order was made.</p>
+
+      {report.isMonth && (
+        <ReportTable title="By Day" count={report.days.length} emptyText="No sales this month." headers={[['Date'], ['Transactions', 'text-right'], ['Pieces', 'text-right'], ['Discounts', 'text-right'], ['Revenue', 'text-right']]}>
+          {report.days.map(d => (
+            <tr key={d.date}>
+              <td className="p-4 whitespace-nowrap">{d.date}</td>
+              <td className="p-4 text-right">{d.transactions}</td>
+              <td className="p-4 text-right">{d.pieces}</td>
+              <td className="p-4 text-right text-pink-700">{d.discount > 0 ? `-${pesos(d.discount)}` : '—'}</td>
+              <td className="p-4 text-right font-black text-stone-900">{pesos(d.collected)}</td>
+            </tr>
+          ))}
+        </ReportTable>
+      )}
+
+      <ReportTable title="By Mode of Payment" count={report.payments.length} emptyText="No payments in this period." headers={[['Mode of Payment'], ['Transactions', 'text-right'], ['Revenue', 'text-right']]}>
+        {report.payments.map(payment => (
+          <tr key={payment.method || 'none'}>
+            <td className="p-4 text-stone-900">{payment.method || 'Not selected'}</td>
+            <td className="p-4 text-right">{payment.transactions}</td>
+            <td className="p-4 text-right font-black text-stone-900">{pesos(payment.collected)}</td>
+          </tr>
+        ))}
+      </ReportTable>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <ReportTable title="Best Sellers" count={report.bestSellers.length} emptyText="Nothing sold in this period." headers={[['#'], ['Style'], ['Sales', 'text-right'], ['Pre-orders', 'text-right'], ['Pieces', 'text-right']]}>
+          {report.bestSellers.slice(0, 10).map((seller, i) => (
+            <tr key={`${seller.name}|${seller.color}`}>
+              <td className="p-4 text-stone-400">{i + 1}</td>
+              <td className="p-4 text-stone-900">{seller.name}{seller.color ? ` (${seller.color})` : ''}</td>
+              <td className="p-4 text-right">{seller.salePieces}</td>
+              <td className="p-4 text-right">{seller.preOrderPieces}</td>
+              <td className="p-4 text-right font-black text-stone-900">{seller.pieces}</td>
+            </tr>
+          ))}
+        </ReportTable>
+
+        <ReportTable title="Promo Usage" count={report.promos.length} emptyText="No discounts in this period." headers={[['Code'], ['Used', 'text-right'], ['Discount', 'text-right'], ['Order Value', 'text-right']]}>
+          {report.promos.map(promo => (
+            <tr key={promo.code || 'no-code'}>
+              <td className="p-4 text-stone-900">{promo.code || 'No code'}</td>
+              <td className="p-4 text-right">{promo.uses}</td>
+              <td className="p-4 text-right text-pink-700">-{pesos(promo.discount)}</td>
+              <td className="p-4 text-right">{pesos(promo.orderValue)}</td>
+            </tr>
+          ))}
+        </ReportTable>
+      </div>
+
+      {!report.isMonth && (
+        <ReportTable title="Transactions" count={report.transactions.length} emptyText="No sales on this day." headers={[['Type'], ['Customer'], ['Items'], ['Payment'], ['Discount', 'text-right'], ['Balance', 'text-right'], ['Revenue', 'text-right']]}>
+          {report.transactions.map(t => (
+            <tr key={t.id}>
+              <td className="p-4 whitespace-nowrap">{t.type}</td>
+              <td className="p-4">{t.customer || '—'}</td>
+              <td className="p-4 min-w-48 text-stone-900">{t.items.map(itemLabel).join(', ')}</td>
+              <td className="p-4">{t.paymentMethod || '—'}</td>
+              <td className="p-4 text-right text-pink-700">{t.discount > 0 ? `-${pesos(t.discount)}` : '—'}</td>
+              <td className="p-4 text-right">{t.balance > 0 ? pesos(t.balance) : '—'}</td>
+              <td className="p-4 text-right font-black text-stone-900">{pesos(t.collected)}</td>
+            </tr>
+          ))}
+        </ReportTable>
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -1275,6 +1447,7 @@ function AdminDashboard() {
   const [saleCart, setSaleCart] = useState([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutPromo, setCheckoutPromo] = useState({ promo_code: '', discount_type: 'amount', discount_value: '' });
+  const [checkoutPayment, setCheckoutPayment] = useState('');
   const [recordingSale, setRecordingSale] = useState(false);
   // A recorded sale being edited: its records (new quantities), new items, and its promo discount.
   const [editSale, setEditSale] = useState(null);
@@ -1301,12 +1474,12 @@ function AdminDashboard() {
   // State for multiple items in Pre-order
   const [newPreOrder, setNewPreOrder] = useState({
     customer_name: '', recipient_name: '', contact_number: '', address: '',
-    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', payment_method: '', ...NO_PROMO
   });
 
   const [editPreOrder, setEditPreOrder] = useState({
     id: null, customer_name: '', recipient_name: '', contact_number: '', address: '',
-    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO
+    items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', payment_method: '', ...NO_PROMO
   });
 
   const showToast = (message) => { setToastMessage(message); setTimeout(() => setToastMessage(null), 3500); };
@@ -1435,6 +1608,7 @@ function AdminDashboard() {
     if (saleCart.length === 0 || recordingSale) return;
     const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
     if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
+    if (!checkoutPayment) { alert('Choose the mode of payment first.'); return; }
     setRecordingSale(true);
     try {
       await axios.post(`${API_BASE}garments/record-sale/`, {
@@ -1442,11 +1616,13 @@ function AdminDashboard() {
           ? { garment_id: l.garment_id, size: l.size, quantity: l.quantity }
           : { name: l.name, color: l.color, category: l.category, size: l.size, quantity: l.quantity }),
         discount: discount.toFixed(2),
-        promo_code: String(checkoutPromo.promo_code || '').trim()
+        promo_code: String(checkoutPromo.promo_code || '').trim(),
+        payment_method: checkoutPayment
       });
       showToast(`🌸 Sale Recorded! ${cartPieces} pc(s) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
       setSaleCart([]);
       setCheckoutPromo({ promo_code: '', discount_type: 'amount', discount_value: '' });
+      setCheckoutPayment('');
       setShowCheckout(false);
       await fetchData(true);
     } catch (error) {
@@ -2009,6 +2185,7 @@ function AdminDashboard() {
       color: primary.color,
       // Blank amounts are sent as 0: the server rejects blanks, and a rejected save must not happen after stock is taken.
       price: Number(total.toFixed(2)), discount, promo_code: discount > 0 ? String(form.promo_code || '').trim() : '',
+      payment_method: form.payment_method || '',
       down_payment: parseFloat(form.down_payment) || 0,
       is_paid: !!form.is_paid, balance: parseFloat(form.balance) || 0
     };
@@ -2039,7 +2216,7 @@ function AdminDashboard() {
       if (shortfalls.length > 0) alert(`The pre-order was saved, but some stock could not be taken:\n\n${shortfalls.join('\n')}`);
 
       setShowPreOrderModal(false);
-      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', ...NO_PROMO });
+      setNewPreOrder({ customer_name: '', recipient_name: '', contact_number: '', address: '', items: [emptyPreOrderItem()], price: '', down_payment: '', is_paid: false, balance: '', payment_method: '', ...NO_PROMO });
       showToast("📝 Pre-order added & stock reserved!");
       await fetchData(true);
     } catch (error) {
@@ -2065,6 +2242,7 @@ function AdminDashboard() {
       down_payment: item.down_payment || '',
       is_paid: item.is_paid || false,
       balance: item.balance || '',
+      payment_method: item.payment_method || '',
       promo_code: item.promo_code || '',
       discount_type: 'amount',
       discount_value: savedDiscount > 0 ? savedDiscount.toFixed(2) : ''
@@ -2212,6 +2390,7 @@ function AdminDashboard() {
     const totalDiscount = records.reduce((sum, r) => sum + (parseFloat(r.discount) || 0), 0);
     setEditSale({
       logIds: ids, lines, add: [],
+      payment_method: records.find(r => r.payment_method)?.payment_method || '',
       promo_code: records.find(r => r.promo_code)?.promo_code || '',
       discount_type: 'amount',
       discount_value: totalDiscount > 0 ? totalDiscount.toFixed(2) : ''
@@ -2246,7 +2425,8 @@ function AdminDashboard() {
           return { name: variant?.name || a.item_name, color: variant?.color || a.color, category: variant?.category, size: a.size, quantity: parseInt(a.quantity) };
         }),
         discount: discount.toFixed(2),
-        promo_code: String(editSale.promo_code || '').trim()
+        promo_code: String(editSale.promo_code || '').trim(),
+        payment_method: editSale.payment_method || ''
       });
       showToast('✏️ Sale updated & stock adjusted!');
       setEditSale(null);
@@ -2334,6 +2514,7 @@ function AdminDashboard() {
       price: parseFloat(order?.price) || 0,
       discount: parseFloat(order?.discount) || 0,
       promo_code: order?.promo_code ? String(order.promo_code) : '',
+      payment_method: order?.payment_method ? String(order.payment_method) : '',
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
       balance: parseFloat(order?.balance) || 0,
@@ -2368,6 +2549,7 @@ function AdminDashboard() {
       discount: parseFloat(log?.discount) || 0,
       promo_code: log?.promo_code ? String(log.promo_code) : '',
       sale_group: log?.sale_group ? String(log.sale_group) : '',
+      payment_method: log?.payment_method ? String(log.payment_method) : '',
       garment_id: log?.garment_id || null
     };
   });
@@ -2436,6 +2618,27 @@ function AdminDashboard() {
     const timeB = new Date(b?.date || 0).getTime();
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
+
+  // Each Sales Ledger row as the Sales Report reads it.
+  const reportTransactions = () => historyRows.map(row => ({
+    id: row.id,
+    type: row.isPreOrder ? 'Pre-Order' : 'Sale',
+    date: row.date,
+    customer: row.customer_name,
+    items: row.isPreOrder
+      ? row.itemsArray.map(it => ({ name: String(it.item_name || ''), color: resolvePreOrderColor(it) === 'N/A' ? '' : String(resolvePreOrderColor(it) || ''), size: displaySize(it.size), qty: parseInt(it.quantity) || 1 }))
+      : (row.lines || [row]).map(line => {
+          const garment = (garments || []).find(g => g?.id === line.garment_id);
+          return { name: line.name, color: String(garment?.color || resolvePreOrderColor({ item_name: line.name }) || ''), size: displaySize(line.size), qty: line.qty };
+        }),
+    collected: row.earned,
+    orderValue: row.isPreOrder ? row.price : row.earned,
+    discount: row.discount,
+    promoCode: row.promo_code,
+    balance: row.isPreOrder ? row.balance : 0,
+    paymentMethod: row.payment_method,
+    status: row.status,
+  }));
 
   const filteredUnifiedHistory = historyRows.filter(log => {
     if (!log) return false;
@@ -2631,6 +2834,11 @@ function AdminDashboard() {
                 )}
 
                 <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
+                  <PaymentMethodSelect value={checkoutPayment} onChange={setCheckoutPayment} />
+                </div>
+
+                <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
                     Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional, for the whole sale)</span>
                   </label>
@@ -2772,6 +2980,11 @@ function AdminDashboard() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
+                  <PaymentMethodSelect value={editSale.payment_method} onChange={(payment_method) => setEditSale({ ...editSale, payment_method })} />
+                </div>
+
+                <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">
                     Promo Code / Voucher <span className="normal-case font-bold text-stone-400">(optional, for the whole sale)</span>
                   </label>
@@ -2842,6 +3055,9 @@ function AdminDashboard() {
             </button>
             <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📈</span> Net Profit Analytics
+            </button>
+            <button onClick={() => { setActiveTab('reports'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'reports' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg">📊</span> Sales Report
             </button>
             <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">🛒</span> Online Orders
@@ -3236,6 +3452,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
+                              <PaymentBadge method={log.payment_method} className="mt-1.5" />
                             </div>
                           ) : log?.isSaleGroup && log.lines.length > 1 ? (
                             <div className="flex flex-col w-fit">
@@ -3253,6 +3470,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
+                              <PaymentBadge method={log.payment_method} className="mt-1.5" />
                             </div>
                           ) : (
                             <>
@@ -3262,6 +3480,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
+                              <PaymentBadge method={log?.payment_method} className="mt-1" />
                             </>
                           )}
                         </td>
@@ -3453,6 +3672,8 @@ function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === 'reports' && <SalesReport transactions={reportTransactions()} />}
+
         {/* TAB 4: PRE-ORDERS VIEW */}
         {activeTab === 'onlineorders' && (
           <div className="animate-fade-in max-w-6xl mx-auto">
@@ -3588,6 +3809,7 @@ function AdminDashboard() {
                               {order.promo_code ? `${order.promo_code} · ` : ''}-₱{parseFloat(order.discount).toFixed(2)}
                             </span>
                           )}
+                          <PaymentBadge method={order?.payment_method} className="ml-auto mt-1" />
                         </td>
                         <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
@@ -3707,6 +3929,7 @@ function AdminDashboard() {
                         Discount{viewPreOrder.promo_code ? ` (${viewPreOrder.promo_code})` : ''}: -₱{parseFloat(viewPreOrder.discount).toFixed(2)}
                       </span>
                     )}
+                    <PaymentBadge method={viewPreOrder.payment_method} className="mt-1" />
                  </div>
                  <div className="text-right">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase">Fulfillment</span>
@@ -4648,6 +4871,11 @@ function AdminDashboard() {
                 </div>
 
                 <div className="mb-3">
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Mode of Payment</label>
+                  <PaymentMethodSelect value={newPreOrder.payment_method} onChange={(payment_method) => setNewPreOrder({...newPreOrder, payment_method})} />
+                </div>
+
+                <div className="mb-3">
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Promo Code / Discount</label>
                   <PromoFields value={newPreOrder} onChange={(change) => setNewPreOrder(withPreOrderBalance({...newPreOrder, ...change}))} />
                   {preOrderTotals(newPreOrder).discount > 0 && (
@@ -4834,6 +5062,11 @@ function AdminDashboard() {
                       className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-black text-emerald-600 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                     />
                   </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Mode of Payment</label>
+                  <PaymentMethodSelect value={editPreOrder.payment_method} onChange={(payment_method) => setEditPreOrder({...editPreOrder, payment_method})} />
                 </div>
 
                 <div className="mb-3">

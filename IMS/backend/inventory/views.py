@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Q, Sum
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder, PAYMENT_METHODS
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers
@@ -39,6 +39,15 @@ def _sale_discount(request):
     if not discount.is_finite() or discount < 0:
         return None, ''
     return discount, str(request.data.get('promo_code') or '').strip()[:100]
+
+
+PAYMENT_METHOD_ERROR = 'Choose a mode of payment: GCash, Maya, GoTyme, Cash or Installment'
+
+
+def _payment_method(request, current=''):
+    """Mode of payment sent with a sale (current if none was sent); None if it isn't a known one."""
+    value = str(request.data.get('payment_method', current) or '')
+    return value if not value or value in dict(PAYMENT_METHODS) else None
 
 
 def _split_discount(discount, grosses):
@@ -535,6 +544,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                every batch of that product.
         discount / promo_code: one discount (pesos) for the whole sale, shared across its
                records in proportion to their amounts.
+        payment_method: GCash, Maya, GoTyme, Cash or Installment (required).
         Every record written gets the same sale_group. If any item is short on stock,
         nothing is sold and a 400 lists what is short.
         """
@@ -544,6 +554,9 @@ class GarmentViewSet(viewsets.ModelViewSet):
         discount, promo_code = _sale_discount(request)
         if discount is None:
             return Response({'error': 'Discount must be a number of pesos, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
+        payment_method = _payment_method(request)
+        if not payment_method:
+            return Response({'error': PAYMENT_METHOD_ERROR}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             sales, shortages, error = _take_items(items)
@@ -572,6 +585,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                     discount=share,
                     promo_code=promo_code,
                     sale_group=sale_group,
+                    payment_method=payment_method,
                     sold_at=timezone.localdate(),
                     batch_name=g.batch_name,
                     garment_id=g.id,
@@ -674,6 +688,7 @@ def edit_sale(request):
     record_ids: the sale's records. keep: [{id, quantity}] new quantity per record (a record
     left out, or set to 0, is removed). add: new items, same shape as record-sale items.
     discount / promo_code: the sale's discount, re-shared across the final records.
+    payment_method: GCash, Maya, GoTyme, Cash or Installment, set on every record; left as it is if not sent.
 
     Removed or reduced pieces go back to the batch record they were taken from; increases
     are taken from that same batch record; new items are taken oldest batch first. Existing
@@ -702,6 +717,9 @@ def edit_sale(request):
         records = list(SaleLog.objects.select_for_update().filter(id__in=record_ids).order_by('id'))
         if len(records) != len(set(record_ids)):
             return fail({'error': 'Some of this sale\'s records no longer exist. Refresh and try again.'})
+        payment_method = _payment_method(request, records[0].payment_method)
+        if payment_method is None:
+            return fail({'error': PAYMENT_METHOD_ERROR})
 
         sale_date = min(r.sold_at for r in records)
         sale_status = records[0].status
@@ -766,6 +784,7 @@ def edit_sale(request):
             record.discount = share
             record.promo_code = promo_code
             record.sale_group = sale_group
+            record.payment_method = payment_method
             record.save()
             saved.append(record)
 

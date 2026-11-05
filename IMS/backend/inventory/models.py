@@ -60,6 +60,15 @@ class SizeStock(models.Model):
     class Meta:
         unique_together = ('garment', 'size')
 
+PAYMENT_METHODS = [
+    ('GCash', 'GCash'),
+    ('Maya', 'Maya'),
+    ('GoTyme', 'GoTyme'),
+    ('Cash', 'Cash'),
+    ('Installment', 'Installment'),
+]
+
+
 class SaleLog(models.Model):
     garment_name = models.CharField(max_length=255)
     size = models.CharField(max_length=5)
@@ -83,6 +92,8 @@ class SaleLog(models.Model):
     promo_code = models.CharField(max_length=100, blank=True, default='')
     # Records written by one checkout share this id, so a multi-item sale is listed as one sale.
     sale_group = models.CharField(max_length=40, blank=True, default='', db_index=True)
+    # Blank on records made before this was tracked, until someone edits them.
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):
@@ -109,6 +120,7 @@ class PreOrder(models.Model):
     # Promo code / voucher discount; price and balance are already after it.
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     promo_code = models.CharField(max_length=100, blank=True, default='')
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
     
     is_paid = models.BooleanField(default=False)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
