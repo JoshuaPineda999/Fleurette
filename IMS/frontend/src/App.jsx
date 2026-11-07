@@ -1423,6 +1423,7 @@ function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeSize, setActiveSize] = useState('All');
+  const [activeStock, setActiveStock] = useState('All');
   const [selectedDate, setSelectedDate] = useState(getLocalDate());
   
   const [historyFilterDate, setHistoryFilterDate] = useState('');
@@ -2664,6 +2665,9 @@ function AdminDashboard() {
   const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
   const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
+  const isSoldOut = (item) => !(parseInt(item?.total_pieces) > 0);
+  const soldOutCount = (mergedGarmentsList || []).filter(isSoldOut).length;
+
   const filteredGarments = (mergedGarmentsList || [])
     .filter(item => {
       if (!item) return false;
@@ -2672,7 +2676,11 @@ function AdminDashboard() {
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // A colour matches a size only while it still has that size in stock.
-      const matchesSize = activeSize === 'All' || parseSafeArray(item.sizes).some(s => s?.size === activeSize && s?.quantity > 0);
+      // With Sold Out on, it's the other way round: colours that have run out of that size.
+      const soldOut = activeStock === 'Sold Out';
+      const matchesSize = activeSize === 'All'
+        ? !soldOut || isSoldOut(item)
+        : parseSafeArray(item.sizes).some(s => s?.size === activeSize && (s?.quantity > 0) !== soldOut);
       return matchesSearch && matchesCategory && matchesSize;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
@@ -3121,8 +3129,9 @@ function AdminDashboard() {
                   groups={[
                     { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
                     { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
+                    { label: 'Stock', value: activeStock, onChange: setActiveStock, options: [['All', 'All'], ['Sold Out', `Sold Out (${soldOutCount})`]] },
                   ]}
-                  onClear={() => { setActiveCategory('All'); setActiveSize('All'); }}
+                  onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveStock('All'); }}
                 />
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
@@ -3169,9 +3178,9 @@ function AdminDashboard() {
             {filteredGarments.length === 0 ? (
               <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-200 max-w-xl mx-auto my-12 shadow-sm">
                 <span className="text-5xl block mb-3">🌸</span>
-                <h3 className="text-lg font-bold text-stone-800 mb-1">No Styles Found</h3>
-                <p className="text-stone-500 text-sm mb-6">We couldn't find any Fleurette style matching your search.</p>
-                <button onClick={() => { setSearchQuery(''); setActiveCategory('All'); }} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Search</button>
+                <h3 className="text-lg font-bold text-stone-800 mb-1">{activeStock === 'Sold Out' ? 'Nothing Sold Out' : 'No Styles Found'}</h3>
+                <p className="text-stone-500 text-sm mb-6">{activeStock === 'Sold Out' ? 'No style matching these filters has run out of stock.' : "We couldn't find any Fleurette style matching your search."}</p>
+                <button onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveSize('All'); setActiveStock('All'); }} className="bg-pink-600 hover:bg-pink-700 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">Clear Search</button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
