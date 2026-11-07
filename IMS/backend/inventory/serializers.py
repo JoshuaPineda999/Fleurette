@@ -1,8 +1,34 @@
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.conf import settings
 from rest_framework import serializers
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder, SPLIT_PAYMENT, SPLIT_METHODS
+
+
+def clean_payment_split(raw):
+    """(rows, error): the two payments of a Split Payment, as [{method, amount}]."""
+    if not isinstance(raw, list) or len(raw) != 2 or not all(isinstance(row, dict) for row in raw):
+        return None, 'A split payment needs two modes of payment and an amount for each.'
+    rows = []
+    for row in raw:
+        method = str(row.get('method') or '')
+        if method not in SPLIT_METHODS:
+            return None, 'Split a payment between GCash, Maya, GoTyme or Cash.'
+        try:
+            amount = Decimal(str(row.get('amount'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, ValueError):
+            return None, 'Enter the amount for both payments.'
+        if not amount.is_finite() or amount <= 0:
+            return None, 'Enter the amount for both payments.'
+        rows.append({'method': method, 'amount': str(amount)})
+    if rows[0]['method'] == rows[1]['method']:
+        return None, 'Choose two different modes of payment.'
+    return rows, None
+
+
+def split_total(rows):
+    return sum(Decimal(row['amount']) for row in rows)
+
 
 class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,7 +38,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
 class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
-        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'created_at']
+        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'payment_split', 'created_at']
+        # Changed through Edit Sale, which checks a split against the sale's total.
+        read_only_fields = ['payment_method', 'payment_split']
 
 class GarmentPhotoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -161,7 +189,26 @@ class OnlineOrderSerializer(serializers.ModelSerializer):
 
 class PreOrderSerializer(serializers.ModelSerializer):
     discount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0'), required=False)
+    payment_split = serializers.JSONField(required=False, allow_null=True)
 
     class Meta:
         model = PreOrder
-        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'discount', 'promo_code', 'payment_method', 'down_payment', 'is_paid', 'balance', 'order_date', 'created_at', 'status', 'recipient_name', 'contact_number', 'items']
+        fields = ['id', 'customer_name', 'address', 'item_name', 'size', 'color', 'price', 'discount', 'promo_code', 'payment_method', 'payment_split', 'down_payment', 'is_paid', 'balance', 'order_date', 'created_at', 'status', 'recipient_name', 'contact_number', 'items']
+
+    def validate(self, data):
+        if not {'payment_method', 'payment_split', 'down_payment', 'price'} & data.keys():
+            return data
+        current = lambda field, default: data.get(field, getattr(self.instance, field) if self.instance else default)
+        if current('payment_method', '') != SPLIT_PAYMENT:
+            data['payment_split'] = []
+            return data
+        rows, error = clean_payment_split(current('payment_split', None))
+        if error:
+            raise serializers.ValidationError({'payment_split': error})
+        paid = Decimal(str(current('down_payment', 0)))
+        if split_total(rows) != paid:
+            raise serializers.ValidationError({'payment_split': f'The two amounts need to add up to the down payment (₱{paid}).'})
+        if paid > Decimal(str(current('price', 0))):
+            raise serializers.ValidationError({'down_payment': 'The down payment is more than the price.'})
+        data['payment_split'] = rows
+        return data

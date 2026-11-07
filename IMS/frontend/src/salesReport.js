@@ -7,6 +7,11 @@
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 const sumOf = (rows, field) => round(rows.reduce((sum, row) => sum + (row[field] || 0), 0));
 
+// A mode of payment as it reads on screen and in the files: 'GCash', or 'GCash ₱500.00 + Cash ₱300.00' for a split.
+export const paymentLabel = (method, split) => (split?.length
+  ? split.map(p => `${p.method} ₱${(parseFloat(p.amount) || 0).toFixed(2)}`).join(' + ')
+  : method || '');
+
 export const itemLabel = ({ name, color, size, qty }) => `${name}${color ? ` (${color})` : ''}${size ? ` ${size}` : ''} x${qty}`;
 
 // One line per style, colour and size: a sale split across batches is still one item to the reader.
@@ -60,11 +65,16 @@ export const buildSalesReport = (transactions, period) => {
 
   const payments = new Map();
   rows.forEach(t => {
-    const method = t.paymentMethod || '';
-    const payment = payments.get(method) || { method, transactions: 0, collected: 0 };
-    payment.transactions += 1;
-    payment.collected = round(payment.collected + t.collected);
-    payments.set(method, payment);
+    // A split counts toward each of its two modes of payment, with the amount paid through it.
+    const parts = t.paymentSplit?.length
+      ? t.paymentSplit.map(p => ({ method: p.method, amount: parseFloat(p.amount) || 0 }))
+      : [{ method: t.paymentMethod || '', amount: t.collected }];
+    parts.forEach(({ method, amount }) => {
+      const payment = payments.get(method) || { method, transactions: 0, collected: 0 };
+      payment.transactions += 1;
+      payment.collected = round(payment.collected + amount);
+      payments.set(method, payment);
+    });
   });
 
   return {

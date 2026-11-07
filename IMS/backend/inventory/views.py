@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Q, Sum
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder, PAYMENT_METHODS
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder, PAYMENT_METHODS, SPLIT_PAYMENT
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers
@@ -22,7 +22,7 @@ import io
 from django.core.management import call_command
 from django.http import HttpResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer, OnlineOrderSerializer
+from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer, OnlineOrderSerializer, clean_payment_split, split_total
 
 
 def _norm(value):
@@ -41,7 +41,7 @@ def _sale_discount(request):
     return discount, str(request.data.get('promo_code') or '').strip()[:100]
 
 
-PAYMENT_METHOD_ERROR = 'Choose a mode of payment: GCash, Maya, GoTyme, Cash or Installment'
+PAYMENT_METHOD_ERROR = 'Choose a mode of payment: GCash, Maya, GoTyme, Cash, Installment or Split Payment'
 
 
 def _payment_method(request, current=''):
@@ -544,7 +544,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
                every batch of that product.
         discount / promo_code: one discount (pesos) for the whole sale, shared across its
                records in proportion to their amounts.
-        payment_method: GCash, Maya, GoTyme, Cash or Installment (required).
+        payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment (required).
+        payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's total.
         Every record written gets the same sale_group. If any item is short on stock,
         nothing is sold and a 400 lists what is short.
         """
@@ -557,6 +558,11 @@ class GarmentViewSet(viewsets.ModelViewSet):
         payment_method = _payment_method(request)
         if not payment_method:
             return Response({'error': PAYMENT_METHOD_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        payment_split = []
+        if payment_method == SPLIT_PAYMENT:
+            payment_split, error = clean_payment_split(request.data.get('payment_split'))
+            if error:
+                return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             sales, shortages, error = _take_items(items)
@@ -572,6 +578,9 @@ class GarmentViewSet(viewsets.ModelViewSet):
             if discount > sum(grosses):
                 transaction.set_rollback(True)
                 return Response({'error': 'Discount cannot be more than the sale amount'}, status=status.HTTP_400_BAD_REQUEST)
+            if payment_split and split_total(payment_split) != sum(grosses) - discount:
+                transaction.set_rollback(True)
+                return Response({'error': f'The two amounts need to add up to the sale total (₱{sum(grosses) - discount}).'}, status=status.HTTP_400_BAD_REQUEST)
 
             sale_group = uuid.uuid4().hex
             logs = []
@@ -586,6 +595,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                     promo_code=promo_code,
                     sale_group=sale_group,
                     payment_method=payment_method,
+                    payment_split=payment_split,
                     sold_at=timezone.localdate(),
                     batch_name=g.batch_name,
                     garment_id=g.id,
@@ -688,7 +698,8 @@ def edit_sale(request):
     record_ids: the sale's records. keep: [{id, quantity}] new quantity per record (a record
     left out, or set to 0, is removed). add: new items, same shape as record-sale items.
     discount / promo_code: the sale's discount, re-shared across the final records.
-    payment_method: GCash, Maya, GoTyme, Cash or Installment, set on every record; left as it is if not sent.
+    payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment, set on every record; left as it is if not sent.
+    payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's new total.
 
     Removed or reduced pieces go back to the batch record they were taken from; increases
     are taken from that same batch record; new items are taken oldest batch first. Existing
@@ -720,6 +731,11 @@ def edit_sale(request):
         payment_method = _payment_method(request, records[0].payment_method)
         if payment_method is None:
             return fail({'error': PAYMENT_METHOD_ERROR})
+        payment_split = []
+        if payment_method == SPLIT_PAYMENT:
+            payment_split, error = clean_payment_split(request.data.get('payment_split', records[0].payment_split))
+            if error:
+                return fail({'error': error})
 
         sale_date = min(r.sold_at for r in records)
         sale_time = min((r.created_at for r in records if r.created_at), default=None)
@@ -772,6 +788,8 @@ def edit_sale(request):
         grosses = [(price * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) for _, _, _, qty, price, _ in lines]
         if discount > sum(grosses):
             return fail({'error': 'Discount cannot be more than the sale amount'})
+        if payment_split and split_total(payment_split) != sum(grosses) - discount:
+            return fail({'error': f'The two amounts need to add up to the sale total (₱{sum(grosses) - discount}).'})
 
         saved = []
         for (record, g, size, qty, price, unit_profit), gross, share in zip(lines, grosses, _split_discount(discount, grosses)):
@@ -786,6 +804,7 @@ def edit_sale(request):
             record.promo_code = promo_code
             record.sale_group = sale_group
             record.payment_method = payment_method
+            record.payment_split = payment_split
             record.save()
             saved.append(record)
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
-import { buildSalesReport, downloadSalesReportCsv, downloadSalesReportExcel, itemLabel } from './salesReport';
+import { buildSalesReport, downloadSalesReportCsv, downloadSalesReportExcel, itemLabel, paymentLabel } from './salesReport';
 
 // Prevent infinite hangs on requests if Render goes down (60 sec max to allow cold-starts)
 axios.defaults.timeout = 60000;
@@ -333,18 +333,68 @@ const recordedTime = (value) => {
 };
 
 const NO_PROMO = { promo_code: '', discount_type: 'amount', discount_value: '' };
-const PAYMENT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash', 'Installment'];
+const SPLIT_PAYMENT = 'Split Payment';
+const PAYMENT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash', 'Installment', SPLIT_PAYMENT];
+const SPLIT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash'];
+const splitRows = (split) => {
+  const rows = parseSafeArray(split);
+  return rows.length === 2 ? rows : [{ method: '', amount: '' }, { method: '', amount: '' }];
+};
+const splitPayload = (method, split) => (method === SPLIT_PAYMENT
+  ? splitRows(split).map(p => ({ method: p.method, amount: (parseFloat(p.amount) || 0).toFixed(2) }))
+  : []);
+const cents = (value) => Math.round((parseFloat(value) || 0) * 100);
+const splitSum = (split) => splitRows(split).reduce((sum, p) => sum + cents(p.amount), 0) / 100;
+// What is wrong with a split that has to add up to total, or '' when it is fine.
+const splitPaymentError = (split, total) => {
+  const rows = splitRows(split);
+  if (rows.some(p => !p.method)) return 'Choose both modes of payment for the split.';
+  if (rows[0].method === rows[1].method) return 'Choose two different modes of payment for the split.';
+  if (rows.some(p => cents(p.amount) <= 0)) return 'Enter the amount for both split payments.';
+  if (cents(splitSum(rows)) !== cents(total)) return `The two amounts add up to ₱${splitSum(rows).toFixed(2)}, but they need to add up to ₱${total.toFixed(2)}.`;
+  return '';
+};
 
 // Mode of payment picker for sales and pre-orders.
-const PaymentMethodSelect = ({ value, onChange }) => (
-  <select aria-label="Mode of payment" value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500">
+const PaymentMethodSelect = ({ value, onChange, methods = PAYMENT_METHODS, label = 'Mode of payment' }) => (
+  <select aria-label={label} value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500">
     <option value="">Not selected</option>
-    {PAYMENT_METHODS.map(method => <option key={method} value={method}>{method}</option>)}
+    {methods.map(method => <option key={method} value={method}>{method}</option>)}
   </select>
 );
 
-const PaymentBadge = ({ method, className = '' }) => method ? (
-  <span className={`block w-fit bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Paid via {method}</span>
+// The two payments of a Split Payment. Typing the first amount fills the second with what is left.
+const SplitPaymentFields = ({ value, total, totalLabel, onChange }) => {
+  const rows = splitRows(value);
+  const setRow = (index, change) => onChange(rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
+  const setFirstAmount = (amount) => {
+    const left = (cents(total) - cents(amount)) / 100;
+    onChange([{ ...rows[0], amount }, { ...rows[1], amount: amount !== '' && left > 0 ? left.toFixed(2) : '' }]);
+  };
+  const matches = cents(splitSum(rows)) === cents(total);
+  return (
+    <div className="mt-2 space-y-2 bg-[#f9f6f0] border border-stone-200 rounded-xl p-3">
+      {rows.map((row, i) => (
+        <div key={i} className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Payment {i + 1}</label>
+            <PaymentMethodSelect label={`Split method ${i + 1}`} methods={SPLIT_METHODS} value={row.method} onChange={(method) => setRow(i, { method })} />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Amount (₱)</label>
+            <input type="number" min="0" step="0.01" placeholder="0.00" aria-label={`Split amount ${i + 1}`} value={row.amount} onChange={(e) => (i === 0 ? setFirstAmount(e.target.value) : setRow(1, { amount: e.target.value }))} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-black text-emerald-600 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500" />
+          </div>
+        </div>
+      ))}
+      <p data-test="split-sum" className={`text-[11px] font-black ${matches ? 'text-emerald-600' : 'text-rose-600'}`}>
+        ₱{splitSum(rows).toFixed(2)} of ₱{total.toFixed(2)} {totalLabel}
+      </p>
+    </div>
+  );
+};
+
+const PaymentBadge = ({ method, split, className = '' }) => method ? (
+  <span className={`block w-fit bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Paid via {paymentLabel(method, split)}</span>
 ) : null;
 
 // Promo code, amount, and peso/percent switch for a pre-order or online order discount.
@@ -1458,6 +1508,7 @@ function AdminDashboard() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutPromo, setCheckoutPromo] = useState({ promo_code: '', discount_type: 'amount', discount_value: '' });
   const [checkoutPayment, setCheckoutPayment] = useState('');
+  const [checkoutSplit, setCheckoutSplit] = useState([]);
   const [recordingSale, setRecordingSale] = useState(false);
   // A recorded sale being edited: its records (new quantities), new items, and its promo discount.
   const [editSale, setEditSale] = useState(null);
@@ -1616,9 +1667,13 @@ function AdminDashboard() {
   // Records every item in the cart as one sale (all or nothing on the server).
   const handleRecordCartSale = async () => {
     if (saleCart.length === 0 || recordingSale) return;
-    const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
+    const { subtotal, discount, total } = cartTotals(cartPieceLines(saleCart), checkoutPromo);
     if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
     if (!checkoutPayment) { alert('Choose the mode of payment first.'); return; }
+    if (checkoutPayment === SPLIT_PAYMENT) {
+      const splitError = splitPaymentError(checkoutSplit, total);
+      if (splitError) { alert(splitError); return; }
+    }
     setRecordingSale(true);
     try {
       await axios.post(`${API_BASE}garments/record-sale/`, {
@@ -1627,12 +1682,14 @@ function AdminDashboard() {
           : { name: l.name, color: l.color, category: l.category, size: l.size, quantity: l.quantity }),
         discount: discount.toFixed(2),
         promo_code: String(checkoutPromo.promo_code || '').trim(),
-        payment_method: checkoutPayment
+        payment_method: checkoutPayment,
+        payment_split: splitPayload(checkoutPayment, checkoutSplit)
       });
       showToast(`🌸 Sale Recorded! ${cartPieces} pc(s) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
       setSaleCart([]);
       setCheckoutPromo({ promo_code: '', discount_type: 'amount', discount_value: '' });
       setCheckoutPayment('');
+      setCheckoutSplit([]);
       setShowCheckout(false);
       await fetchData(true);
     } catch (error) {
@@ -2011,6 +2068,21 @@ function AdminDashboard() {
     });
   };
 
+  // Cart lines with the pieces they will really be sold as. A line for one batch record uses that
+  // record's price; any other line is taken oldest batch first, after the lines before it.
+  const pricedCart = (cart) => {
+    const taken = [];
+    return (cart || []).map(line => {
+      if (line.garment_id) {
+        taken.push({ garmentId: line.garment_id, size: line.size, qty: -line.quantity });
+        return { ...line, pieces: [{ price: line.unit_price, qty: line.quantity }] };
+      }
+      const pieces = piecesFromBatches([{ item_name: line.name, color: line.color, size: line.size, quantity: line.quantity }], taken);
+      return { ...line, pieces };
+    });
+  };
+  const cartPieceLines = (cart) => pricedCart(cart).flatMap(line => line.pieces.map(p => ({ unit_price: p.price, quantity: p.qty })));
+
   // heldItems is stock this order already holds, which is given back on edit.
   const suggestedPreOrderPrice = (items, heldItems = []) => {
     const stockChanges = (heldItems || []).flatMap(h => {
@@ -2196,9 +2268,18 @@ function AdminDashboard() {
       // Blank amounts are sent as 0: the server rejects blanks, and a rejected save must not happen after stock is taken.
       price: Number(total.toFixed(2)), discount, promo_code: discount > 0 ? String(form.promo_code || '').trim() : '',
       payment_method: form.payment_method || '',
+      payment_split: splitPayload(form.payment_method, form.payment_split),
       down_payment: parseFloat(form.down_payment) || 0,
       is_paid: !!form.is_paid, balance: parseFloat(form.balance) || 0
     };
+  };
+
+  const preOrderSplitError = (form) => {
+    if (form.payment_method !== SPLIT_PAYMENT) return '';
+    const paid = parseFloat(form.down_payment) || 0;
+    if (paid <= 0) return 'Enter the down payment before splitting it.';
+    if (paid > preOrderTotals(form).total) return 'The down payment is more than the total.';
+    return splitPaymentError(form.payment_split, paid);
   };
 
   const handleCreatePreOrder = async (e) => {
@@ -2206,6 +2287,8 @@ function AdminDashboard() {
     const { subtotal: preOrderSubtotal, discount: preOrderDiscount } = preOrderTotals(newPreOrder);
     if (preOrderDiscount > preOrderSubtotal) { alert(`The discount (₱${preOrderDiscount.toFixed(2)}) is more than the price (₱${preOrderSubtotal.toFixed(2)}).`); return; }
     try {
+      const splitError = preOrderSplitError(newPreOrder);
+      if (splitError) { alert(splitError); return; }
       const draftPayload = buildPreOrderPayload(newPreOrder);
       if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
       const shortages = preOrderShortages(draftPayload.items);
@@ -2253,6 +2336,7 @@ function AdminDashboard() {
       is_paid: item.is_paid || false,
       balance: item.balance || '',
       payment_method: item.payment_method || '',
+      payment_split: parseSafeArray(item.payment_split),
       promo_code: item.promo_code || '',
       discount_type: 'amount',
       discount_value: savedDiscount > 0 ? savedDiscount.toFixed(2) : ''
@@ -2270,6 +2354,8 @@ function AdminDashboard() {
 
     try {
       const oldOrder = (preOrders || []).find(o => o?.id === editPreOrder.id);
+      const splitError = preOrderSplitError(editPreOrder);
+      if (splitError) { alert(splitError); return; }
       const draftPayload = buildPreOrderPayload(editPreOrder);
       if (!draftPayload) { alert('Add at least one item (with a style and size) to the pre-order.'); return; }
       const shortages = preOrderShortages(draftPayload.items, oldOrder ? preOrderItemList(oldOrder) : []);
@@ -2401,6 +2487,7 @@ function AdminDashboard() {
     setEditSale({
       logIds: ids, lines, add: [],
       payment_method: records.find(r => r.payment_method)?.payment_method || '',
+      payment_split: parseSafeArray(records.find(r => r.payment_method)?.payment_split),
       promo_code: records.find(r => r.promo_code)?.promo_code || '',
       discount_type: 'amount',
       discount_value: totalDiscount > 0 ? totalDiscount.toFixed(2) : ''
@@ -2423,6 +2510,10 @@ function AdminDashboard() {
     const { subtotal, discount } = cartTotals(priced.map(l => ({ unit_price: l.price, quantity: l.qty })), editSale);
     if (priced.every(l => l.qty <= 0)) { alert('A sale needs at least one item. Use Delete to remove the whole sale.'); return; }
     if (discount > subtotal) { alert(`The discount (₱${discount.toFixed(2)}) is more than the sale (₱${subtotal.toFixed(2)}).`); return; }
+    if (editSale.payment_method === SPLIT_PAYMENT) {
+      const splitError = splitPaymentError(editSale.payment_split, subtotal - discount);
+      if (splitError) { alert(splitError); return; }
+    }
     const incomplete = editSale.add.filter(a => (a.item_name || a.size) && !(a.item_name && a.size && parseInt(a.quantity) > 0));
     if (incomplete.length > 0) { alert('Finish or remove the new item rows (each needs a style, size and quantity).'); return; }
     setRecordingSale(true);
@@ -2436,7 +2527,8 @@ function AdminDashboard() {
         }),
         discount: discount.toFixed(2),
         promo_code: String(editSale.promo_code || '').trim(),
-        payment_method: editSale.payment_method || ''
+        payment_method: editSale.payment_method || '',
+        payment_split: splitPayload(editSale.payment_method, editSale.payment_split)
       });
       showToast('✏️ Sale updated & stock adjusted!');
       setEditSale(null);
@@ -2525,6 +2617,7 @@ function AdminDashboard() {
       discount: parseFloat(order?.discount) || 0,
       promo_code: order?.promo_code ? String(order.promo_code) : '',
       payment_method: order?.payment_method ? String(order.payment_method) : '',
+      payment_split: parseSafeArray(order?.payment_split),
       down_payment: parseFloat(order?.down_payment) || 0,
       earned: (parseFloat(order?.price) || 0) - (parseFloat(order?.balance) || 0),
       balance: parseFloat(order?.balance) || 0,
@@ -2560,6 +2653,7 @@ function AdminDashboard() {
       promo_code: log?.promo_code ? String(log.promo_code) : '',
       sale_group: log?.sale_group ? String(log.sale_group) : '',
       payment_method: log?.payment_method ? String(log.payment_method) : '',
+      payment_split: parseSafeArray(log?.payment_split),
       garment_id: log?.garment_id || null
     };
   });
@@ -2648,7 +2742,8 @@ function AdminDashboard() {
     discount: row.discount,
     promoCode: row.promo_code,
     balance: row.isPreOrder ? row.balance : 0,
-    paymentMethod: row.payment_method,
+    paymentMethod: paymentLabel(row.payment_method, row.payment_split),
+    paymentSplit: row.payment_split,
     status: row.status,
   }));
 
@@ -2812,7 +2907,7 @@ function AdminDashboard() {
       )}
 
       {showCheckout && (() => {
-        const { subtotal, discount, total } = cartTotals(saleCart, checkoutPromo);
+        const { subtotal, discount, total } = cartTotals(cartPieceLines(saleCart), checkoutPromo);
         return (
           <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowCheckout(false)}>
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -2829,7 +2924,7 @@ function AdminDashboard() {
                   <p className="text-center text-stone-400 font-bold py-6">Your cart is empty. Open a product and press "Add to Cart".</p>
                 ) : (
                   <div className="space-y-2">
-                    {saleCart.map(line => (
+                    {pricedCart(saleCart).map(line => (
                       <div key={line.key} className="flex items-center gap-3 bg-[#f9f6f0] border border-stone-200 rounded-xl p-2.5">
                         <div className="w-12 h-12 rounded-lg bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center">
                           {line.image ? <img src={line.image} alt={line.name} className="w-full h-full object-cover" /> : <span className="text-xl">👗</span>}
@@ -2837,7 +2932,7 @@ function AdminDashboard() {
                         <div className="flex-1 min-w-0">
                           <span className="block font-black text-sm text-stone-900 truncate">{line.name}</span>
                           <span className="block text-[11px] font-bold text-stone-500">
-                            {normColorKey(line.color) ? `${line.color} · ` : ''}Size {displaySize(line.size)}{line.batch_name ? ` · Batch ${line.batch_name}` : ''} · ₱{line.unit_price.toFixed(2)}
+                            {normColorKey(line.color) ? `${line.color} · ` : ''}Size {displaySize(line.size)}{line.batch_name ? ` · Batch ${line.batch_name}` : ''} · {line.pieces.length > 1 ? line.pieces.map(p => `${p.qty} × ₱${p.price.toFixed(2)}`).join(' + ') : `₱${(line.pieces[0]?.price ?? line.unit_price).toFixed(2)}`}
                           </span>
                         </div>
                         <div className="flex items-center border border-stone-300 rounded-lg bg-white shrink-0">
@@ -2845,7 +2940,7 @@ function AdminDashboard() {
                           <span className="w-6 text-center font-black text-sm">{line.quantity}</span>
                           <button type="button" onClick={() => changeCartQuantity(line.key, line.quantity + 1)} disabled={line.quantity >= line.max} className="w-7 h-8 font-black text-stone-600 hover:text-stone-900 disabled:text-stone-300">+</button>
                         </div>
-                        <span className="w-20 text-right font-black text-sm text-stone-900 shrink-0">₱{(line.unit_price * line.quantity).toFixed(2)}</span>
+                        <span className="w-20 text-right font-black text-sm text-stone-900 shrink-0">₱{line.pieces.reduce((sum, p) => sum + p.price * p.qty, 0).toFixed(2)}</span>
                         <button type="button" onClick={() => removeFromCart(line.key)} className="text-rose-500 hover:text-rose-700 font-black text-lg px-1" title="Remove from cart">&times;</button>
                       </div>
                     ))}
@@ -2855,6 +2950,7 @@ function AdminDashboard() {
                 <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
                   <PaymentMethodSelect value={checkoutPayment} onChange={setCheckoutPayment} />
+                  {checkoutPayment === SPLIT_PAYMENT && <SplitPaymentFields value={checkoutSplit} total={Math.max(0, total)} totalLabel="sale total" onChange={setCheckoutSplit} />}
                 </div>
 
                 <div>
@@ -3001,6 +3097,7 @@ function AdminDashboard() {
                 <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
                   <PaymentMethodSelect value={editSale.payment_method} onChange={(payment_method) => setEditSale({ ...editSale, payment_method })} />
+                  {editSale.payment_method === SPLIT_PAYMENT && <SplitPaymentFields value={editSale.payment_split} total={Math.max(0, total)} totalLabel="sale total" onChange={(payment_split) => setEditSale({ ...editSale, payment_split })} />}
                 </div>
 
                 <div>
@@ -3478,7 +3575,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
-                              <PaymentBadge method={log.payment_method} className="mt-1.5" />
+                              <PaymentBadge method={log.payment_method} split={log.payment_split} className="mt-1.5" />
                             </div>
                           ) : log?.isSaleGroup && log.lines.length > 1 ? (
                             <div className="flex flex-col w-fit">
@@ -3496,7 +3593,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
-                              <PaymentBadge method={log.payment_method} className="mt-1.5" />
+                              <PaymentBadge method={log.payment_method} split={log.payment_split} className="mt-1.5" />
                             </div>
                           ) : (
                             <>
@@ -3506,7 +3603,7 @@ function AdminDashboard() {
                                   {log.promo_code ? `${log.promo_code} · ` : ''}-₱{log.discount.toFixed(2)}
                                 </span>
                               )}
-                              <PaymentBadge method={log?.payment_method} className="mt-1" />
+                              <PaymentBadge method={log?.payment_method} split={log?.payment_split} className="mt-1" />
                             </>
                           )}
                         </td>
@@ -3835,7 +3932,7 @@ function AdminDashboard() {
                               {order.promo_code ? `${order.promo_code} · ` : ''}-₱{parseFloat(order.discount).toFixed(2)}
                             </span>
                           )}
-                          <PaymentBadge method={order?.payment_method} className="ml-auto mt-1" />
+                          <PaymentBadge method={order?.payment_method} split={parseSafeArray(order?.payment_split)} className="ml-auto mt-1" />
                         </td>
                         <td className="p-4 text-center align-top">
                           <div className="flex justify-center gap-1.5">
@@ -3955,7 +4052,7 @@ function AdminDashboard() {
                         Discount{viewPreOrder.promo_code ? ` (${viewPreOrder.promo_code})` : ''}: -₱{parseFloat(viewPreOrder.discount).toFixed(2)}
                       </span>
                     )}
-                    <PaymentBadge method={viewPreOrder.payment_method} className="mt-1" />
+                    <PaymentBadge method={viewPreOrder.payment_method} split={viewPreOrder.payment_split} className="mt-1" />
                  </div>
                  <div className="text-right">
                     <span className="block text-[10px] font-bold text-stone-400 uppercase">Fulfillment</span>
@@ -4899,6 +4996,7 @@ function AdminDashboard() {
                 <div className="mb-3">
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Mode of Payment</label>
                   <PaymentMethodSelect value={newPreOrder.payment_method} onChange={(payment_method) => setNewPreOrder({...newPreOrder, payment_method})} />
+                  {newPreOrder.payment_method === SPLIT_PAYMENT && <SplitPaymentFields value={newPreOrder.payment_split} total={parseFloat(newPreOrder.down_payment) || 0} totalLabel="down payment" onChange={(payment_split) => setNewPreOrder({...newPreOrder, payment_split})} />}
                 </div>
 
                 <div className="mb-3">
@@ -5093,6 +5191,7 @@ function AdminDashboard() {
                 <div className="mb-3">
                   <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Mode of Payment</label>
                   <PaymentMethodSelect value={editPreOrder.payment_method} onChange={(payment_method) => setEditPreOrder({...editPreOrder, payment_method})} />
+                  {editPreOrder.payment_method === SPLIT_PAYMENT && <SplitPaymentFields value={editPreOrder.payment_split} total={parseFloat(editPreOrder.down_payment) || 0} totalLabel="down payment" onChange={(payment_split) => setEditPreOrder({...editPreOrder, payment_split})} />}
                 </div>
 
                 <div className="mb-3">

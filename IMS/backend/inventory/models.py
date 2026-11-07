@@ -66,7 +66,11 @@ PAYMENT_METHODS = [
     ('GoTyme', 'GoTyme'),
     ('Cash', 'Cash'),
     ('Installment', 'Installment'),
+    ('Split Payment', 'Split Payment'),
 ]
+SPLIT_PAYMENT = 'Split Payment'
+# What a split can be made of.
+SPLIT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash']
 
 
 class SaleLog(models.Model):
@@ -96,6 +100,8 @@ class SaleLog(models.Model):
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, editable=False)
     # Blank on records made before this was tracked, until someone edits them.
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
+    # For a Split Payment, its two payments: [{method, amount}]. A sale has the whole split on each record.
+    payment_split = models.JSONField(blank=True, null=True, default=list)
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):
@@ -123,6 +129,8 @@ class PreOrder(models.Model):
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     promo_code = models.CharField(max_length=100, blank=True, default='')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
+    # For a Split Payment, its two payments: [{method, amount}]. A sale has the whole split on each record.
+    payment_split = models.JSONField(blank=True, null=True, default=list)
     
     is_paid = models.BooleanField(default=False)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
