@@ -550,9 +550,12 @@ function CustomerView() {
                             String(item.batch_name || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // Size and availability look at the same stock: e.g. size M must itself be in a pre-order batch for "Pre-Order".
-      const matchesStock = (activeSize === 'All' && activeAvailability === 'All') || (item.underlying_garments || []).some(g =>
-        (activeAvailability === 'All' || (activeAvailability === 'Pre-order') === (g?.batch_status === 'Pre-order')) &&
-        parseSafeArray(g?.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0));
+      // Sold Out is the opposite: nothing left in any batch, or nothing left in the chosen size.
+      const matchesStock = activeAvailability === 'Sold Out'
+        ? !parseSafeArray(item.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0)
+        : (activeSize === 'All' && activeAvailability === 'All') || (item.underlying_garments || []).some(g =>
+          (activeAvailability === 'All' || (activeAvailability === 'Pre-order') === (g?.batch_status === 'Pre-order')) &&
+          parseSafeArray(g?.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0));
       return matchesSearch && matchesCategory && matchesStock;
     })
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
@@ -589,7 +592,7 @@ function CustomerView() {
               groups={[
                 { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
                 { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
-                { label: 'Availability', value: activeAvailability, onChange: setActiveAvailability, options: [['All', 'All'], ['On-hand', 'In Stock'], ['Pre-order', 'Pre-Order']] },
+                { label: 'Availability', value: activeAvailability, onChange: setActiveAvailability, options: [['All', 'All'], ['On-hand', 'In Stock'], ['Pre-order', 'Pre-Order'], ['Sold Out', 'Sold Out']] },
               ]}
               onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveAvailability('All'); }}
             />
