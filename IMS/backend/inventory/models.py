@@ -92,6 +92,8 @@ class SaleLog(models.Model):
     promo_code = models.CharField(max_length=100, blank=True, default='')
     # Records written by one checkout share this id, so a multi-item sale is listed as one sale.
     sale_group = models.CharField(max_length=40, blank=True, default='', db_index=True)
+    # When the sale was recorded. Empty on records made before times were saved.
+    created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, editable=False)
     # Blank on records made before this was tracked, until someone edits them.
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
 
@@ -125,6 +127,8 @@ class PreOrder(models.Model):
     is_paid = models.BooleanField(default=False)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     order_date = models.DateField(auto_now_add=True)
+    # When the order was recorded. Empty on orders made before times were saved.
+    created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, editable=False)
     STATUS_CHOICES = [
         ('Pending', 'Pending'),
         ('Shipped', 'Shipped'),

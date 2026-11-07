@@ -722,6 +722,7 @@ def edit_sale(request):
             return fail({'error': PAYMENT_METHOD_ERROR})
 
         sale_date = min(r.sold_at for r in records)
+        sale_time = min((r.created_at for r in records if r.created_at), default=None)
         sale_status = records[0].status
         sale_group = next((r.sale_group for r in records if r.sale_group), '') or uuid.uuid4().hex
         lines, shortages = [], []  # lines: [record or None, garment, size, qty, unit_price, unit_profit]
@@ -777,7 +778,7 @@ def edit_sale(request):
             profit = (unit_profit * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) - share
             if record is None:
                 record = SaleLog(garment_name=g.name, size=size, batch_name=g.batch_name, garment_id=g.id,
-                                 sold_at=sale_date, status=sale_status)
+                                 sold_at=sale_date, status=sale_status, created_at=sale_time)
             record.quantity_sold = qty
             record.amount_sold = gross - share
             record.profit_earned = profit

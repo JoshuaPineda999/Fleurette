@@ -326,6 +326,12 @@ const matchColor = (color) => (!color || color === 'N/A' ? '' : color);
 
 // 8. One line item within a (possibly multi-item) pre-order
 const emptyPreOrderItem = () => ({ item_name: '', size: '', color: '', quantity: 1 });
+// Time of day a record was saved, always in shop time. Blank on records from before times were saved.
+const recordedTime = (value) => {
+  const time = new Date(value || NaN);
+  return isNaN(time) ? '' : time.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+};
+
 const NO_PROMO = { promo_code: '', discount_type: 'amount', discount_value: '' };
 const PAYMENT_METHODS = ['GCash', 'Maya', 'GoTyme', 'Cash', 'Installment'];
 
@@ -2352,7 +2358,7 @@ function AdminDashboard() {
   };
 
   const handleClearAllHistory = async () => {
-    if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales Ledger?\n\nThis will delete all recorded regular sales and RETURN the sold items back to your stock.")) return;
+    if (!window.confirm("Are you sure you want to COMPLETELY clear the Sales History?\n\nThis will delete all recorded regular sales and RETURN the sold items back to your stock.")) return;
     setLoading(true);
     try {
       let kept = 0;
@@ -2364,7 +2370,7 @@ function AdminDashboard() {
         await axios.delete(`${API_BASE}sales/history/${log.id}/`);
       }
       if (kept > 0) alert(`${kept} sale(s) were kept because their batch no longer exists, so their stock could not be returned.`);
-      showToast("🗑️ Sales Ledger cleared & stocks returned to their batches!");
+      showToast("🗑️ Sales History cleared & stocks returned to their batches!");
       await fetchData(true);
     } catch (error) { alert('Error clearing some records.'); }
     setLoading(false);
@@ -2502,7 +2508,7 @@ function AdminDashboard() {
 
     return {
       id: `preorder-${order?.id}`, originalId: order?.id, isPreOrder: true, 
-      date: order?.order_date ? String(order.order_date) : '', 
+      date: order?.order_date ? String(order.order_date) : '', created_at: order?.created_at || null, 
       itemsArray: safeItems,
       name: safeItems.map(i => i.item_name).join(', '),
       size: safeItems.map(i => i.size).join(', '),
@@ -2533,7 +2539,7 @@ function AdminDashboard() {
       : sellingPrice > 0 ? (sellingPrice * qty) : (parseFloat(log?.profit_earned) || 0);
 
     return {
-      id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '',
+      id: `sale-${log?.id}`, originalId: log?.id, isPreOrder: false, date: log?.sold_at ? String(log.sold_at) : '', created_at: log?.created_at || null,
       itemsArray: [],
       name: log?.garment_name ? String(log.garment_name) : '',
       customer_name: '',
@@ -2613,13 +2619,15 @@ function AdminDashboard() {
   const historyTotalEarned = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0);
   const historyTotalPieces = unifiedHistory.reduce((sum, log) => sum + (parseFloat(log?.qty) || 0), 0);
 
+  // Newest first. Within a day, records with a time come before older ones without.
   const historyRows = [...groupedSaleRows, ...mappedPreOrders].sort((a, b) => {
     const timeA = new Date(a?.date || 0).getTime();
     const timeB = new Date(b?.date || 0).getTime();
-    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA)
+      || new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
   });
 
-  // Each Sales Ledger row as the Sales Report reads it.
+  // Each Sales History row as the Sales Report reads it.
   const reportTransactions = () => historyRows.map(row => ({
     id: row.id,
     type: row.isPreOrder ? 'Pre-Order' : 'Sale',
@@ -2686,7 +2694,7 @@ function AdminDashboard() {
     batchMap[bName].value_left += (parseFloat(g.total_pieces) || 0) * (parseFloat(g.selling_price) || 0);
     batchMap[bName].styles_count += 1;
   });
-  // Sales are recorded per batch (SaleLog.batch_name), so sold totals come from the sales ledger.
+  // Sales are recorded per batch (SaleLog.batch_name), so sold totals come from the sales history.
   (salesHistory || []).forEach(s => {
     if (!s) return;
     const bName = String(s.batch_name || 'Uncategorized');
@@ -3051,7 +3059,7 @@ function AdminDashboard() {
               <span className="text-lg">🛍️</span> Product Gallery
             </button>
             <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">📜</span> Sales Ledger
+              <span className="text-lg">📜</span> Sales History
             </button>
             <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📈</span> Net Profit Analytics
@@ -3354,12 +3362,12 @@ function AdminDashboard() {
           <div className="animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6">
               <div>
-                <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Fleurette Sales Ledger</h2>
+                <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Fleurette Sales History</h2>
                 <p className="text-stone-500 text-sm mt-1">Every recorded transaction and collected pre-order revenue</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={handleClearAllHistory} className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold px-4 py-2 rounded-xl text-xs border border-rose-200 transition h-[38px] flex items-center gap-1">
-                  <span>🗑️</span> Clear Ledger
+                  <span>🗑️</span> Clear History
                 </button>
                 
                 <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-stone-200 h-[38px]">
@@ -3409,7 +3417,7 @@ function AdminDashboard() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-[#f2ece4] text-stone-700 text-xs uppercase tracking-wider font-extrabold border-b border-stone-200">
-                      <th className="p-4">Date</th>
+                      <th className="p-4">Date &amp; Time</th>
                       <th className="p-4">Transaction / Style Name</th>
                       <th className="p-4 text-center">Details</th>
                       <th className="p-4 text-center">Quantity</th>
@@ -3423,7 +3431,10 @@ function AdminDashboard() {
                       const currentStatus = String(log?.status || 'Pending');
                       return (
                       <tr key={`log-${log?.id}`} className="hover:bg-[#f9f6f0] transition">
-                        <td className="p-4 text-sm font-bold text-stone-500">📅 {String(log?.date || 'N/A')}</td>
+                        <td className="p-4 text-sm font-bold text-stone-500 align-top whitespace-nowrap">
+                          📅 {String(log?.date || 'N/A')}
+                          {recordedTime(log?.created_at) && <span data-test="history-time" className="block text-xs text-stone-400 mt-0.5">{recordedTime(log.created_at)}</span>}
+                        </td>
                         
                         <td className="p-4 font-black text-stone-900 text-base align-top">
                           {log?.isPreOrder ? (
