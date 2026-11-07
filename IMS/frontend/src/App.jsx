@@ -1189,8 +1189,11 @@ function DesignCard({ design, onOpen }) {
 
   return (
     <div onClick={() => onOpen(variant)} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group cursor-pointer relative">
+      {variant?.total_pieces === 0 && (
+        <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
+      )}
       <div className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2">
-        {image ? (<img key={image} src={image} alt={design.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+        {image ? (<img key={image} src={image} alt={design.name} className={`w-full h-full object-cover transition duration-500 ${variant?.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
         {photos.length > 1 && (
           <>
             <button type="button" onClick={(e) => stepPhoto(e, -1)} aria-label="Previous photo" className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/75 hover:bg-white text-stone-800 font-black text-sm leading-none shadow-sm z-10 transition opacity-70 sm:opacity-0 sm:group-hover:opacity-100">‹</button>
@@ -3227,8 +3230,11 @@ function AdminDashboard() {
                     .map((item) => (
                     <div key={`btch-${item?.id}`} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
                       
+                      {item?.total_pieces === 0 && (
+                        <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
+                      )}
                       <div onClick={() => openProductModal(item, 'sell')} className="relative h-64 bg-[#f2ece4] overflow-hidden shrink-0 flex items-center justify-center pt-2 cursor-pointer">
-                        {item?.image ? (<img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
+                        {item?.image ? (<img src={item.image} alt={item.name} className={`w-full h-full object-cover transition duration-500 ${item?.total_pieces === 0 ? 'opacity-50 grayscale' : 'group-hover:scale-105'}`} />) : (<span className="text-6xl text-stone-300 select-none">👗</span>)}
                         <div className="absolute bottom-3 right-3 bg-[#eae4dc]/90 backdrop-blur-md text-stone-900 px-3 py-1 rounded-full text-xs font-black shadow-md">{item?.total_pieces} pcs left</div>
                       </div>
 
