@@ -22,13 +22,16 @@ const API_BASE = BACKEND_URL.endsWith('/') ? `${BACKEND_URL}api/` : `${BACKEND_U
 
 // 2b. ADMIN LOGIN TOKENS. The backend issues an access token (1 hour) and a refresh token (7 days);
 // every API request sends the access token, and an expired one is renewed once before giving up.
+// The tokens live in sessionStorage, so closing the tab or browser logs the admin out.
 const AUTH_ACCESS_KEY = 'fleurette_access';
 const AUTH_REFRESH_KEY = 'fleurette_refresh';
-const readStore = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
-const writeStore = (key, value) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
+const readStore = (key) => { try { return sessionStorage.getItem(key); } catch { return null; } };
+const writeStore = (key, value) => { try { sessionStorage.setItem(key, value); } catch { /* storage unavailable */ } };
 const clearAuth = () => {
-  try { [AUTH_ACCESS_KEY, AUTH_REFRESH_KEY, 'isAdmin'].forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
+  try { [AUTH_ACCESS_KEY, AUTH_REFRESH_KEY, 'isAdmin'].forEach(k => sessionStorage.removeItem(k)); } catch { /* storage unavailable */ }
 };
+// Logins saved by older versions stayed for 7 days in localStorage; remove them.
+try { [AUTH_ACCESS_KEY, AUTH_REFRESH_KEY, 'isAdmin'].forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
 const isLoggedIn = () => !!(readStore(AUTH_ACCESS_KEY) || readStore(AUTH_REFRESH_KEY));
 const isAuthUrl = (url) => String(url || '').includes('auth/token');
 
