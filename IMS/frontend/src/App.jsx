@@ -1457,6 +1457,68 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
   );
 }
 
+// Most extra photos an item can have (the server allows the same).
+const MAX_EXTRA_PHOTOS = 6;
+
+// A small square of a picked photo, with a button to take it out.
+function PickedPhotoThumb({ file, onRemove }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  return (
+    <div className="relative aspect-square rounded-lg overflow-hidden border border-stone-200 bg-[#f2ece4]">
+      {src && <img src={src} alt="Extra" className="w-full h-full object-cover" />}
+      <button type="button" onClick={onRemove} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 hover:bg-white text-rose-600 font-black text-sm leading-none shadow" title="Remove photo">&times;</button>
+    </div>
+  );
+}
+
+// Extra photos for an item that is not saved yet: each picked photo is cropped first, and the
+// cropped photos are kept in files until the item is saved. room: how many more it can have.
+function ExtraPhotosPicker({ files, onChange, room, previewName, previewPrice }) {
+  const [queue, setQueue] = useState({ files: [], total: 0 });
+  const left = room - files.length;
+  const pick = (list) => {
+    const picked = Array.from(list || []).filter(f => f.type.startsWith('image/'));
+    if (picked.length === 0) return;
+    if (picked.length > left) { alert(`An item can have up to ${MAX_EXTRA_PHOTOS} extra photos. You can add ${Math.max(left, 0)} more.`); return; }
+    setQueue({ files: picked, total: picked.length });
+  };
+  const next = () => setQueue(prev => ({ ...prev, files: prev.files.slice(1) }));
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <label className="block text-[10px] font-bold text-stone-600 uppercase">More Photos (Optional)</label>
+        <span className="text-[10px] font-bold text-stone-400">{MAX_EXTRA_PHOTOS - room + files.length} / {MAX_EXTRA_PHOTOS}</span>
+      </div>
+      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+        {files.map((f, i) => (
+          <PickedPhotoThumb key={`${f.name}-${f.lastModified}-${i}`} file={f} onRemove={() => onChange(files.filter((_, j) => j !== i))} />
+        ))}
+        {left > 0 && queue.files.length === 0 && (
+          <label className="aspect-square rounded-lg border-2 border-dashed border-stone-300 flex flex-col items-center justify-center text-stone-500 text-[10px] font-black transition cursor-pointer hover:border-pink-500 hover:text-pink-600">
+            <span className="text-lg leading-none">＋</span>
+            Add photos
+            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { pick(e.target.files); e.target.value = ''; }} />
+          </label>
+        )}
+      </div>
+      {queue.files.length > 0 && (
+        <div className="mt-2">
+          <FileCropEditor
+            file={queue.files[0]} previewName={previewName} previewPrice={previewPrice}
+            title={queue.total > 1 ? `Photo ${queue.total - queue.files.length + 1} of ${queue.total}` : ''}
+            cancelLabel="Skip" onApply={(cropped) => { onChange([...files, cropped]); next(); }} onCancel={next}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // The crop editor for a picked file (it makes and frees the file's address for the photo).
 function FileCropEditor({ file, ...props }) {
   const [src, setSrc] = useState(null);
@@ -1989,7 +2051,7 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
@@ -2045,7 +2107,7 @@ function AdminDashboard() {
   };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -2259,25 +2321,30 @@ function AdminDashboard() {
     setNewBatch({ ...newBatch, styles: updatedStyles });
   };
   const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
-  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
+
+  // The batch record a style row is added to: same name, batch, colour and category (none for a new item).
+  const findBatchGarment = (style, batchName) => (garments || []).find(g =>
+    String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
+    String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || 'Uncategorized').toLowerCase().trim() &&
+    normColorKey(g?.color) === normColorKey(style.color) &&
+    String(g?.category || '').toLowerCase().trim() === String(style.category || '').toLowerCase().trim()
+  );
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
     if (batchSaveLock.current) return;
     batchSaveLock.current = true;
     setBatchSaving(true);
+    const photoProblems = [];
     try {
       for (const style of newBatch.styles) {
         if (!style.name) continue; 
         const batchName = newBatch.batch_name || 'Uncategorized';
 
-        const existingGarment = (garments || []).find(g =>
-          String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
-          String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || '').toLowerCase().trim() &&
-          normColorKey(g?.color) === normColorKey(style.color) &&
-          String(g?.category || '').toLowerCase().trim() === String(style.category || '').toLowerCase().trim()
-        );
+        const existingGarment = findBatchGarment(style, batchName);
+        let savedId;
 
         const formData = new FormData();
         formData.append('batch_name', batchName);
@@ -2294,6 +2361,7 @@ function AdminDashboard() {
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
           if (style.image) formData.append('image', style.image);
           await axios.patch(`${API_BASE}garments/${existingGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          savedId = existingGarment.id;
         } else {
           formData.append('category', style.category || 'Uncategorized');
           formData.append('color', style.color || 'N/A');
@@ -2301,15 +2369,26 @@ function AdminDashboard() {
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
           if (style.image) formData.append('image', style.image);
-          await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          const { data } = await axios.post(`${API_BASE}garments/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          savedId = data.id;
+        }
+        if ((style.extra_photos || []).length > 0) {
+          try {
+            const photos = new FormData();
+            for (const f of style.extra_photos) photos.append('images', await shrinkImageFile(f));
+            await axios.post(`${API_BASE}garments/${savedId}/photos/`, photos, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+          } catch (error) {
+            photoProblems.push(`${style.name.trim()}: ${error.response?.data?.error || error.message}`);
+          }
         }
       }
       // The whole batch (including styles already in it) takes the status chosen in the form.
       await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: newBatch.batch_name || 'Uncategorized', batch_status: newBatch.batch_status || 'On-hand' });
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
+      if (photoProblems.length) alert(`The batch was saved, but some extra photos could not be added:\n\n${photoProblems.join('\n')}\n\nYou can add them in Edit Style Details.`);
     } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
     finally { batchSaveLock.current = false; setBatchSaving(false); }
   };
@@ -2374,7 +2453,6 @@ function AdminDashboard() {
   // extraQueue and are cropped one at a time; each is saved when its crop is applied.
   const [photoUploading, setPhotoUploading] = useState(false);
   const [extraQueue, setExtraQueue] = useState({ files: [], total: 0 });
-  const MAX_EXTRA_PHOTOS = 6;
   const handleAddExtraPhotos = (fileList) => {
     const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0 || !editGarment.id) return;
@@ -4970,6 +5048,15 @@ function AdminDashboard() {
                           onChange={(f) => handleBatchStyleChange(index, 'image', f)}
                         />
                       </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <ExtraPhotosPicker
+                        files={style.extra_photos || []}
+                        room={MAX_EXTRA_PHOTOS - parseSafeArray(findBatchGarment(style, newBatch.batch_name)?.photos).length}
+                        previewName={style.name} previewPrice={style.selling_price}
+                        onChange={(files) => handleBatchStyleChange(index, 'extra_photos', files)}
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 mt-3">
