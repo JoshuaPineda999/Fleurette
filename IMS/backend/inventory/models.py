@@ -7,6 +7,9 @@ class Garment(models.Model):
     category = models.CharField(max_length=100, blank=True, null=True, default="Uncategorized")  # NEW
     color = models.CharField(max_length=100, blank=True, null=True)                              # NEW
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
+    # Tax added on top of a base price: cost_price is then base + tax. Both empty when there is no tax.
+    cost_base = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    cost_tax_percent = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
     image = models.ImageField(upload_to='garments/', blank=True, null=True)
     # Whether this garment's batch has arrived (On-hand) or is still on its way (Pre-order).
@@ -106,6 +109,8 @@ class SaleLog(models.Model):
     payment_split = models.JSONField(blank=True, null=True, default=list)
     # The pop-up event the sale was made at; empty for a sale at the boutique.
     popup = models.ForeignKey('PopUpEvent', related_name='sales', on_delete=models.SET_NULL, blank=True, null=True)
+    # The admin's optional note for the sale. A sale has the same note on each of its records.
+    note = models.TextField(blank=True, default='')
 
 
 class PopUpEvent(models.Model):

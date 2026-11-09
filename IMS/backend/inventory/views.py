@@ -64,6 +64,16 @@ def _sale_popup(request, current=None):
         return None, 'That pop-up event no longer exists. Refresh and choose again.'
 
 
+SALE_NOTE_MAX = 500
+
+
+def _sale_note(request, current=''):
+    """The sale's note, trimmed; the current note is kept if none was sent."""
+    if 'note' not in request.data:
+        return current
+    return str(request.data.get('note') or '').strip()[:SALE_NOTE_MAX]
+
+
 def _split_discount(discount, grosses):
     """Split one sale-wide discount across sale records in proportion to their gross amounts.
     The last record takes the rounding remainder, so the shares always add up to the discount."""
@@ -561,6 +571,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
         payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment (required).
         payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's total.
         popup: id of the pop-up event the sale was made at; empty for the boutique.
+        note: optional note for the sale (up to 500 characters).
         Every record written gets the same sale_group. If any item is short on stock,
         nothing is sold and a 400 lists what is short.
         """
@@ -581,6 +592,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
         popup, error = _sale_popup(request)
         if error:
             return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+        note = _sale_note(request)
 
         with transaction.atomic():
             sales, shortages, error = _take_items(items)
@@ -615,6 +627,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                     payment_method=payment_method,
                     payment_split=payment_split,
                     popup=popup,
+                    note=note,
                     sold_at=timezone.localdate(),
                     batch_name=g.batch_name,
                     garment_id=g.id,
@@ -720,6 +733,7 @@ def edit_sale(request):
     payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment, set on every record; left as it is if not sent.
     payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's new total.
     popup: pop-up event id, or empty for the boutique; left as it is if not sent.
+    note: the sale's note; left as it is if not sent.
 
     Removed or reduced pieces go back to the batch record they were taken from; increases
     are taken from that same batch record; new items are taken oldest batch first. Existing
@@ -759,6 +773,7 @@ def edit_sale(request):
         popup, error = _sale_popup(request, records[0].popup)
         if error:
             return fail({'error': error})
+        note = _sale_note(request, next((r.note for r in records if r.note), ''))
 
         sale_date = min(r.sold_at for r in records)
         sale_time = min((r.created_at for r in records if r.created_at), default=None)
@@ -829,6 +844,7 @@ def edit_sale(request):
             record.payment_method = payment_method
             record.payment_split = payment_split
             record.popup = popup
+            record.note = note
             record.save()
             saved.append(record)
 

@@ -38,9 +38,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
 class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
-        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'payment_split', 'popup', 'created_at']
+        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'payment_split', 'popup', 'note', 'created_at']
         # Changed through Edit Sale, which checks a split against the sale's total.
-        read_only_fields = ['payment_method', 'payment_split', 'popup']
+        read_only_fields = ['payment_method', 'payment_split', 'popup', 'note']
 
 
 class PopUpEventSerializer(serializers.ModelSerializer):
@@ -84,14 +84,33 @@ class GarmentSerializer(serializers.ModelSerializer):
     total_potential_profit = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     initial_sizes = serializers.JSONField(write_only=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True, max_length=1000, trim_whitespace=True)
+    cost_base = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False, allow_null=True)
+    cost_tax_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal('0.01'), max_value=100, required=False, allow_null=True)
 
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'description', 'cost_price', 'selling_price', 'image', 'photos', 
+            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'description', 'cost_price', 'cost_base', 'cost_tax_percent', 'selling_price', 'image', 'photos', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
+
+    def validate(self, attrs):
+        # With a tax %, the cost price is worked out here: base price + tax, to the centavo.
+        if 'cost_tax_percent' in attrs:
+            percent = attrs['cost_tax_percent']
+            if percent is None:
+                attrs['cost_base'] = None
+            else:
+                base = attrs.get('cost_base')
+                if base is None:
+                    raise serializers.ValidationError({'cost_base': 'Enter the base price the tax is added to.'})
+                attrs['cost_price'] = (base * (100 + percent) / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif 'cost_price' in attrs:
+            # A cost price typed straight in has no tax on it.
+            attrs['cost_base'] = None
+            attrs['cost_tax_percent'] = None
+        return attrs
 
     def validate_image(self, image):
         if image and getattr(image, 'size', 0) > settings.MAX_IMAGE_UPLOAD_BYTES:

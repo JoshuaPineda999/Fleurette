@@ -406,6 +406,68 @@ const PopupBadge = ({ name, className = '' }) => name ? (
   <span className={`block w-fit bg-[#eae4dc] text-stone-800 border border-[#ddd5cc] text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Sold at {name}</span>
 ) : null;
 
+// Cost price with tax added on the base price, to the centavo; null until both are numbers.
+const taxedCost = (base, percent) => {
+  const b = parseFloat(base);
+  const p = parseFloat(percent);
+  return isNaN(b) || isNaN(p) ? null : Math.round((b * (100 + p) / 100 + Number.EPSILON) * 100) / 100;
+};
+
+// The cost fields sent to the server. With Add tax, the base price and the tax % (the server works out
+// the cost price from them). A blank cost price is left out, or sent as fallback when one is given.
+const appendCostFields = (formData, item, fallback) => {
+  if (item.tax_on) {
+    formData.append('cost_price', taxedCost(item.cost_price, item.tax_percent) ?? '');
+    formData.append('cost_base', item.cost_price);
+    formData.append('cost_tax_percent', item.tax_percent);
+  } else if (item.cost_price !== '' && item.cost_price != null) {
+    formData.append('cost_price', item.cost_price);
+    formData.append('cost_tax_percent', '');
+  } else if (fallback !== undefined) {
+    formData.append('cost_price', fallback);
+  }
+};
+
+// Tax fields for a form, from a saved item: with tax, the box is ticked and the price shown is the base.
+const costFormFields = (item) => (item?.cost_tax_percent != null
+  ? { cost_price: item.cost_base ?? '', tax_on: true, tax_percent: String(parseFloat(item.cost_tax_percent)) }
+  : { cost_price: item?.cost_price ?? '', tax_on: false, tax_percent: '' });
+
+// Cost price, or base price plus a tax % when Add tax is ticked. onChange(field, value) for
+// cost_price, tax_on and tax_percent. small: the tighter look of the Import New Batch form;
+// ring: the focus colour of the form it sits in.
+function CostPriceField({ item, onChange, small = false, placeholder, ring = 'focus:ring-pink-500' }) {
+  const label = small ? 'block text-[10px] font-bold text-stone-600 uppercase mb-1' : 'block text-xs font-bold text-stone-600 uppercase mb-1';
+  const input = `w-full border border-stone-300 rounded-lg ${small ? 'p-2' : 'p-2.5'} text-sm font-bold focus:ring-2 ${ring} focus:outline-none bg-[#f9f6f0]`;
+  const cost = item.tax_on ? taxedCost(item.cost_price, item.tax_percent) : null;
+  return (
+    <div>
+      <label className={label}>{item.tax_on ? 'Base Price (₱)' : 'Cost Price (₱)'}</label>
+      <input type="number" step="0.01" min="0" required placeholder={placeholder} aria-label={item.tax_on ? 'Base price' : 'Cost price'} value={item.cost_price} onChange={(e) => onChange('cost_price', e.target.value)} className={input} />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
+        <label className="flex items-center gap-1.5 text-[11px] font-bold text-stone-600 cursor-pointer select-none">
+          <input type="checkbox" checked={!!item.tax_on} onChange={(e) => onChange('tax_on', e.target.checked)} className="w-4 h-4 accent-pink-600" />
+          Add tax
+        </label>
+        {item.tax_on && (
+          <label className="flex items-center gap-1 text-[11px] font-bold text-stone-600">
+            <input type="number" step="0.01" min="0.01" max="100" required placeholder="e.g. 12" aria-label="Tax %" value={item.tax_percent} onChange={(e) => onChange('tax_percent', e.target.value)} className={`w-20 border border-stone-300 rounded-lg px-2 py-1 text-sm font-bold bg-white focus:ring-2 ${ring} focus:outline-none`} />
+            %
+          </label>
+        )}
+      </div>
+      {cost != null && (
+        <p className="text-[11px] font-bold text-pink-700 mt-1.5">₱{parseFloat(item.cost_price).toFixed(2)} + {parseFloat(item.tax_percent)}% tax = ₱{cost.toFixed(2)} cost</p>
+      )}
+    </div>
+  );
+}
+
+// The admin's note on a sale, under the sale in Sales History.
+const SaleNote = ({ note }) => note ? (
+  <span className="block max-w-xs mt-1 text-[11px] font-semibold italic text-stone-500 whitespace-pre-line break-words">Note: {note}</span>
+) : null;
+
 // Where a sale was made: the boutique, or one of the given pop-up events.
 const PopupSelect = ({ value, onChange, popups }) => (
   <select aria-label="Sold at" value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500">
@@ -1875,6 +1937,7 @@ function AdminDashboard() {
   const [checkoutPayment, setCheckoutPayment] = useState('');
   const [checkoutSplit, setCheckoutSplit] = useState([]);
   const [checkoutPopup, setCheckoutPopup] = useState('');
+  const [checkoutNote, setCheckoutNote] = useState('');
   // The description being written in the product window (null while not editing).
   const [descDraft, setDescDraft] = useState(null);
   const [descSaving, setDescSaving] = useState(false);
@@ -1891,7 +1954,7 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
@@ -1947,7 +2010,7 @@ function AdminDashboard() {
   };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -2088,7 +2151,8 @@ function AdminDashboard() {
         promo_code: String(checkoutPromo.promo_code || '').trim(),
         payment_method: checkoutPayment,
         payment_split: splitPayload(checkoutPayment, checkoutSplit),
-        popup: checkoutPopup || null
+        popup: checkoutPopup || null,
+        note: checkoutNote.trim()
       });
       showToast(`🌸 Sale Recorded! ${cartPieces} pc(s) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
       setSaleCart([]);
@@ -2096,6 +2160,7 @@ function AdminDashboard() {
       setCheckoutPayment('');
       setCheckoutSplit([]);
       setCheckoutPopup('');
+      setCheckoutNote('');
       setShowCheckout(false);
       await fetchData(true);
     } catch (error) {
@@ -2153,13 +2218,13 @@ function AdminDashboard() {
     updatedStyles[index] = {
       ...updatedStyles[index],
       category: existing.category || '',
-      cost_price: existing.cost_price,
+      ...costFormFields(existing),
       selling_price: existing.selling_price,
     };
     setNewBatch({ ...newBatch, styles: updatedStyles });
   };
   const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
-  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   const handleCreateBatch = async (e) => {
@@ -2189,7 +2254,7 @@ function AdminDashboard() {
           ['S', 'M', 'L', 'XL'].forEach(sizeLabel => { mergedSizes[sizeLabel] = (currentSizeMap[sizeLabel] || 0) + parseInt(style.sizes[sizeLabel] || 0); });
           formData.append('category', style.category || existingGarment.category || 'Uncategorized');
           formData.append('color', style.color || existingGarment.color || 'N/A');
-          formData.append('cost_price', style.cost_price || existingGarment.cost_price);
+          appendCostFields(formData, style);
           formData.append('selling_price', style.selling_price || existingGarment.selling_price);
           formData.append('initial_sizes', JSON.stringify(mergedSizes));
           if (style.image) formData.append('image', style.image);
@@ -2197,7 +2262,7 @@ function AdminDashboard() {
         } else {
           formData.append('category', style.category || 'Uncategorized');
           formData.append('color', style.color || 'N/A');
-          formData.append('cost_price', style.cost_price || 0);
+          appendCostFields(formData, style, 0);
           formData.append('selling_price', style.selling_price || 0);
           formData.append('initial_sizes', JSON.stringify(style.sizes));
           if (style.image) formData.append('image', style.image);
@@ -2207,7 +2272,7 @@ function AdminDashboard() {
       // The whole batch (including styles already in it) takes the status chosen in the form.
       await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: newBatch.batch_name || 'Uncategorized', batch_status: newBatch.batch_status || 'On-hand' });
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
     } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }
@@ -2254,7 +2319,7 @@ function AdminDashboard() {
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
-    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', description: item.description || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
+    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', ...costFormFields(item), selling_price: item.selling_price || '', description: item.description || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -2263,7 +2328,7 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const formData = new FormData();
-      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); formData.append('cost_price', editGarment.cost_price); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); formData.append('description', String(editGarment.description || '').trim()); if (editGarment.image) formData.append('image', editGarment.image);
+      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); appendCostFields(formData, editGarment); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); formData.append('description', String(editGarment.description || '').trim()); if (editGarment.image) formData.append('image', editGarment.image);
       await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setShowEditModal(false); showToast("✏️ Style details updated!"); await fetchData(true);
     } catch (error) { alert('Error saving changes. Check your inputs.'); }
@@ -2896,6 +2961,7 @@ function AdminDashboard() {
       payment_method: records.find(r => r.payment_method)?.payment_method || '',
       payment_split: parseSafeArray(records.find(r => r.payment_method)?.payment_split),
       popup: String(records.find(r => r.popup)?.popup || ''),
+      note: records.find(r => r.note)?.note || '',
       promo_code: records.find(r => r.promo_code)?.promo_code || '',
       discount_type: 'amount',
       discount_value: totalDiscount > 0 ? totalDiscount.toFixed(2) : ''
@@ -2937,7 +3003,8 @@ function AdminDashboard() {
         promo_code: String(editSale.promo_code || '').trim(),
         payment_method: editSale.payment_method || '',
         payment_split: splitPayload(editSale.payment_method, editSale.payment_split),
-        popup: editSale.popup || null
+        popup: editSale.popup || null,
+        note: String(editSale.note || '').trim()
       });
       showToast('✏️ Sale updated & stock adjusted!');
       setEditSale(null);
@@ -3064,6 +3131,7 @@ function AdminDashboard() {
       payment_method: log?.payment_method ? String(log.payment_method) : '',
       payment_split: parseSafeArray(log?.payment_split),
       popup: log?.popup || null,
+      note: log?.note ? String(log.note) : '',
       garment_id: log?.garment_id || null
     };
   });
@@ -3160,6 +3228,7 @@ function AdminDashboard() {
     paymentMethod: paymentLabel(row.payment_method, row.payment_split),
     paymentSplit: row.payment_split,
     soldAt: row.isPreOrder ? '' : popupName(row.popup),
+    note: row.isPreOrder ? '' : row.note || '',
     status: row.status,
   }));
 
@@ -3407,6 +3476,11 @@ function AdminDashboard() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Note <span className="normal-case font-bold text-stone-400">(optional)</span></label>
+                  <textarea aria-label="Sale note" rows={2} maxLength={500} placeholder="e.g. Reserved for pickup on Friday" value={checkoutNote} onChange={(e) => setCheckoutNote(e.target.value)} className="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                </div>
+
                 <div className="bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
                   <div className="flex justify-between"><span>Subtotal ({cartPieces} pc{cartPieces === 1 ? '' : 's'})</span><span>₱{subtotal.toFixed(2)}</span></div>
                   {discount > 0 && (
@@ -3540,6 +3614,11 @@ function AdminDashboard() {
                       ))}
                     </div>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Note <span className="normal-case font-bold text-stone-400">(optional)</span></label>
+                  <textarea aria-label="Sale note" rows={2} maxLength={500} placeholder="e.g. Reserved for pickup on Friday" value={editSale.note} onChange={(e) => setEditSale({ ...editSale, note: e.target.value })} className="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500" />
                 </div>
 
                 <div className="bg-[#f9f6f0] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold text-stone-600 space-y-1">
@@ -4031,6 +4110,7 @@ function AdminDashboard() {
                               )}
                               <PaymentBadge method={log.payment_method} split={log.payment_split} className="mt-1.5" />
                               <PopupBadge name={popupName(log.popup)} className="mt-1" />
+                              <SaleNote note={log.note} />
                             </div>
                           ) : (
                             <>
@@ -4042,6 +4122,7 @@ function AdminDashboard() {
                               )}
                               <PaymentBadge method={log?.payment_method} split={log?.payment_split} className="mt-1" />
                               <PopupBadge name={popupName(log?.popup)} className="mt-1" />
+                              <SaleNote note={log?.note} />
                             </>
                           )}
                         </td>
@@ -4874,14 +4955,7 @@ function AdminDashboard() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                        <input 
-                          type="number" step="0.01" required placeholder="350" 
-                          value={style.cost_price} onChange={(e) => handleBatchStyleChange(index, 'cost_price', e.target.value)}
-                          className="w-full border border-stone-300 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none bg-[#f9f6f0]"
-                        />
-                      </div>
+                      <CostPriceField small placeholder="350" item={style} onChange={(field, value) => handleBatchStyleChange(index, field, value)} />
                       <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
                         <input 
@@ -5026,14 +5100,7 @@ function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Cost Price (₱)</label>
-                  <input 
-                    type="number" step="0.01" required 
-                    value={editGarment.cost_price} onChange={(e) => setEditGarment({...editGarment, cost_price: e.target.value})}
-                    className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
-                  />
-                </div>
+                <CostPriceField item={editGarment} ring="focus:ring-amber-500" onChange={(field, value) => setEditGarment({ ...editGarment, [field]: value })} />
                 <div>
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
                   <input 

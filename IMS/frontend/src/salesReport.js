@@ -2,7 +2,7 @@
 //
 // A transaction is one sale or pre-order:
 // { type, date, customer, items: [{ name, color, size, qty }], collected, orderValue, discount, promoCode, balance, paymentMethod, soldAt, status }
-// soldAt is the pop-up event a sale was made at ('' for the boutique and for pre-orders).
+// soldAt is the pop-up event a sale was made at ('' for the boutique and for pre-orders); note is the sale's note.
 // collected matches the Sales Ledger: a sale's amount, or what a pre-order has paid so far.
 
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -169,8 +169,8 @@ const reportSections = (report) => {
     rows: report.promos.map(p => [p.code || 'No code', p.uses, money(p.discount), money(p.orderValue)]),
   }, {
     name: 'Transactions',
-    header: ['Date', 'Type', 'Customer', 'Items', 'Pieces', 'Sold at', 'Mode of payment', 'Promo code', 'Discount', 'Revenue collected', 'Balance', 'Status'],
-    rows: report.transactions.map(t => [t.date, t.type, t.customer, t.items.map(itemLabel).join('; '), t.pieces, t.soldAt || (t.type === 'Sale' ? 'Boutique' : ''), t.paymentMethod, t.promoCode, money(t.discount), money(t.collected), money(t.balance), t.status]),
+    header: ['Date', 'Type', 'Customer', 'Items', 'Pieces', 'Sold at', 'Mode of payment', 'Promo code', 'Discount', 'Revenue collected', 'Balance', 'Status', 'Note'],
+    rows: report.transactions.map(t => [t.date, t.type, t.customer, t.items.map(itemLabel).join('; '), t.pieces, t.soldAt || (t.type === 'Sale' ? 'Boutique' : ''), t.paymentMethod, t.promoCode, money(t.discount), money(t.collected), money(t.balance), t.status, t.note || '']),
   });
   return sections;
 };
