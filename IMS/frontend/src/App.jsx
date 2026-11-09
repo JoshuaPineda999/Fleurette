@@ -406,20 +406,22 @@ const PopupBadge = ({ name, className = '' }) => name ? (
   <span className={`block w-fit bg-[#eae4dc] text-stone-800 border border-[#ddd5cc] text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Sold at {name}</span>
 ) : null;
 
-// Cost price with tax added on the base price, to the centavo; null until both are numbers.
-const taxedCost = (base, percent) => {
+// The tax added on an item's base price when Add tax is ticked (the server only accepts this rate).
+const COST_TAX_PERCENT = 8;
+
+// Cost price with the tax added on the base price, to the centavo; null until the base is a number.
+const taxedCost = (base) => {
   const b = parseFloat(base);
-  const p = parseFloat(percent);
-  return isNaN(b) || isNaN(p) ? null : Math.round((b * (100 + p) / 100 + Number.EPSILON) * 100) / 100;
+  return isNaN(b) ? null : Math.round((b * (100 + COST_TAX_PERCENT) / 100 + Number.EPSILON) * 100) / 100;
 };
 
 // The cost fields sent to the server. With Add tax, the base price and the tax % (the server works out
 // the cost price from them). A blank cost price is left out, or sent as fallback when one is given.
 const appendCostFields = (formData, item, fallback) => {
   if (item.tax_on) {
-    formData.append('cost_price', taxedCost(item.cost_price, item.tax_percent) ?? '');
+    formData.append('cost_price', taxedCost(item.cost_price) ?? '');
     formData.append('cost_base', item.cost_price);
-    formData.append('cost_tax_percent', item.tax_percent);
+    formData.append('cost_tax_percent', COST_TAX_PERCENT);
   } else if (item.cost_price !== '' && item.cost_price != null) {
     formData.append('cost_price', item.cost_price);
     formData.append('cost_tax_percent', '');
@@ -430,34 +432,26 @@ const appendCostFields = (formData, item, fallback) => {
 
 // Tax fields for a form, from a saved item: with tax, the box is ticked and the price shown is the base.
 const costFormFields = (item) => (item?.cost_tax_percent != null
-  ? { cost_price: item.cost_base ?? '', tax_on: true, tax_percent: String(parseFloat(item.cost_tax_percent)) }
-  : { cost_price: item?.cost_price ?? '', tax_on: false, tax_percent: '' });
+  ? { cost_price: item.cost_base ?? '', tax_on: true }
+  : { cost_price: item?.cost_price ?? '', tax_on: false });
 
-// Cost price, or base price plus a tax % when Add tax is ticked. onChange(field, value) for
-// cost_price, tax_on and tax_percent. small: the tighter look of the Import New Batch form;
+// Cost price, or base price plus the tax when Add tax is ticked. onChange(field, value) for
+// cost_price and tax_on. small: the tighter look of the Import New Batch form;
 // ring: the focus colour of the form it sits in.
 function CostPriceField({ item, onChange, small = false, placeholder, ring = 'focus:ring-pink-500' }) {
   const label = small ? 'block text-[10px] font-bold text-stone-600 uppercase mb-1' : 'block text-xs font-bold text-stone-600 uppercase mb-1';
   const input = `w-full border border-stone-300 rounded-lg ${small ? 'p-2' : 'p-2.5'} text-sm font-bold focus:ring-2 ${ring} focus:outline-none bg-[#f9f6f0]`;
-  const cost = item.tax_on ? taxedCost(item.cost_price, item.tax_percent) : null;
+  const cost = item.tax_on ? taxedCost(item.cost_price) : null;
   return (
     <div>
       <label className={label}>{item.tax_on ? 'Base Price (₱)' : 'Cost Price (₱)'}</label>
       <input type="number" step="0.01" min="0" required placeholder={placeholder} aria-label={item.tax_on ? 'Base price' : 'Cost price'} value={item.cost_price} onChange={(e) => onChange('cost_price', e.target.value)} className={input} />
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
-        <label className="flex items-center gap-1.5 text-[11px] font-bold text-stone-600 cursor-pointer select-none">
-          <input type="checkbox" checked={!!item.tax_on} onChange={(e) => onChange('tax_on', e.target.checked)} className="w-4 h-4 accent-pink-600" />
-          Add tax
-        </label>
-        {item.tax_on && (
-          <label className="flex items-center gap-1 text-[11px] font-bold text-stone-600">
-            <input type="number" step="0.01" min="0.01" max="100" required placeholder="e.g. 12" aria-label="Tax %" value={item.tax_percent} onChange={(e) => onChange('tax_percent', e.target.value)} className={`w-20 border border-stone-300 rounded-lg px-2 py-1 text-sm font-bold bg-white focus:ring-2 ${ring} focus:outline-none`} />
-            %
-          </label>
-        )}
-      </div>
+      <label className="flex items-center gap-1.5 mt-2 w-fit text-[11px] font-bold text-stone-600 cursor-pointer select-none">
+        <input type="checkbox" checked={!!item.tax_on} onChange={(e) => onChange('tax_on', e.target.checked)} className="w-4 h-4 accent-pink-600" />
+        Add {COST_TAX_PERCENT}% tax
+      </label>
       {cost != null && (
-        <p className="text-[11px] font-bold text-pink-700 mt-1.5">₱{parseFloat(item.cost_price).toFixed(2)} + {parseFloat(item.tax_percent)}% tax = ₱{cost.toFixed(2)} cost</p>
+        <p className="text-[11px] font-bold text-pink-700 mt-1.5">₱{parseFloat(item.cost_price).toFixed(2)} + {COST_TAX_PERCENT}% tax = ₱{cost.toFixed(2)} cost</p>
       )}
     </div>
   );
@@ -1954,7 +1948,7 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
@@ -2010,7 +2004,7 @@ function AdminDashboard() {
   };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -2224,7 +2218,7 @@ function AdminDashboard() {
     setNewBatch({ ...newBatch, styles: updatedStyles });
   };
   const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
-  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   const handleCreateBatch = async (e) => {
@@ -2272,7 +2266,7 @@ function AdminDashboard() {
       // The whole batch (including styles already in it) takes the status chosen in the form.
       await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: newBatch.batch_name || 'Uncategorized', batch_status: newBatch.batch_status || 'On-hand' });
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, tax_percent: '', selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
     } catch (error) { alert('Error uploading batch. Ensure the backend database matches the frontend changes.'); }

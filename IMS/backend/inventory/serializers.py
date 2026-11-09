@@ -26,6 +26,10 @@ def clean_payment_split(raw):
     return rows, None
 
 
+# The tax added on an item's base price, when Add tax is ticked.
+COST_TAX_PERCENT = Decimal('8')
+
+
 def split_total(rows):
     return sum(Decimal(row['amount']) for row in rows)
 
@@ -85,7 +89,7 @@ class GarmentSerializer(serializers.ModelSerializer):
     initial_sizes = serializers.JSONField(write_only=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True, max_length=1000, trim_whitespace=True)
     cost_base = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False, allow_null=True)
-    cost_tax_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal('0.01'), max_value=100, required=False, allow_null=True)
+    cost_tax_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
 
     class Meta:
         model = Garment
@@ -101,6 +105,8 @@ class GarmentSerializer(serializers.ModelSerializer):
             percent = attrs['cost_tax_percent']
             if percent is None:
                 attrs['cost_base'] = None
+            elif percent != COST_TAX_PERCENT:
+                raise serializers.ValidationError({'cost_tax_percent': f'The tax is fixed at {COST_TAX_PERCENT}%.'})
             else:
                 base = attrs.get('cost_base')
                 if base is None:
