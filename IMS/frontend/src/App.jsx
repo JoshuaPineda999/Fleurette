@@ -2060,6 +2060,47 @@ function PopUpsTab({ popups, sales, onChanged, showToast }) {
   );
 }
 
+// Archived items, by batch, each with when it was archived; restore one item or a whole batch.
+function ArchivedItemsTab({ items, onRestore }) {
+  const batches = {};
+  items.forEach(g => { (batches[String(g.batch_name || 'Uncategorized')] ||= []).push(g); });
+  const names = Object.keys(batches).sort((a, b) => a.localeCompare(b));
+  const archivedOn = (g) => (g.archived_at ? new Date(g.archived_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+  return (
+    <div className="animate-fade-in max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Archived Items</h2>
+        <p className="text-stone-500 text-sm mt-1">Put-away items: hidden from the gallery and the customer page, and not for sale. Their sales stay in the history and reports. Archive from the Batch Tracker.</p>
+      </div>
+      {names.length === 0 ? (
+        <p className="bg-white rounded-3xl border-2 border-dashed border-stone-200 p-10 text-center text-sm font-bold text-stone-400">Nothing archived. Archive a batch or an item from the Batch Tracker.</p>
+      ) : names.map(name => (
+        <div key={name} className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden mb-6">
+          <div className="p-4 sm:p-5 border-b border-stone-200 bg-[#f2ece4] flex flex-wrap justify-between items-center gap-3">
+            <div className="min-w-0">
+              <h3 className="font-black text-stone-900 text-base break-words">Batch: {name}</h3>
+              <span className="text-xs font-bold text-stone-500">{batches[name].length} archived item{batches[name].length === 1 ? '' : 's'}</span>
+            </div>
+            <button type="button" onClick={() => onRestore({ batchName: name })} className="bg-white hover:bg-stone-50 border border-stone-300 text-stone-800 font-extrabold px-4 py-2 rounded-xl text-xs shadow-sm transition">♻️ Restore Batch</button>
+          </div>
+          <div className="divide-y divide-stone-100">
+            {batches[name].sort((a, b) => String(a.name).localeCompare(String(b.name))).map(g => (
+              <div key={g.id} className="flex items-center gap-3 p-3 sm:px-5">
+                {g.image ? <img src={g.image} alt="" className="w-12 h-12 rounded-lg object-cover border border-stone-200 shrink-0 grayscale" /> : <div className="w-12 h-12 rounded-lg bg-[#f2ece4] flex items-center justify-center text-xl shrink-0">👗</div>}
+                <div className="min-w-0 flex-1">
+                  <span className="block font-black text-stone-900 text-sm truncate">{g.name}{normColorKey(g.color) ? ` · ${g.color}` : ''}</span>
+                  <span className="block text-xs font-bold text-stone-500">{g.category || 'Uncategorized'} · {parseInt(g.total_pieces) || 0} pcs left{archivedOn(g) ? ` · archived ${archivedOn(g)}` : ''}</span>
+                </div>
+                <button type="button" onClick={() => onRestore({ ids: [g.id] })} className="shrink-0 bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 font-extrabold px-3 py-1.5 rounded-lg text-xs transition">Restore</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -2403,7 +2444,7 @@ function AdminDashboard() {
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   // The batch record a style row is added to: same name, batch, colour and category (none for a new item).
-  const findBatchGarment = (style, batchName) => (garments || []).find(g =>
+  const findBatchGarment = (style, batchName) => activeGarments.find(g =>
     String(g?.name || '').toLowerCase().trim() === String(style.name || '').toLowerCase().trim() &&
     String(g?.batch_name || 'Uncategorized').toLowerCase().trim() === String(batchName || 'Uncategorized').toLowerCase().trim() &&
     normColorKey(g?.color) === normColorKey(style.color) &&
@@ -2564,6 +2605,32 @@ function AdminDashboard() {
     } catch (error) {
       alert(`Could not remove the photo: ${error.response?.data?.error || error.message}`);
     }
+  };
+
+  // Archive or restore: a list of batch records (ids) or a whole batch (batchName).
+  const setArchived = async ({ ids, batchName }, archived) => {
+    try {
+      await axios.post(`${API_BASE}garments/set-archived/`, ids ? { ids, archived } : { batch_name: batchName, archived });
+      showToast(archived ? '🗄️ Archived' : '♻️ Restored');
+      await fetchData(true);
+      return true;
+    } catch (error) {
+      alert(`Could not ${archived ? 'archive' : 'restore'}: ${error.response?.data?.error || error.message}`);
+      return false;
+    }
+  };
+  const piecesText = (n) => `${n} piece${n === 1 ? '' : 's'}`;
+  const archiveItem = (item) => {
+    const left = parseInt(item?.total_pieces) || 0;
+    const colour = normColorKey(item?.color) ? ` (${item.color})` : '';
+    if (!window.confirm(`Archive "${item.name}${colour}" from batch "${item.batch_name || 'Uncategorized'}"?\n\nIt will be hidden from the gallery, the Batch Tracker and the customer page, and cannot be sold${left ? ` (its ${piecesText(left)} left stay with it)` : ''}. Its sales stay in the history.\n\nYou can restore it from Archived Items.`)) return;
+    setArchived({ ids: [item.id] }, true);
+  };
+  const archiveBatch = async (batchName) => {
+    const items = activeGarments.filter(g => String(g.batch_name || 'Uncategorized') === String(batchName));
+    const left = items.reduce((sum, g) => sum + (parseInt(g.total_pieces) || 0), 0);
+    if (!window.confirm(`Archive the whole batch "${batchName}" (${items.length} item${items.length === 1 ? '' : 's'})?\n\nIts items will be hidden from the gallery, the Batch Tracker and the customer page, and cannot be sold${left ? ` (${piecesText(left)} left stay with them)` : ''}. Its sales and expenses stay in the history and reports.\n\nYou can restore it from Archived Items.`)) return;
+    if (await setArchived({ batchName }, true)) setSelectedBatch(null);
   };
 
   const handleDeleteGarment = async (id) => {
@@ -3265,7 +3332,10 @@ function AdminDashboard() {
     }
   };
 
-  const mergedGarmentsList = mergeGarments(garments);
+  // Archived items stay in `garments` (history, returns, batch reports) but are not shown, picked or sold.
+  const activeGarments = (garments || []).filter(g => g && !g.archived);
+  const archivedGarments = (garments || []).filter(g => g?.archived);
+  const mergedGarmentsList = mergeGarments(activeGarments);
 
   const categories = ['All', ...new Set((mergedGarmentsList || []).map(g => String(g?.category || 'Uncategorized')))];
 
@@ -3444,8 +3514,8 @@ function AdminDashboard() {
     total_profit_earned: dailyHistory.reduce((sum, log) => sum + (parseFloat(log?.earned) || 0), 0) 
   };
 
-  const totalStoreProfit = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
-  const totalStorePieces = (garments || []).reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
+  const totalStoreProfit = activeGarments.reduce((sum, item) => sum + (parseFloat(item?.total_potential_profit) || 0), 0);
+  const totalStorePieces = activeGarments.reduce((sum, item) => sum + (parseFloat(item?.total_pieces) || 0), 0);
 
   const isSoldOut = (item) => !(parseInt(item?.total_pieces) > 0);
   const soldOutCount = (mergedGarmentsList || []).filter(isSoldOut).length;
@@ -3477,8 +3547,7 @@ function AdminDashboard() {
     if (!batchMap[bName]) { batchMap[bName] = { name: bName, pieces_left: 0, value_left: 0, styles_count: 0, pieces_sold: 0, profit_earned: 0, expenses: 0, held_pieces: 0, held_value: 0 }; }
     return batchMap[bName];
   };
-  (garments || []).forEach(g => {
-    if (!g) return;
+  activeGarments.forEach(g => {
     const bName = String(g.batch_name || 'Uncategorized');
     batchEntry(bName);
     batchMap[bName].pieces_left += (parseFloat(g.total_pieces) || 0);
@@ -3564,7 +3633,12 @@ function AdminDashboard() {
     b.status = batchStatusOf(b.name);
     b.hidden = (garments || []).some(g => String(g?.batch_name || 'Uncategorized') === b.name && g?.batch_hidden);
   });
-  const batchTrackerData = Object.values(batchMap).sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
+  // A batch whose items are all archived is listed under Archived Items instead.
+  const archivedOnlyBatches = new Set(archivedGarments.map(g => String(g.batch_name || 'Uncategorized'))
+    .filter(b => !activeGarments.some(g => String(g.batch_name || 'Uncategorized') === b)));
+  const batchTrackerData = Object.values(batchMap)
+    .filter(b => !archivedOnlyBatches.has(b.name))
+    .sort((a, b) => parseFloat(b?.pieces_left || 0) - parseFloat(a?.pieces_left || 0));
 
   const preOrderStyleNames = uniqueByName((mergedGarmentsList || []).map(g => g?.name));
   const uniqueGarmentNames = uniqueByName((garments || []).map(g => g?.name));
@@ -3869,32 +3943,36 @@ function AdminDashboard() {
 
           <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-2 px-2">Collection Menu</p>
           <div className="space-y-1">
-            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">🛍️</span> Product Gallery
             </button>
-            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">📜</span> Sales History
             </button>
-            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">📈</span> Net Profit Analytics
             </button>
-            <button onClick={() => { setActiveTab('reports'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'reports' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('reports'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'reports' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">📊</span> Sales Report
             </button>
-            <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">🛒</span> Online Orders
               {onlineOrders.filter(o => o?.status === 'Awaiting').length > 0 && (
                 <span className={`ml-auto text-[11px] font-black rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center ${activeTab === 'onlineorders' ? 'bg-white text-pink-600' : 'bg-pink-600 text-white'}`}>{onlineOrders.filter(o => o?.status === 'Awaiting').length}</span>
               )}
             </button>
-            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">📝</span> Custom Pre-Orders
             </button>
-            <button onClick={() => { setActiveTab('popups'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'popups' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+            <button onClick={() => { setActiveTab('popups'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'popups' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg leading-none">⛺</span> Pop-ups
             </button>
-            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-2 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
+            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-2 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
               <span className="text-lg leading-none">📊</span> Batch Tracker
+            </button>
+            <button onClick={() => { setActiveTab('archived'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-1.5 rounded-xl font-bold text-sm transition flex items-center gap-3 border ${ activeTab === 'archived' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
+              <span className="text-lg leading-none">🗄️</span> Archived Items
+              {archivedGarments.length > 0 && <span className="ml-auto text-[11px] font-black text-stone-500">{archivedGarments.length}</span>}
             </button>
           </div>
         </div>
@@ -4028,6 +4106,9 @@ function AdminDashboard() {
                     <button onClick={() => openRenameBatchModal(selectedBatch)} className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow transition flex items-center gap-1.5">
                       <span>✏️</span> Rename Batch
                     </button>
+                    <button onClick={() => archiveBatch(selectedBatch)} className="bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5">
+                      <span>🗄️</span> Archive Batch
+                    </button>
                     <button onClick={() => handleDeleteBatch(selectedBatch)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5">
                       <span>🗑️</span> Delete Entire Batch
                     </button>
@@ -4036,8 +4117,8 @@ function AdminDashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {/* Batch Tracker intentionally queries the unmerged Garments array to keep batch accounting separated visually */}
-                  {(garments || [])
-                    .filter(g => g && String(g.batch_name || 'Uncategorized') === String(selectedBatch))
+                  {activeGarments
+                    .filter(g => String(g.batch_name || 'Uncategorized') === String(selectedBatch))
                     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')))
                     .map((item) => (
                     <div key={`btch-${item?.id}`} className="bg-white rounded-3xl shadow-sm hover:shadow-xl border border-stone-200/80 transition duration-300 overflow-hidden flex flex-col group relative">
@@ -4076,6 +4157,9 @@ function AdminDashboard() {
                         <div className="pt-2 border-t border-stone-100 flex gap-2">
                           <button onClick={() => openEditModal(item)} className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1">
                             <span>✏️</span> Edit
+                          </button>
+                          <button onClick={() => archiveItem(item)} className="bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center" title="Archive this item">
+                            🗄️
                           </button>
                           <button onClick={() => handleDeleteGarment(item.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-extrabold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center" title="Delete this style">
                             🗑️
@@ -4515,6 +4599,10 @@ function AdminDashboard() {
         )}
 
         {activeTab === 'reports' && <SalesReport transactions={reportTransactions()} />}
+
+        {activeTab === 'archived' && (
+          <ArchivedItemsTab items={archivedGarments} onRestore={(target) => setArchived(target, false)} />
+        )}
 
         {activeTab === 'popups' && <PopUpsTab popups={popups} sales={mappedSales} onChanged={() => fetchData(true)} showToast={showToast} />}
 

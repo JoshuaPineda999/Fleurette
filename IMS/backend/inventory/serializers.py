@@ -89,12 +89,15 @@ class GarmentSerializer(serializers.ModelSerializer):
     initial_sizes = serializers.JSONField(write_only=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True, max_length=1000, trim_whitespace=True)
     cost_base = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False, allow_null=True)
+    # Changed only through the archive action.
+    archived = serializers.BooleanField(read_only=True)
+    archived_at = serializers.DateTimeField(read_only=True)
     cost_tax_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, allow_null=True)
 
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'description', 'cost_price', 'cost_base', 'cost_tax_percent', 'selling_price', 'image', 'photos', 
+            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'description', 'cost_price', 'cost_base', 'cost_tax_percent', 'selling_price', 'image', 'photos', 'archived', 'archived_at', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]

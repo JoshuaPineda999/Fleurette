@@ -95,10 +95,12 @@ def _norm_color(value):
     return '' if v in ('', 'n/a') else v
 
 
-def _matching_product(name, color, category):
+def _matching_product(name, color, category, include_archived=False):
     """Garments considered the same visual product (mirrors the frontend's
-    mergeGarments grouping key), oldest id first."""
+    mergeGarments grouping key), oldest id first. Archived ones are left out unless asked for."""
     qs = Garment.objects.filter(name__iexact=_norm(name))
+    if not include_archived:
+        qs = qs.filter(archived=False)
     matches = []
     for g in qs:
         if _norm_color(g.color) != _norm_color(color):
@@ -131,6 +133,8 @@ def _take_items(items, visible_only=False):
         if it.get('garment_id'):
             candidates = list(Garment.objects.filter(id=it['garment_id']))
             label = candidates[0].name if candidates else f"item {it['garment_id']}"
+            if candidates and candidates[0].archived:
+                return [], [], f'"{label}" is archived, so it cannot be sold. Restore it first.'
         else:
             candidates = _matching_product(it.get('name'), it.get('color'), it.get('category'))
             if visible_only:
@@ -334,7 +338,7 @@ class OnlineOrderViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin, viewse
 
 class CatalogViewSet(viewsets.ReadOnlyModelViewSet):
     """Public, read-only product list for the customer page (no costs or profit)."""
-    queryset = Garment.objects.filter(batch_hidden=False).order_by('id').prefetch_related('sizes', 'photos')
+    queryset = Garment.objects.filter(batch_hidden=False, archived=False).order_by('id').prefetch_related('sizes', 'photos')
     serializer_class = CatalogGarmentSerializer
     authentication_classes = []  # public: an old admin token in the browser must not cause a 401
     permission_classes = [AllowAny]
@@ -457,6 +461,29 @@ class GarmentViewSet(viewsets.ModelViewSet):
             garments = Garment.objects.filter(Q(batch_name='Uncategorized') | Q(batch_name__isnull=True) | Q(batch_name=''))
         updated = garments.update(batch_hidden=hidden)
         return Response({'updated': updated, 'batch_name': batch_name, 'hidden': hidden})
+
+    @action(detail=False, methods=['post'], url_path='set-archived')
+    def set_archived(self, request):
+        """Archive items, or restore them: `ids` (batch records) or every record of `batch_name`."""
+        archived = request.data.get('archived')
+        if not isinstance(archived, bool):
+            return Response({'error': 'archived must be true or false'}, status=status.HTTP_400_BAD_REQUEST)
+        ids = request.data.get('ids')
+        batch_name = request.data.get('batch_name')
+        if ids is not None:
+            if not isinstance(ids, list) or not ids or not all(isinstance(i, int) for i in ids):
+                return Response({'error': 'ids must be a list of item ids'}, status=status.HTTP_400_BAD_REQUEST)
+            garments = Garment.objects.filter(id__in=ids)
+            if garments.count() != len(set(ids)):
+                return Response({'error': 'Some of these items no longer exist. Refresh and try again.'}, status=status.HTTP_400_BAD_REQUEST)
+        elif isinstance(batch_name, str) and batch_name.strip():
+            garments = Garment.objects.filter(batch_name=batch_name)
+            if not garments.exists():
+                return Response({'error': f'No batch called "{batch_name}"'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({'error': 'Send ids or batch_name'}, status=status.HTTP_400_BAD_REQUEST)
+        updated = garments.update(archived=archived, archived_at=timezone.now() if archived else None)
+        return Response({'updated': updated, 'archived': archived})
 
     @action(detail=False, methods=['post'], url_path='set-batch-status')
     def set_batch_status(self, request):
@@ -653,7 +680,8 @@ class GarmentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'name, size and a positive quantity are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            matching = self._matching_garments(name, color, category)
+            # Returned stock goes to an active batch; if every batch is archived, to the newest archived one.
+            matching = self._matching_garments(name, color, category) or _matching_product(name, color, category, include_archived=True)
             if not matching:
                 return Response({'restored': 0, 'note': 'No matching batch found to restore stock to'})
 

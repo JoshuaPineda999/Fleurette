@@ -20,6 +20,9 @@ class Garment(models.Model):
     batch_status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='On-hand')
     # Hidden batches are left out of the public customer catalogue.
     batch_hidden = models.BooleanField(default=False)
+    # Archived items are put away: kept for history and reports, but not shown or sold.
+    archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(blank=True, null=True)
     # Shown on the style's card. Every batch record of the style keeps the same text.
     description = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
