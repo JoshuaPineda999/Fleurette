@@ -752,10 +752,12 @@ function CustomerView() {
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // Size and availability look at the same stock: e.g. size M must itself be in a pre-order batch for "Pre-Order".
       // Sold Out is the opposite: nothing left in any batch, or nothing left in the chosen size.
+      // Hide Sold Out keeps whatever can still be ordered, on hand or on pre-order.
+      const anyBatch = activeAvailability === 'All' || activeAvailability === 'Available';
       const matchesStock = activeAvailability === 'Sold Out'
         ? !parseSafeArray(item.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0)
         : (activeSize === 'All' && activeAvailability === 'All') || (item.underlying_garments || []).some(g =>
-          (activeAvailability === 'All' || (activeAvailability === 'Pre-order') === (g?.batch_status === 'Pre-order')) &&
+          (anyBatch || (activeAvailability === 'Pre-order') === (g?.batch_status === 'Pre-order')) &&
           parseSafeArray(g?.sizes).some(sz => (activeSize === 'All' || sz?.size === activeSize) && sz?.quantity > 0));
       return matchesSearch && matchesCategory && matchesStock;
     })
@@ -806,7 +808,7 @@ function CustomerView() {
               groups={[
                 { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
                 { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
-                { label: 'Availability', value: activeAvailability, onChange: setActiveAvailability, options: [['All', 'All'], ['On-hand', 'In Stock'], ['Pre-order', 'Pre-Order'], ['Sold Out', 'Sold Out']] },
+                { label: 'Availability', value: activeAvailability, onChange: setActiveAvailability, options: [['All', 'All'], ['Available', 'Hide Sold Out'], ['On-hand', 'In Stock'], ['Pre-order', 'Pre-Order'], ['Sold Out', 'Sold Out']] },
               ]}
               onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveAvailability('All'); }}
             />
@@ -3382,9 +3384,10 @@ function AdminDashboard() {
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // A colour matches a size only while it still has that size in stock.
       // With Sold Out on, it's the other way round: colours that have run out of that size.
+      // Hide Sold Out leaves out colours with nothing left.
       const soldOut = activeStock === 'Sold Out';
       const matchesSize = activeSize === 'All'
-        ? !soldOut || isSoldOut(item)
+        ? (soldOut ? isSoldOut(item) : activeStock !== 'Hide' || !isSoldOut(item))
         : parseSafeArray(item.sizes).some(s => s?.size === activeSize && (s?.quantity > 0) !== soldOut);
       return matchesSearch && matchesCategory && matchesSize;
     })
@@ -3859,7 +3862,7 @@ function AdminDashboard() {
                   groups={[
                     { label: 'Category', value: activeCategory, onChange: setActiveCategory, options: categories.map(cat => [cat, String(cat)]) },
                     { label: 'Size', value: activeSize, onChange: setActiveSize, options: SIZE_FILTER_OPTIONS },
-                    { label: 'Stock', value: activeStock, onChange: setActiveStock, options: [['All', 'All'], ['Sold Out', `Sold Out (${soldOutCount})`]] },
+                    { label: 'Stock', value: activeStock, onChange: setActiveStock, options: [['All', 'All'], ['Hide', 'Hide Sold Out'], ['Sold Out', `Sold Out (${soldOutCount})`]] },
                   ]}
                   onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveStock('All'); }}
                 />
