@@ -17,6 +17,8 @@ class Garment(models.Model):
     batch_status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='On-hand')
     # Hidden batches are left out of the public customer catalogue.
     batch_hidden = models.BooleanField(default=False)
+    # Shown on the style's card. Every batch record of the style keeps the same text.
+    description = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     # ... rest of the code remains exactly the same
@@ -102,6 +104,24 @@ class SaleLog(models.Model):
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True, default='')
     # For a Split Payment, its two payments: [{method, amount}]. A sale has the whole split on each record.
     payment_split = models.JSONField(blank=True, null=True, default=list)
+    # The pop-up event the sale was made at; empty for a sale at the boutique.
+    popup = models.ForeignKey('PopUpEvent', related_name='sales', on_delete=models.SET_NULL, blank=True, null=True)
+
+
+class PopUpEvent(models.Model):
+    """A pop-up market the boutique sells at, listed for customers while it is upcoming."""
+    name = models.CharField(max_length=120)
+    venue = models.CharField(max_length=255)
+    date = models.DateField()
+    # Last day of an event that runs several days; empty for a one-day event.
+    end_date = models.DateField(blank=True, null=True)
+    start_time = models.TimeField(blank=True, null=True)
+    end_time = models.TimeField(blank=True, null=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
 
 # Update the Expense model at the bottom of models.py:
 class Expense(models.Model):

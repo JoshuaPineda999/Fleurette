@@ -293,6 +293,7 @@ const mergeGarments = (garmentsList) => {
       if (!mergedMap[key].image && g.image) {
         mergedMap[key].image = g.image;
       }
+      if (!mergedMap[key].description && g.description) mergedMap[key].description = g.description;
     }
     
     mergedMap[key].total_pieces += (parseInt(g.total_pieces) || 0);
@@ -399,6 +400,90 @@ const SplitPaymentFields = ({ value, total, totalLabel, onChange }) => {
 const PaymentBadge = ({ method, split, className = '' }) => method ? (
   <span className={`block w-fit bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Paid via {paymentLabel(method, split)}</span>
 ) : null;
+
+// The pop-up event a sale was made at, shown under the sale.
+const PopupBadge = ({ name, className = '' }) => name ? (
+  <span className={`block w-fit bg-[#eae4dc] text-stone-800 border border-[#ddd5cc] text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Sold at {name}</span>
+) : null;
+
+// Where a sale was made: the boutique, or one of the given pop-up events.
+const PopupSelect = ({ value, onChange, popups }) => (
+  <select aria-label="Sold at" value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500">
+    <option value="">Boutique</option>
+    {popups.map(p => <option key={p.id} value={String(p.id)}>{p.name} · {popupDates(p)}</option>)}
+  </select>
+);
+
+// Pop-up event dates and times as customers read them: 'Sat, Nov 15, 2026' or 'Nov 15 – Nov 16, 2026', '10:00 AM – 6:00 PM'.
+const popupDay = (value, options) => new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', options);
+const popupDates = (event) => {
+  if (!event?.date) return '';
+  if (!event.end_date || event.end_date === event.date) return popupDay(event.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  return `${popupDay(event.date, { month: 'short', day: 'numeric' })} – ${popupDay(event.end_date, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+};
+const popupTime = (value) => {
+  if (!value) return '';
+  const [hours, minutes] = String(value).split(':').map(Number);
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`;
+};
+const popupTimes = (event) => [popupTime(event?.start_time), popupTime(event?.end_time)].filter(Boolean).join(' – ');
+const popupLastDay = (event) => event?.end_date || event?.date || '';
+const popupIsOn = (event, day) => event?.date <= day && popupLastDay(event) >= day;
+
+// A style's description: three lines on the card, and Read more for the rest.
+function StyleDescription({ text, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const value = String(text || '').trim();
+  if (!value) return null;
+  const long = value.length > 110 || value.split('\n').length > 3;
+  return (
+    <div className={className}>
+      <p className={`text-xs text-stone-600 font-medium leading-relaxed whitespace-pre-line break-words ${open ? '' : 'line-clamp-3'}`}>{value}</p>
+      {long && (
+        <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} className="text-[11px] font-black text-pink-600 hover:text-pink-700 mt-0.5">
+          {open ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Upcoming pop-up events on the customer page, soonest first. Phones swipe through them;
+// wider screens show three, with a button for the rest.
+function PopUpSchedule({ events }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!events.length) return null;
+  const today = getLocalDate();
+  return (
+    <section className="mb-12" aria-labelledby="popups-title">
+      <div className="text-center mb-5">
+        <h2 id="popups-title" className="text-2xl font-black text-stone-900">Catch Us at a Pop-up</h2>
+        <p className="text-sm text-stone-500 mt-1">Come see and try the collection in person.</p>
+      </div>
+      <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0">
+        {events.map((event, i) => (
+          <div key={event.id} className={`snap-start shrink-0 w-[85%] sm:w-auto bg-white rounded-3xl border border-stone-200 shadow-sm p-5 flex flex-col gap-1 min-w-0 ${i >= 3 && !showAll ? 'sm:hidden' : ''}`}>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-black text-lg text-stone-900 leading-tight break-words min-w-0">{event.name}</h3>
+              {popupIsOn(event, today) && <span className="bg-pink-600 text-white text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0">Happening now</span>}
+            </div>
+            <span className="text-sm font-black text-pink-600">{popupDates(event)}</span>
+            {popupTimes(event) && <span className="text-xs font-bold text-stone-500">{popupTimes(event)}</span>}
+            <span className="text-sm font-bold text-stone-700 break-words">{event.venue}</span>
+            {event.notes && <p className="text-xs text-stone-500 whitespace-pre-line break-words mt-1">{event.notes}</p>}
+          </div>
+        ))}
+      </div>
+      {events.length > 3 && (
+        <div className="hidden sm:block text-center mt-4">
+          <button type="button" onClick={() => setShowAll(v => !v)} className="text-sm font-black text-pink-600 hover:text-pink-700">
+            {showAll ? 'Show fewer pop-ups' : `See all ${events.length} pop-ups`}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 // Promo code, amount, and peso/percent switch for a pre-order or online order discount.
 const PromoFields = ({ value, onChange }) => (
@@ -511,6 +596,13 @@ function CustomerView() {
   const [catalogVersion, setCatalogVersion] = useState(0); // bump to reload stock after an order
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
+  const [popups, setPopups] = useState([]);
+
+  useEffect(() => {
+    axios.get(`${API_BASE}upcoming-popups/`)
+      .then(res => setPopups(Array.isArray(res.data) ? res.data : (res.data?.results || [])))
+      .catch(() => { /* no pop-ups shown */ });
+  }, []);
 
   useEffect(() => {
     const fetchGarments = async () => {
@@ -550,7 +642,8 @@ function CustomerView() {
       if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) || 
-                            String(item.batch_name || '').toLowerCase().includes(searchLower);
+                            String(item.batch_name || '').toLowerCase().includes(searchLower) ||
+                            String(item.description || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // Size and availability look at the same stock: e.g. size M must itself be in a pre-order batch for "Pre-Order".
       // Sold Out is the opposite: nothing left in any batch, or nothing left in the chosen size.
@@ -578,6 +671,7 @@ function CustomerView() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <PopUpSchedule events={popups} />
         <div className="text-center max-w-2xl mx-auto mb-8">
           <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
           <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
@@ -898,6 +992,7 @@ function CustomerDesignCard({ design, onZoom, onOrder }) {
           {!hasMultipleColors && item?.color && item.color !== 'N/A' && (<span className="bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shrink-0">{String(item.color)}</span>)}
         </div>
         <span className="text-xs font-bold text-stone-400 mb-2 block">{String(design.category || 'Uncategorized')}</span>
+        <StyleDescription text={design.description} className="mb-3" />
         <span className="text-2xl font-black text-pink-600 mb-4">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
 
         {hasMultipleColors && (
@@ -1221,16 +1316,17 @@ const groupGarmentDesigns = (mergedList) => {
   (mergedList || []).forEach(v => {
     const key = `${String(v?.name || '').trim().toLowerCase()}-${String(v?.category || '').trim().toLowerCase()}`;
     if (!designMap[key]) {
-      designMap[key] = { key, name: v?.name, category: v?.category, variants: [] };
+      designMap[key] = { key, name: v?.name, category: v?.category, description: '', variants: [] };
     }
     designMap[key].variants.push(v);
+    if (!designMap[key].description && v?.description) designMap[key].description = v.description;
   });
   return Object.values(designMap);
 };
 
 // One design card. Lets the admin pick a color variant on the card itself; clicking the card
 // opens the sell/restock modal for whichever color is currently selected.
-function DesignCard({ design, onOpen }) {
+function DesignCard({ design, onOpen, showProfit = true }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [photoIdx, setPhotoIdx] = useState(0);
   const variant = design.variants[selectedIdx] || design.variants[0];
@@ -1274,6 +1370,7 @@ function DesignCard({ design, onOpen }) {
             )}
           </div>
           <span className="text-xs font-bold text-stone-400 mb-2 block">{String(design.category || 'Uncategorized')}</span>
+          <StyleDescription text={design.description} className="mb-2" />
 
           {hasMultipleColors && (
             <div className="flex flex-wrap gap-1.5 mb-2" onClick={(e) => e.stopPropagation()}>
@@ -1295,7 +1392,7 @@ function DesignCard({ design, onOpen }) {
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-stone-900">₱{parseFloat(variant?.selling_price || 0).toFixed(2)}</span>
           </div>
-          <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(variant?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
+          {showProfit && <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(variant?.profit_per_piece || 0).toFixed(2)} profit / ea</span>}
         </div>
         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1">
           {parseSafeArray(variant?.sizes).map((s) => (
@@ -1345,9 +1442,19 @@ function SalesReport({ transactions }) {
   const [mode, setMode] = useState('daily');
   const [day, setDay] = useState(today);
   const [month, setMonth] = useState(today.slice(0, 7));
+  const [range, setRange] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
   const [exporting, setExporting] = useState(false);
+  // Picking a From after To (or a To before From) moves the other date along with it.
+  const setRangeDay = (field, value) => {
+    if (!value) return;
+    setRange(prev => {
+      const next = { ...prev, [field]: value };
+      if (next.from > next.to) next[field === 'from' ? 'to' : 'from'] = value;
+      return next;
+    });
+  };
 
-  const report = buildSalesReport(transactions, mode === 'daily' ? day : month);
+  const report = buildSalesReport(transactions, mode === 'daily' ? day : mode === 'monthly' ? month : range);
   const { totals } = report;
   const months = [...new Set([today.slice(0, 7), month, ...transactions.map(t => String(t.date || '').slice(0, 7)).filter(Boolean)])].sort().reverse();
   const monthName = (value) => new Date(`${value}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
@@ -1367,17 +1474,26 @@ function SalesReport({ transactions }) {
     <div className="animate-fade-in max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Sales Report</h2>
-        <p className="text-stone-500 text-sm mt-1">Totals, best sellers and promo usage for a day or a month</p>
+        <p className="text-stone-500 text-sm mt-1">Totals, best sellers and promo usage for a day, a month or a range of dates</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <div className="flex bg-[#f2ece4] p-1 rounded-xl">
-          {[['daily', 'Daily'], ['monthly', 'Monthly']].map(([value, label]) => (
+          {[['daily', 'Daily'], ['monthly', 'Monthly'], ['range', 'Range']].map(([value, label]) => (
             <button key={value} type="button" onClick={() => setMode(value)} className={`px-4 py-1.5 rounded-lg text-sm font-black transition ${mode === value ? 'bg-white text-pink-600 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}>{label}</button>
           ))}
         </div>
         {mode === 'daily' ? (
           <input type="date" aria-label="Report day" value={day} onChange={(e) => { if (e.target.value) setDay(e.target.value); }} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500" />
+        ) : mode === 'range' ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs font-extrabold text-stone-500 uppercase">From
+              <input type="date" aria-label="Report from" value={range.from} onChange={(e) => setRangeDay('from', e.target.value)} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white normal-case focus:outline-none focus:ring-2 focus:ring-pink-500" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs font-extrabold text-stone-500 uppercase">To
+              <input type="date" aria-label="Report to" value={range.to} onChange={(e) => setRangeDay('to', e.target.value)} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white normal-case focus:outline-none focus:ring-2 focus:ring-pink-500" />
+            </label>
+          </div>
         ) : (
           <select aria-label="Report month" value={month} onChange={(e) => setMonth(e.target.value)} className="border border-stone-300 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 bg-white focus:outline-none focus:ring-2 focus:ring-pink-500">
             {months.map(m => <option key={m} value={m}>{monthName(m)}</option>)}
@@ -1397,8 +1513,8 @@ function SalesReport({ transactions }) {
       </div>
       <p className="text-xs font-bold text-stone-400 mb-6">Pre-orders count the money paid so far, under the date the order was made.</p>
 
-      {report.isMonth && (
-        <ReportTable title="By Day" count={report.days.length} emptyText="No sales this month." headers={[['Date'], ['Transactions', 'text-right'], ['Pieces', 'text-right'], ['Discounts', 'text-right'], ['Revenue', 'text-right']]}>
+      {report.byDay && (
+        <ReportTable title="By Day" count={report.days.length} emptyText="No sales in these dates." headers={[['Date'], ['Transactions', 'text-right'], ['Pieces', 'text-right'], ['Discounts', 'text-right'], ['Revenue', 'text-right']]}>
           {report.days.map(d => (
             <tr key={d.date}>
               <td className="p-4 whitespace-nowrap">{d.date}</td>
@@ -1406,6 +1522,19 @@ function SalesReport({ transactions }) {
               <td className="p-4 text-right">{d.pieces}</td>
               <td className="p-4 text-right text-pink-700">{d.discount > 0 ? `-${pesos(d.discount)}` : '—'}</td>
               <td className="p-4 text-right font-black text-stone-900">{pesos(d.collected)}</td>
+            </tr>
+          ))}
+        </ReportTable>
+      )}
+
+      {report.popups.length > 0 && (
+        <ReportTable title="Pop-up Sales" count={report.popups.length} emptyText="" headers={[['Pop-up'], ['Transactions', 'text-right'], ['Pieces', 'text-right'], ['Revenue', 'text-right']]}>
+          {report.popups.map(popup => (
+            <tr key={popup.name}>
+              <td className="p-4 text-stone-900">{popup.name}</td>
+              <td className="p-4 text-right">{popup.transactions}</td>
+              <td className="p-4 text-right">{popup.pieces}</td>
+              <td className="p-4 text-right font-black text-stone-900">{pesos(popup.collected)}</td>
             </tr>
           ))}
         </ReportTable>
@@ -1465,6 +1594,174 @@ function SalesReport({ transactions }) {
   );
 }
 
+// Pop-up events: add, change and remove them, and see what each one sold.
+// sales: Sales History records, each with the pop-up it was sold at.
+function PopUpsTab({ popups, sales, onChanged, showToast }) {
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const today = getLocalDate();
+
+  const stats = {};
+  sales.forEach(sale => {
+    if (!sale.popup) return;
+    const stat = stats[sale.popup] || (stats[sale.popup] = { revenue: 0, pieces: 0, sales: new Set() });
+    stat.revenue += sale.earned;
+    stat.pieces += sale.qty;
+    stat.sales.add(sale.sale_group || sale.id);
+  });
+  const statOf = (event) => stats[event.id] || { revenue: 0, pieces: 0, sales: new Set() };
+  const totalRevenue = Object.values(stats).reduce((sum, st) => sum + st.revenue, 0);
+  const totalPieces = Object.values(stats).reduce((sum, st) => sum + st.pieces, 0);
+  const upcoming = popups.filter(p => popupLastDay(p) >= today).sort((a, b) => a.date.localeCompare(b.date) || String(a.start_time || '').localeCompare(String(b.start_time || '')));
+  const past = popups.filter(p => popupLastDay(p) < today).sort((a, b) => b.date.localeCompare(a.date));
+
+  const openForm = (event) => setForm(event
+    ? { ...event, end_date: event.end_date || '', start_time: String(event.start_time || '').slice(0, 5), end_time: String(event.end_time || '').slice(0, 5), notes: event.notes || '' }
+    : { id: null, name: '', venue: '', date: today, end_date: '', start_time: '', end_time: '', notes: '' });
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (form.end_date && form.end_date < form.date) { alert('The last day cannot be before the first day.'); return; }
+    if (form.start_time && form.end_time && form.end_time <= form.start_time && (!form.end_date || form.end_date === form.date)) { alert('The closing time needs to be after the opening time.'); return; }
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(), venue: form.venue.trim(), date: form.date,
+      end_date: form.end_date && form.end_date !== form.date ? form.end_date : null,
+      start_time: form.start_time || null, end_time: form.end_time || null, notes: form.notes.trim(),
+    };
+    try {
+      if (form.id) await axios.patch(`${API_BASE}popups/${form.id}/`, payload);
+      else await axios.post(`${API_BASE}popups/`, payload);
+      showToast(form.id ? 'Pop-up updated' : 'Pop-up added');
+      setForm(null);
+      await onChanged();
+    } catch (error) {
+      const data = error.response?.data;
+      const message = data && typeof data === 'object' ? Object.values(data).flat().join('\n') : error.message;
+      alert(`Could not save the pop-up: ${message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (event) => {
+    if (!window.confirm(`Remove the pop-up "${event.name}"? Customers will no longer see it.`)) return;
+    try {
+      await axios.delete(`${API_BASE}popups/${event.id}/`);
+      showToast('Pop-up removed');
+      await onChanged();
+    } catch (error) {
+      alert(error.response?.data?.error || `Could not remove the pop-up: ${error.message}`);
+    }
+  };
+
+  const field = 'w-full border border-stone-300 rounded-lg px-3 py-2 text-sm font-bold text-stone-800 bg-[#f9f6f0] focus:outline-none focus:ring-2 focus:ring-pink-500';
+  const eventCard = (event, isUpcoming) => {
+    const stat = statOf(event);
+    return (
+      <div key={event.id} className="bg-white rounded-3xl border border-stone-200 shadow-sm p-5 flex flex-col gap-3 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h4 className="font-black text-lg text-stone-900 leading-tight break-words">{event.name}</h4>
+            <span className="block text-sm font-black text-pink-600 mt-0.5">{popupDates(event)}</span>
+            {popupTimes(event) && <span className="block text-xs font-bold text-stone-500">{popupTimes(event)}</span>}
+            <span className="block text-sm font-bold text-stone-700 break-words mt-0.5">{event.venue}</span>
+          </div>
+          {isUpcoming && (
+            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0 ${popupIsOn(event, today) ? 'bg-pink-600 text-white' : 'bg-[#eae4dc] text-stone-700'}`}>
+              {popupIsOn(event, today) ? 'Today' : 'Upcoming'}
+            </span>
+          )}
+        </div>
+        {event.notes && <p className="text-xs text-stone-500 whitespace-pre-line break-words">{event.notes}</p>}
+        <div className="grid grid-cols-3 gap-2 bg-[#f9f6f0] border border-stone-200 rounded-2xl p-3 text-center">
+          <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-wider">Revenue</span><span className="font-black text-stone-900 text-sm break-words">{pesos(stat.revenue)}</span></div>
+          <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-wider">Pieces</span><span className="font-black text-stone-900 text-sm">{stat.pieces}</span></div>
+          <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-wider">Sales</span><span className="font-black text-stone-900 text-sm">{stat.sales.size}</span></div>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => openForm(event)} className="flex-1 bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 font-extrabold px-3 py-2 rounded-xl text-sm transition">Edit</button>
+          <button type="button" onClick={() => remove(event)} className="flex-1 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 font-extrabold px-3 py-2 rounded-xl text-sm transition">Remove</button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="animate-fade-in max-w-6xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black text-stone-900 tracking-tight">Pop-ups</h2>
+          <p className="text-stone-500 text-sm mt-1">Upcoming pop-ups are shown on the customer page. Revenue counts sales recorded with Sold At set to the pop-up.</p>
+        </div>
+        <button type="button" onClick={() => openForm(null)} className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md text-sm transition shrink-0">+ Add Pop-up</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <ReportStat label="Pop-up Revenue" value={pesos(totalRevenue)} note="All pop-ups so far" />
+        <ReportStat label="Pieces Sold at Pop-ups" value={totalPieces} />
+        <ReportStat label="Upcoming Pop-ups" value={upcoming.length} note="Shown to customers" />
+      </div>
+
+      <h3 className="font-black text-stone-900 text-base mb-3">Upcoming &amp; Today</h3>
+      {upcoming.length === 0 ? (
+        <p className="bg-white rounded-3xl border-2 border-dashed border-stone-200 p-8 text-center text-sm font-bold text-stone-400 mb-8">No upcoming pop-ups. Add one and customers will see it.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">{upcoming.map(event => eventCard(event, true))}</div>
+      )}
+
+      {past.length > 0 && (
+        <>
+          <h3 className="font-black text-stone-900 text-base mb-3">Past Pop-ups</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{past.map(event => eventCard(event, false))}</div>
+        </>
+      )}
+
+      {form && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => !saving && setForm(null)}>
+          <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-black text-xl text-stone-900">{form.id ? 'Edit Pop-up' : 'Add Pop-up'}</h3>
+              <button type="button" onClick={() => setForm(null)} className="text-stone-400 hover:text-stone-600 font-bold text-lg" aria-label="Close">✖</button>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Event name</label>
+              <input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Weekend Bazaar" className={field} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Venue</label>
+              <input required maxLength={255} value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} placeholder="e.g. Centrio Mall, Cagayan de Oro" className={field} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">First day</label>
+                <input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Last day <span className="normal-case text-stone-400">(if more than one)</span></label>
+                <input type="date" min={form.date} value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Opens <span className="normal-case text-stone-400">(optional)</span></label>
+                <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Closes <span className="normal-case text-stone-400">(optional)</span></label>
+                <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} className={field} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Notes for customers <span className="normal-case text-stone-400">(optional)</span></label>
+              <textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="e.g. Booth 12, near the entrance" className={field} />
+            </div>
+            <button type="submit" disabled={saving} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-md transition">{saving ? 'Saving…' : form.id ? 'Save Changes' : 'Add Pop-up'}</button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('inventory');
@@ -1515,6 +1812,17 @@ function AdminDashboard() {
   const [checkoutPromo, setCheckoutPromo] = useState({ promo_code: '', discount_type: 'amount', discount_value: '' });
   const [checkoutPayment, setCheckoutPayment] = useState('');
   const [checkoutSplit, setCheckoutSplit] = useState([]);
+  const [checkoutPopup, setCheckoutPopup] = useState('');
+  // The description being written in the product window (null while not editing).
+  const [descDraft, setDescDraft] = useState(null);
+  const [descSaving, setDescSaving] = useState(false);
+  const [popups, setPopups] = useState([]);
+  // Profit figures in the Product Gallery can be hidden, e.g. while a customer is looking; remembered on this device.
+  const [showProfit, setShowProfit] = useState(() => { try { return localStorage.getItem('fleurette_hide_profit') !== '1'; } catch { return true; } });
+  const toggleProfit = () => setShowProfit(prev => {
+    try { localStorage.setItem('fleurette_hide_profit', prev ? '1' : '0'); } catch { /* storage unavailable */ }
+    return !prev;
+  });
   const [recordingSale, setRecordingSale] = useState(false);
   // A recorded sale being edited: its records (new quantities), new items, and its promo discount.
   const [editSale, setEditSale] = useState(null);
@@ -1605,6 +1913,7 @@ function AdminDashboard() {
       await fetchExpenses();
       await fetchPreOrders();
       await fetchOnlineOrders();
+      await fetchPopups();
       if (!isBackgroundRefresh) setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -1615,11 +1924,13 @@ function AdminDashboard() {
   const fetchSalesHistory = async () => { try { const res = await axios.get(`${API_BASE}sales/history/`); setSalesHistory(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
   const fetchExpenses = async () => { try { const res = await axios.get(`${API_BASE}expenses/`); const eData = Array.isArray(res.data) ? res.data : (res.data?.results || []); setExpenses(eData.map(e => ({ ...e, breakdown: parseSafeArray(e?.breakdown) }))); } catch (error) {} };
   const fetchOnlineOrders = async () => { try { const res = await axios.get(`${API_BASE}online-orders/`); setOnlineOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
+  const fetchPopups = async () => { try { const res = await axios.get(`${API_BASE}popups/`); setPopups(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
   const fetchPreOrders = async () => { try { const res = await axios.get(`${API_BASE}preorders/`); setPreOrders(Array.isArray(res.data) ? res.data : (res.data?.results || [])); } catch (error) {} };
 
   useEffect(() => { fetchData(); }, []);
 
   const openProductModal = (item, defaultMode = 'sell') => {
+    setDescDraft(null);
     const safeSizes = parseSafeArray(item?.sizes);
     const defaultSize = safeSizes.find(s => s?.quantity > 0)?.size || 'S';
     setProductModal({ show: true, garment: item, mode: defaultMode, size: defaultSize, quantity: 1 });
@@ -1663,12 +1974,37 @@ function AdminDashboard() {
       ? prev.map(l => l.key === key ? { ...l, quantity: l.quantity + quantity } : l)
       : [...prev, line]);
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
-    if (openCheckout) setShowCheckout(true);
+    if (openCheckout) startCheckout();
     else showToast(`🛍️ Added ${quantity} pc(s) of ${g.name} (${displaySize(productModal.size)}) to the cart`);
   };
 
   const changeCartQuantity = (key, quantity) => setSaleCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, Math.min(l.max, quantity)) } : l));
   const removeFromCart = (key) => setSaleCart(prev => prev.filter(l => l.key !== key));
+
+  // One description per style: saving it on any batch record gives it to every colour and batch.
+  const saveDescription = async () => {
+    const record = productModal.garment?.underlying_garments?.[0] || productModal.garment;
+    if (!record?.id || descSaving) return;
+    setDescSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('description', String(descDraft || '').trim());
+      await axios.patch(`${API_BASE}garments/${record.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setDescDraft(null);
+      showToast('Description saved');
+      await fetchData(true);
+    } catch (error) {
+      alert(`Could not save the description: ${error.response?.data?.description?.[0] || error.message}`);
+    } finally {
+      setDescSaving(false);
+    }
+  };
+
+  // Checkout starts on the pop-up running today, if there is one.
+  const startCheckout = () => {
+    setCheckoutPopup(String(popups.find(p => popupIsOn(p, getLocalDate()))?.id || ''));
+    setShowCheckout(true);
+  };
 
   // Records every item in the cart as one sale (all or nothing on the server).
   const handleRecordCartSale = async () => {
@@ -1689,13 +2025,15 @@ function AdminDashboard() {
         discount: discount.toFixed(2),
         promo_code: String(checkoutPromo.promo_code || '').trim(),
         payment_method: checkoutPayment,
-        payment_split: splitPayload(checkoutPayment, checkoutSplit)
+        payment_split: splitPayload(checkoutPayment, checkoutSplit),
+        popup: checkoutPopup || null
       });
       showToast(`🌸 Sale Recorded! ${cartPieces} pc(s) for ₱${total.toFixed(2)}${discount > 0 ? ` (₱${discount.toFixed(2)} off)` : ''}`);
       setSaleCart([]);
       setCheckoutPromo({ promo_code: '', discount_type: 'amount', discount_value: '' });
       setCheckoutPayment('');
       setCheckoutSplit([]);
+      setCheckoutPopup('');
       setShowCheckout(false);
       await fetchData(true);
     } catch (error) {
@@ -1854,7 +2192,7 @@ function AdminDashboard() {
   const openEditModal = (item) => {
     const sizeMap = { S: 0, M: 0, L: 0, XL: 0 };
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
-    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
+    setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', cost_price: item.cost_price || '', selling_price: item.selling_price || '', description: item.description || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
     setShowEditModal(true);
   };
@@ -1863,7 +2201,7 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       const formData = new FormData();
-      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); formData.append('cost_price', editGarment.cost_price); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); if (editGarment.image) formData.append('image', editGarment.image);
+      formData.append('batch_name', editGarment.batch_name); formData.append('name', editGarment.name); formData.append('category', editGarment.category || 'Uncategorized'); formData.append('color', editGarment.color || 'N/A'); formData.append('cost_price', editGarment.cost_price); formData.append('selling_price', editGarment.selling_price); formData.append('initial_sizes', JSON.stringify(editGarment.sizes)); formData.append('description', String(editGarment.description || '').trim()); if (editGarment.image) formData.append('image', editGarment.image);
       await axios.patch(`${API_BASE}garments/${editGarment.id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setShowEditModal(false); showToast("✏️ Style details updated!"); await fetchData(true);
     } catch (error) { alert('Error saving changes. Check your inputs.'); }
@@ -1968,6 +2306,7 @@ function AdminDashboard() {
       try {
         for (const o of onlineOrders) await axios.delete(`${API_BASE}online-orders/${o?.id}/`);
         for (const g of garments) await axios.delete(`${API_BASE}garments/${g?.id}/`); for (const p of preOrders) await axios.delete(`${API_BASE}preorders/${p?.id}/`); for (const e of expenses) await axios.delete(`${API_BASE}expenses/${e?.id}/`); for (const s of salesHistory) await axios.delete(`${API_BASE}sales/history/${s?.id}/`);
+        for (const p of popups) await axios.delete(`${API_BASE}popups/${p?.id}/`);
         setActiveTab('inventory'); showToast("🧨 All data has been completely wiped. Fresh start!"); await fetchData(true);
       } catch (error) { alert('Error wiping data. Check connection.'); }
       setLoading(false);
@@ -2494,6 +2833,7 @@ function AdminDashboard() {
       logIds: ids, lines, add: [],
       payment_method: records.find(r => r.payment_method)?.payment_method || '',
       payment_split: parseSafeArray(records.find(r => r.payment_method)?.payment_split),
+      popup: String(records.find(r => r.popup)?.popup || ''),
       promo_code: records.find(r => r.promo_code)?.promo_code || '',
       discount_type: 'amount',
       discount_value: totalDiscount > 0 ? totalDiscount.toFixed(2) : ''
@@ -2534,7 +2874,8 @@ function AdminDashboard() {
         discount: discount.toFixed(2),
         promo_code: String(editSale.promo_code || '').trim(),
         payment_method: editSale.payment_method || '',
-        payment_split: splitPayload(editSale.payment_method, editSale.payment_split)
+        payment_split: splitPayload(editSale.payment_method, editSale.payment_split),
+        popup: editSale.popup || null
       });
       showToast('✏️ Sale updated & stock adjusted!');
       setEditSale(null);
@@ -2660,6 +3001,7 @@ function AdminDashboard() {
       sale_group: log?.sale_group ? String(log.sale_group) : '',
       payment_method: log?.payment_method ? String(log.payment_method) : '',
       payment_split: parseSafeArray(log?.payment_split),
+      popup: log?.popup || null,
       garment_id: log?.garment_id || null
     };
   });
@@ -2731,6 +3073,11 @@ function AdminDashboard() {
       || new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
   });
 
+  const popupName = (id) => (id ? popups.find(p => p.id === id)?.name || '' : '');
+  // Sold At at checkout offers pop-ups from the last two weeks on, today's first in line.
+  const twoWeeksAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA'); })();
+  const checkoutPopups = popups.filter(p => popupLastDay(p) >= twoWeeksAgo).sort((a, b) => a.date.localeCompare(b.date));
+
   // Each Sales History row as the Sales Report reads it.
   const reportTransactions = () => historyRows.map(row => ({
     id: row.id,
@@ -2750,6 +3097,7 @@ function AdminDashboard() {
     balance: row.isPreOrder ? row.balance : 0,
     paymentMethod: paymentLabel(row.payment_method, row.payment_split),
     paymentSplit: row.payment_split,
+    soldAt: row.isPreOrder ? '' : popupName(row.popup),
     status: row.status,
   }));
 
@@ -2777,7 +3125,8 @@ function AdminDashboard() {
       if (!item) return false;
       const searchLower = String(searchQuery || '').toLowerCase();
       const matchesSearch = String(item.name || '').toLowerCase().includes(searchLower) ||
-                            String(item.batch_name || '').toLowerCase().includes(searchLower);
+                            String(item.batch_name || '').toLowerCase().includes(searchLower) ||
+                            String(item.description || '').toLowerCase().includes(searchLower);
       const matchesCategory = activeCategory === 'All' || (item.category || 'Uncategorized') === activeCategory;
       // A colour matches a size only while it still has that size in stock.
       // With Sold Out on, it's the other way round: colours that have run out of that size.
@@ -2906,7 +3255,7 @@ function AdminDashboard() {
     <div className="min-h-screen bg-[#f9f6f0] text-stone-800 flex flex-col md:flex-row relative font-sans">
       
       {saleCart.length > 0 && !showCheckout && (
-        <button type="button" onClick={() => setShowCheckout(true)} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
+        <button type="button" onClick={startCheckout} className="fixed bottom-6 right-6 z-40 bg-pink-600 hover:bg-pink-700 text-white font-black px-5 py-3.5 rounded-2xl shadow-2xl shadow-pink-600/40 flex items-center gap-2 transition active:scale-95">
           <span>🛍️</span> Cart
           <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
         </button>
@@ -2952,6 +3301,11 @@ function AdminDashboard() {
                     ))}
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Sold At</label>
+                  <PopupSelect value={checkoutPopup} onChange={setCheckoutPopup} popups={checkoutPopups} />
+                </div>
 
                 <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
@@ -3101,6 +3455,11 @@ function AdminDashboard() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Sold At</label>
+                  <PopupSelect value={editSale.popup} onChange={(popup) => setEditSale({ ...editSale, popup })} popups={[...popups].sort((a, b) => b.date.localeCompare(a.date))} />
+                </div>
+
+                <div>
                   <label className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Mode of Payment</label>
                   <PaymentMethodSelect value={editSale.payment_method} onChange={(payment_method) => setEditSale({ ...editSale, payment_method })} />
                   {editSale.payment_method === SPLIT_PAYMENT && <SplitPaymentFields value={editSale.payment_split} total={Math.max(0, total)} totalLabel="sale total" onChange={(payment_split) => setEditSale({ ...editSale, payment_split })} />}
@@ -3190,6 +3549,9 @@ function AdminDashboard() {
             <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
               <span className="text-lg">📝</span> Custom Pre-Orders
             </button>
+            <button onClick={() => { setActiveTab('popups'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'popups' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg">⛺</span> Pop-ups
+            </button>
             <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
               <span className="text-lg">📊</span> Batch Tracker
             </button>
@@ -3239,6 +3601,9 @@ function AdminDashboard() {
                   ]}
                   onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveStock('All'); }}
                 />
+                <button type="button" onClick={toggleProfit} aria-pressed={!showProfit} title={showProfit ? 'Hide profit figures' : 'Show profit figures'} className="flex items-center gap-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 font-extrabold px-3 py-2 rounded-xl text-sm shadow-sm transition shrink-0">
+                  <VisibilityIcon hidden={!showProfit} /> Profit
+                </button>
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
             </div>
@@ -3257,7 +3622,7 @@ function AdminDashboard() {
                 <div className="border-t border-[#ddd5cc] pt-3 flex justify-between items-end">
                   <div>
                     <span className="text-[11px] text-stone-700 block uppercase font-extrabold tracking-widest mb-0.5">Expected Potential Profit</span>
-                    <span className="text-2xl font-black text-pink-800">₱{totalStoreProfit.toFixed(2)}</span>
+                    <span className="text-2xl font-black text-pink-800">{showProfit ? `₱${totalStoreProfit.toFixed(2)}` : '₱ ••••'}</span>
                   </div>
                   <span className="text-xl">🌸</span>
                 </div>
@@ -3291,7 +3656,7 @@ function AdminDashboard() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {galleryDesigns.map((design) => (
-                  <DesignCard key={`adm-design-${design.key}`} design={design} onOpen={(variant) => openProductModal(variant, 'sell')} />
+                  <DesignCard key={`adm-design-${design.key}`} design={design} showProfit={showProfit} onOpen={(variant) => openProductModal(variant, 'sell')} />
                 ))}
               </div>
             )}
@@ -3355,7 +3720,7 @@ function AdminDashboard() {
                           <div className="mt-2 flex items-baseline gap-2">
                             <span className="text-2xl font-black text-stone-900">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
                           </div>
-                          <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>
+                          {showProfit && <span className="inline-block bg-pink-100 text-pink-800 text-[11px] font-black px-2.5 py-0.5 rounded-md mt-1.5">+₱{parseFloat(item?.profit_per_piece || 0).toFixed(2)} profit / ea</span>}
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-4 gap-1 mb-4">
@@ -3600,6 +3965,7 @@ function AdminDashboard() {
                                 </span>
                               )}
                               <PaymentBadge method={log.payment_method} split={log.payment_split} className="mt-1.5" />
+                              <PopupBadge name={popupName(log.popup)} className="mt-1" />
                             </div>
                           ) : (
                             <>
@@ -3610,6 +3976,7 @@ function AdminDashboard() {
                                 </span>
                               )}
                               <PaymentBadge method={log?.payment_method} split={log?.payment_split} className="mt-1" />
+                              <PopupBadge name={popupName(log?.popup)} className="mt-1" />
                             </>
                           )}
                         </td>
@@ -3802,6 +4169,8 @@ function AdminDashboard() {
         )}
 
         {activeTab === 'reports' && <SalesReport transactions={reportTransactions()} />}
+
+        {activeTab === 'popups' && <PopUpsTab popups={popups} sales={mappedSales} onChanged={() => fetchData(true)} showToast={showToast} />}
 
         {/* TAB 4: PRE-ORDERS VIEW */}
         {activeTab === 'onlineorders' && (
@@ -4165,14 +4534,33 @@ function AdminDashboard() {
                 <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight">{String(productModal.garment.name || '')}</h2>
                 <div className="mt-3 flex items-baseline gap-3">
                   <span className="text-3xl font-black text-stone-900">₱{parseFloat(productModal.garment.selling_price || 0).toFixed(2)}</span>
-                  <span className="text-sm font-bold text-stone-400 line-through">₱{parseFloat(productModal.garment.cost_price || 0).toFixed(2)}</span>
+                  {showProfit && <span className="text-sm font-bold text-stone-400 line-through">₱{parseFloat(productModal.garment.cost_price || 0).toFixed(2)}</span>}
                 </div>
 
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="bg-pink-100 text-pink-800 text-xs font-black px-3 py-1 rounded-lg">
-                    +₱{parseFloat(productModal.garment.profit_per_piece || 0).toFixed(2)} profit / unit
-                  </span>
-                </div>
+                {showProfit && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="bg-pink-100 text-pink-800 text-xs font-black px-3 py-1 rounded-lg">
+                      +₱{parseFloat(productModal.garment.profit_per_piece || 0).toFixed(2)} profit / unit
+                    </span>
+                  </div>
+                )}
+                {descDraft === null ? (
+                  <>
+                    <StyleDescription text={productModal.garment.description} className="mt-3" />
+                    <button type="button" onClick={() => setDescDraft(productModal.garment.description || '')} className="mt-2 text-xs font-extrabold text-amber-700 hover:text-amber-800 transition">
+                      {productModal.garment.description ? '✏️ Edit description' : '+ Add description'}
+                    </button>
+                  </>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <label className="block text-xs font-bold text-stone-600 uppercase">Description <span className="normal-case text-stone-400">(shown to customers; shared by every colour and batch)</span></label>
+                    <textarea aria-label="Style description" rows={3} maxLength={1000} value={descDraft} onChange={(e) => setDescDraft(e.target.value)} placeholder="e.g. Lightweight linen, relaxed fit, perfect for the beach." className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]" />
+                    <div className="flex gap-2">
+                      <button type="button" onClick={saveDescription} disabled={descSaving} className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-extrabold px-4 py-1.5 rounded-lg text-xs transition">{descSaving ? 'Saving…' : 'Save description'}</button>
+                      <button type="button" onClick={() => setDescDraft(null)} disabled={descSaving} className="bg-white hover:bg-stone-50 border border-stone-300 text-stone-600 font-extrabold px-4 py-1.5 rounded-lg text-xs transition">Cancel</button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-6 pt-6 border-t border-stone-100">
                   <div className="flex bg-[#f2ece4] p-1 rounded-xl mb-4">
@@ -4499,6 +4887,15 @@ function AdminDashboard() {
                 <input 
                   type="text" required 
                   value={editGarment.name} onChange={(e) => setEditGarment({...editGarment, name: e.target.value})}
+                  className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Description <span className="normal-case text-stone-400">(shown to customers; shared by every colour and batch of this style)</span></label>
+                <textarea
+                  rows={3} maxLength={1000} placeholder="e.g. Lightweight linen, relaxed fit, perfect for the beach."
+                  value={editGarment.description || ''} onChange={(e) => setEditGarment({...editGarment, description: e.target.value})}
                   className="w-full border border-stone-300 rounded-lg p-2.5 text-sm font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none bg-[#f9f6f0]"
                 />
               </div>

@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Q, Sum
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder, PAYMENT_METHODS, SPLIT_PAYMENT
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, OnlineOrder, PopUpEvent, PAYMENT_METHODS, SPLIT_PAYMENT
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers as drf_serializers
@@ -22,7 +22,7 @@ import io
 from django.core.management import call_command
 from django.http import HttpResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer, OnlineOrderSerializer, clean_payment_split, split_total
+from .serializers import GarmentSerializer, SaleLogSerializer, ExpenseSerializer, CatalogGarmentSerializer, OnlineOrderSerializer, PopUpEventSerializer, clean_payment_split, split_total
 
 
 def _norm(value):
@@ -48,6 +48,20 @@ def _payment_method(request, current=''):
     """Mode of payment sent with a sale (current if none was sent); None if it isn't a known one."""
     value = str(request.data.get('payment_method', current) or '')
     return value if not value or value in dict(PAYMENT_METHODS) else None
+
+
+def _sale_popup(request, current=None):
+    """(event, error): the pop-up event a sale was made at; None for the boutique.
+    The current event is kept if none was sent."""
+    if 'popup' not in request.data:
+        return current, None
+    value = request.data.get('popup')
+    if value in (None, ''):
+        return None, None
+    try:
+        return PopUpEvent.objects.get(pk=int(value)), None
+    except (TypeError, ValueError, PopUpEvent.DoesNotExist):
+        return None, 'That pop-up event no longer exists. Refresh and choose again.'
 
 
 def _split_discount(discount, grosses):
@@ -546,6 +560,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                records in proportion to their amounts.
         payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment (required).
         payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's total.
+        popup: id of the pop-up event the sale was made at; empty for the boutique.
         Every record written gets the same sale_group. If any item is short on stock,
         nothing is sold and a 400 lists what is short.
         """
@@ -563,6 +578,9 @@ class GarmentViewSet(viewsets.ModelViewSet):
             payment_split, error = clean_payment_split(request.data.get('payment_split'))
             if error:
                 return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+        popup, error = _sale_popup(request)
+        if error:
+            return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             sales, shortages, error = _take_items(items)
@@ -596,6 +614,7 @@ class GarmentViewSet(viewsets.ModelViewSet):
                     sale_group=sale_group,
                     payment_method=payment_method,
                     payment_split=payment_split,
+                    popup=popup,
                     sold_at=timezone.localdate(),
                     batch_name=g.batch_name,
                     garment_id=g.id,
@@ -700,6 +719,7 @@ def edit_sale(request):
     discount / promo_code: the sale's discount, re-shared across the final records.
     payment_method: GCash, Maya, GoTyme, Cash, Installment or Split Payment, set on every record; left as it is if not sent.
     payment_split: for a Split Payment, [{method, amount}] x 2, adding up to the sale's new total.
+    popup: pop-up event id, or empty for the boutique; left as it is if not sent.
 
     Removed or reduced pieces go back to the batch record they were taken from; increases
     are taken from that same batch record; new items are taken oldest batch first. Existing
@@ -736,6 +756,9 @@ def edit_sale(request):
             payment_split, error = clean_payment_split(request.data.get('payment_split', records[0].payment_split))
             if error:
                 return fail({'error': error})
+        popup, error = _sale_popup(request, records[0].popup)
+        if error:
+            return fail({'error': error})
 
         sale_date = min(r.sold_at for r in records)
         sale_time = min((r.created_at for r in records if r.created_at), default=None)
@@ -805,6 +828,7 @@ def edit_sale(request):
             record.sale_group = sale_group
             record.payment_method = payment_method
             record.payment_split = payment_split
+            record.popup = popup
             record.save()
             saved.append(record)
 
@@ -822,6 +846,29 @@ def sales_history_list(request):
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all().order_by('-date', '-id')
     serializer_class = ExpenseSerializer
+
+class PopUpEventViewSet(viewsets.ModelViewSet):
+    queryset = PopUpEvent.objects.all().order_by('-date', '-id')
+    serializer_class = PopUpEventSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        event = self.get_object()
+        if event.sales.exists():
+            return Response({'error': 'Sales were recorded at this pop-up, so it is kept for its revenue. Change those sales to another place first.'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+
+class UpcomingPopUpViewSet(viewsets.ReadOnlyModelViewSet):
+    """Public: pop-up events that have not ended yet, soonest first."""
+    serializer_class = PopUpEventSerializer
+    authentication_classes = []  # public: an old admin token in the browser must not cause a 401
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def get_queryset(self):
+        today = timezone.localdate()
+        return PopUpEvent.objects.filter(Q(end_date__gte=today) | Q(end_date__isnull=True, date__gte=today)).order_by('date', 'start_time', 'id')
+
 
 from .models import PreOrder
 from .serializers import PreOrderSerializer

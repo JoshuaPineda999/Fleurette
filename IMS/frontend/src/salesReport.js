@@ -1,7 +1,8 @@
-// Daily and monthly sales report: the numbers, and the CSV and Excel files.
+// Daily, monthly and date-range sales report: the numbers, and the CSV and Excel files.
 //
 // A transaction is one sale or pre-order:
-// { type, date, customer, items: [{ name, color, size, qty }], collected, orderValue, discount, promoCode, balance, paymentMethod, status }
+// { type, date, customer, items: [{ name, color, size, qty }], collected, orderValue, discount, promoCode, balance, paymentMethod, soldAt, status }
+// soldAt is the pop-up event a sale was made at ('' for the boutique and for pre-orders).
 // collected matches the Sales Ledger: a sale's amount, or what a pre-order has paid so far.
 
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -25,10 +26,20 @@ const mergedItems = (items) => {
   return [...merged.values()];
 };
 
-// period: 'YYYY-MM-DD' for one day, 'YYYY-MM' for one month.
+// period: 'YYYY-MM-DD' for one day, 'YYYY-MM' for one month, or { from, to } for a range of days (both included).
+const inPeriod = (date, period) => (typeof period === 'string'
+  ? date.startsWith(period)
+  : date >= period.from && date <= period.to);
+
+// How the period reads in the files: 'Daily sales report: 2026-11-09', and the file name part.
+const periodTitle = (report) => (report.isRange
+  ? `Sales report: ${report.period.from} to ${report.period.to}`
+  : `${report.isMonth ? 'Monthly' : 'Daily'} sales report: ${report.period}`);
+const periodFileName = (report) => (report.isRange ? `${report.period.from}-to-${report.period.to}` : report.period);
+
 export const buildSalesReport = (transactions, period) => {
   const rows = transactions
-    .filter(t => String(t.date || '').startsWith(period))
+    .filter(t => inPeriod(String(t.date || ''), period))
     .map(t => ({ ...t, items: mergedItems(t.items), pieces: t.items.reduce((sum, it) => sum + it.qty, 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
   const sales = rows.filter(t => t.type === 'Sale');
@@ -63,6 +74,15 @@ export const buildSalesReport = (transactions, period) => {
     promos.set(code, promo);
   });
 
+  const popups = new Map();
+  rows.filter(t => t.soldAt).forEach(t => {
+    const popup = popups.get(t.soldAt) || { name: t.soldAt, transactions: 0, pieces: 0, collected: 0 };
+    popup.transactions += 1;
+    popup.pieces += t.pieces;
+    popup.collected = round(popup.collected + t.collected);
+    popups.set(t.soldAt, popup);
+  });
+
   const payments = new Map();
   rows.forEach(t => {
     // A split counts toward each of its two modes of payment, with the amount paid through it.
@@ -77,9 +97,13 @@ export const buildSalesReport = (transactions, period) => {
     });
   });
 
+  const isRange = typeof period !== 'string';
   return {
     period,
-    isMonth: period.length === 7,
+    isRange,
+    isMonth: !isRange && period.length === 7,
+    // A month or a range of more than one day is also broken down by day.
+    byDay: isRange ? period.from !== period.to : period.length === 7,
     totals: {
       collected: sumOf(rows, 'collected'),
       fromSales: sumOf(sales, 'collected'),
@@ -90,6 +114,7 @@ export const buildSalesReport = (transactions, period) => {
       transactions: rows.length,
     },
     days: [...days.values()],
+    popups: [...popups.values()].sort((a, b) => b.collected - a.collected || a.name.localeCompare(b.name)),
     payments: [...payments.values()].sort((a, b) => b.collected - a.collected || a.method.localeCompare(b.method)),
     bestSellers: [...sellers.values()].sort((a, b) => b.pieces - a.pieces || a.name.localeCompare(b.name)),
     promos: [...promos.values()].sort((a, b) => b.discount - a.discount || a.code.localeCompare(b.code)),
@@ -105,7 +130,7 @@ const reportSections = (report) => {
   const sections = [{
     name: 'Summary',
     rows: [
-      ['Report', `${report.isMonth ? 'Monthly' : 'Daily'} sales report: ${report.period}`],
+      ['Report', periodTitle(report)],
       ['Revenue collected', money(totals.collected)],
       ['From sales', money(totals.fromSales)],
       ['From pre-orders', money(totals.fromPreOrders)],
@@ -116,11 +141,18 @@ const reportSections = (report) => {
       ['Note', 'Pre-orders count the money paid so far, under the date the order was made.'],
     ],
   }];
-  if (report.isMonth) {
+  if (report.byDay) {
     sections.push({
       name: 'By Day',
       header: ['Date', 'Transactions', 'Pieces', 'Revenue collected', 'Discounts'],
       rows: report.days.map(d => [d.date, d.transactions, d.pieces, money(d.collected), money(d.discount)]),
+    });
+  }
+  if (report.popups.length) {
+    sections.push({
+      name: 'Pop-up Sales',
+      header: ['Pop-up', 'Transactions', 'Pieces', 'Revenue collected'],
+      rows: report.popups.map(p => [p.name, p.transactions, p.pieces, money(p.collected)]),
     });
   }
   sections.push({
@@ -137,8 +169,8 @@ const reportSections = (report) => {
     rows: report.promos.map(p => [p.code || 'No code', p.uses, money(p.discount), money(p.orderValue)]),
   }, {
     name: 'Transactions',
-    header: ['Date', 'Type', 'Customer', 'Items', 'Pieces', 'Mode of payment', 'Promo code', 'Discount', 'Revenue collected', 'Balance', 'Status'],
-    rows: report.transactions.map(t => [t.date, t.type, t.customer, t.items.map(itemLabel).join('; '), t.pieces, t.paymentMethod, t.promoCode, money(t.discount), money(t.collected), money(t.balance), t.status]),
+    header: ['Date', 'Type', 'Customer', 'Items', 'Pieces', 'Sold at', 'Mode of payment', 'Promo code', 'Discount', 'Revenue collected', 'Balance', 'Status'],
+    rows: report.transactions.map(t => [t.date, t.type, t.customer, t.items.map(itemLabel).join('; '), t.pieces, t.soldAt || (t.type === 'Sale' ? 'Boutique' : ''), t.paymentMethod, t.promoCode, money(t.discount), money(t.collected), money(t.balance), t.status]),
   });
   return sections;
 };
@@ -173,7 +205,7 @@ const saveFile = (blob, filename) => {
 
 export const downloadSalesReportCsv = (report) => {
   // The mark at the start tells Excel the file is UTF-8, so names with accents show properly.
-  saveFile(new Blob(['﻿', salesReportCsv(report)], { type: 'text/csv;charset=utf-8' }), `fleurette-sales-${report.period}.csv`);
+  saveFile(new Blob(['﻿', salesReportCsv(report)], { type: 'text/csv;charset=utf-8' }), `fleurette-sales-${periodFileName(report)}.csv`);
 };
 
 export const downloadSalesReportExcel = async (report) => {
@@ -193,5 +225,5 @@ export const downloadSalesReportExcel = async (report) => {
       })),
     };
   });
-  saveFile(await writeExcelFile(sheets).toBlob(), `fleurette-sales-${report.period}.xlsx`);
+  saveFile(await writeExcelFile(sheets).toBlob(), `fleurette-sales-${periodFileName(report)}.xlsx`);
 };

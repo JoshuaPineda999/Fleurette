@@ -2,7 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.conf import settings
 from rest_framework import serializers
-from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder, SPLIT_PAYMENT, SPLIT_METHODS
+from .models import Garment, GarmentPhoto, SizeStock, SaleLog, Expense, PreOrder, OnlineOrder, PopUpEvent, SPLIT_PAYMENT, SPLIT_METHODS
 
 
 def clean_payment_split(raw):
@@ -38,9 +38,22 @@ class ExpenseSerializer(serializers.ModelSerializer):
 class SaleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaleLog
-        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'payment_split', 'created_at']
+        fields = ['id', 'garment_name', 'size', 'quantity_sold', 'profit_earned', 'sold_at', 'status', 'batch_name', 'garment_id', 'amount_sold', 'discount', 'promo_code', 'sale_group', 'payment_method', 'payment_split', 'popup', 'created_at']
         # Changed through Edit Sale, which checks a split against the sale's total.
-        read_only_fields = ['payment_method', 'payment_split']
+        read_only_fields = ['payment_method', 'payment_split', 'popup']
+
+
+class PopUpEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PopUpEvent
+        fields = ['id', 'name', 'venue', 'date', 'end_date', 'start_time', 'end_time', 'notes']
+
+    def validate(self, attrs):
+        date = attrs.get('date', getattr(self.instance, 'date', None))
+        end_date = attrs.get('end_date', getattr(self.instance, 'end_date', None))
+        if date and end_date and end_date < date:
+            raise serializers.ValidationError({'end_date': 'The last day cannot be before the first day.'})
+        return attrs
 
 class GarmentPhotoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -52,6 +65,10 @@ class SizeStockSerializer(serializers.ModelSerializer):
     class Meta:
         model = SizeStock
         fields = ['id', 'size', 'quantity']
+
+def _norm_name(value):
+    return str(value or '').strip().lower()
+
 
 def _norm_color(value):
     # Blank, null and the 'N/A' placeholder all mean "no colour" (same rule as the stock matching in views.py).
@@ -66,11 +83,12 @@ class GarmentSerializer(serializers.ModelSerializer):
     total_pieces = serializers.IntegerField(read_only=True)
     total_potential_profit = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     initial_sizes = serializers.JSONField(write_only=True, required=False)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=1000, trim_whitespace=True)
 
     class Meta:
         model = Garment
         fields = [
-            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'cost_price', 'selling_price', 'image', 'photos', 
+            'id', 'batch_name', 'batch_status', 'batch_hidden', 'name', 'category', 'color', 'description', 'cost_price', 'selling_price', 'image', 'photos', 
             'profit_per_piece', 'total_pieces', 'total_potential_profit', 
             'sizes', 'initial_sizes'
         ]
@@ -97,8 +115,19 @@ class GarmentSerializer(serializers.ModelSerializer):
         candidates = same_category or photos
         return candidates[0] if candidates else None
 
+    @staticmethod
+    def _share_description(name, description):
+        # One description per style: every batch record with the style's name gets it.
+        Garment.objects.filter(name__iexact=str(name or '').strip()).update(description=description)
+
     def create(self, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', {})
+        if validated_data.get('description'):
+            self._share_description(validated_data.get('name'), validated_data['description'])
+        else:
+            # A new batch of a style already in stock keeps the style's description.
+            same_style = Garment.objects.filter(name__iexact=str(validated_data.get('name') or '').strip()).exclude(description='').order_by('-id').first()
+            validated_data['description'] = same_style.description if same_style else ''
         # A style added to a hidden batch stays hidden with the rest of the batch.
         if Garment.objects.filter(batch_name=validated_data.get('batch_name'), batch_hidden=True).exists():
             validated_data['batch_hidden'] = True
@@ -124,9 +153,16 @@ class GarmentSerializer(serializers.ModelSerializer):
             siblings = Garment.objects.filter(batch_name=new_batch)
             if siblings.exists():
                 validated_data['batch_hidden'] = siblings.filter(batch_hidden=True).exists()
+        if 'description' not in validated_data and 'name' in validated_data and _norm_name(validated_data['name']) != _norm_name(instance.name):
+            # Renamed into another style: take that style's description, if it has one.
+            other = Garment.objects.filter(name__iexact=str(validated_data['name']).strip()).exclude(pk=instance.pk).exclude(description='').order_by('-id').first()
+            if other is not None:
+                validated_data['description'] = other.description
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        if 'description' in validated_data:
+            self._share_description(instance.name, instance.description)
         if initial_sizes is not None:
             if isinstance(initial_sizes, str):
                 try: initial_sizes = json.loads(initial_sizes)
@@ -149,7 +185,7 @@ class CatalogGarmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Garment
-        fields = ['id', 'name', 'category', 'color', 'selling_price', 'image', 'photos', 'batch_status', 'sizes', 'total_pieces']
+        fields = ['id', 'name', 'category', 'color', 'description', 'selling_price', 'image', 'photos', 'batch_status', 'sizes', 'total_pieces']
 
 
 def online_order_summary(order):

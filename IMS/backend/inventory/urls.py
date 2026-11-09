@@ -10,6 +10,8 @@ router.register(r'catalog', views.CatalogViewSet, basename='catalog')
 router.register(r'expenses', ExpenseViewSet, basename='expense') # NEW ROUTE
 router.register(r'preorders', PreOrderViewSet, basename='preorder')
 router.register(r'online-orders', views.OnlineOrderViewSet, basename='online-order')
+router.register(r'popups', views.PopUpEventViewSet, basename='popup')
+router.register(r'upcoming-popups', views.UpcomingPopUpViewSet, basename='upcoming-popup')
 
 urlpatterns = [
     path('online-orders/place/', views.place_online_order, name='place_online_order'),
