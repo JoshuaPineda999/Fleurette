@@ -448,20 +448,22 @@ function StyleDescription({ text, className = '' }) {
   );
 }
 
-// The next pop-up, in a slim bar under the customer navbar. Tapping it opens every upcoming pop-up.
-function PopUpBar({ events, onOpen }) {
+// The next pop-up, in a slim bar under the customer navbar. Tapping it opens every upcoming pop-up;
+// the ✕ closes the bar until the site is opened again.
+function PopUpBar({ events, onOpen, onClose }) {
   if (!events.length) return null;
   const next = events[0];
   const happening = popupIsOn(next, getLocalDate());
   return (
-    <div className="bg-pink-600 text-white">
-      <button type="button" onClick={onOpen} className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs sm:text-sm font-bold hover:bg-pink-700 transition">
+    <div className="bg-pink-600 text-white flex items-stretch">
+      <button type="button" onClick={onOpen} className="flex-1 min-w-0 pl-12 pr-2 sm:px-12 py-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs sm:text-sm font-bold hover:bg-pink-700 transition">
         <span className="bg-white/20 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">{happening ? 'Happening now' : 'Next pop-up'}</span>
         <span className="font-black">{next.name}</span>
         <span className="text-pink-100">· {popupDates(next)}</span>
         <span className="text-pink-100 hidden md:inline">· {next.venue}</span>
         <span className="font-black underline underline-offset-4 decoration-2">Details →</span>
       </button>
+      <button type="button" onClick={onClose} aria-label="Close pop-up announcement" title="Close" className="w-10 sm:w-12 shrink-0 flex items-center justify-center text-pink-100 hover:text-white hover:bg-pink-700 font-black text-base transition">✕</button>
     </div>
   );
 }
@@ -628,6 +630,21 @@ function CustomerView() {
   const [zoomedImage, setZoomedImage] = useState(null);
   const [popups, setPopups] = useState([]);
   const [showPopups, setShowPopups] = useState(false);
+  // Closed only for this visit: the bar is back whenever the site is opened again.
+  const [popupBarClosed, setPopupBarClosed] = useState(false);
+  // The header slides away while scrolling down and comes back when scrolling up.
+  const [headerHidden, setHeaderHidden] = useState(false);
+  useEffect(() => {
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - lastY) < 8) return;
+      setHeaderHidden(y > lastY && y > 80);
+      lastY = y;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   useEffect(() => {
@@ -690,7 +707,7 @@ function CustomerView() {
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
-      <header className="sticky top-0 z-30 shadow-sm">
+      <header className={`sticky top-0 z-30 shadow-sm transition-transform duration-300 ${headerHidden ? '-translate-y-full' : ''}`}>
         <nav className="bg-white/90 backdrop-blur-md border-b border-stone-200" aria-label="Main">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
             <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-2" aria-label="Fleurette, back to top">
@@ -712,7 +729,7 @@ function CustomerView() {
             </div>
           </div>
         </nav>
-        <PopUpBar events={popups} onOpen={() => setShowPopups(true)} />
+        {!popupBarClosed && <PopUpBar events={popups} onOpen={() => setShowPopups(true)} onClose={() => setPopupBarClosed(true)} />}
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
