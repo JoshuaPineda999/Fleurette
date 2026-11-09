@@ -448,40 +448,70 @@ function StyleDescription({ text, className = '' }) {
   );
 }
 
-// Upcoming pop-up events on the customer page, soonest first. Phones swipe through them;
-// wider screens show three, with a button for the rest.
-function PopUpSchedule({ events }) {
-  const [showAll, setShowAll] = useState(false);
+// The next pop-up, in a slim bar under the customer navbar. Tapping it opens every upcoming pop-up.
+function PopUpBar({ events, onOpen }) {
   if (!events.length) return null;
+  const next = events[0];
+  const happening = popupIsOn(next, getLocalDate());
+  return (
+    <div className="bg-pink-600 text-white">
+      <button type="button" onClick={onOpen} className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs sm:text-sm font-bold hover:bg-pink-700 transition">
+        <span className="bg-white/20 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">{happening ? 'Happening now' : 'Next pop-up'}</span>
+        <span className="font-black">{next.name}</span>
+        <span className="text-pink-100">· {popupDates(next)}</span>
+        <span className="text-pink-100 hidden md:inline">· {next.venue}</span>
+        <span className="font-black underline underline-offset-4 decoration-2">Details →</span>
+      </button>
+    </div>
+  );
+}
+
+const mapsUrl = (venue) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue)}`;
+
+// Every upcoming pop-up, soonest first: a sheet from the bottom on phones, a window on wider screens.
+function PopUpDetails({ events, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const today = getLocalDate();
   return (
-    <section className="mb-12" aria-labelledby="popups-title">
-      <div className="text-center mb-5">
-        <h2 id="popups-title" className="text-2xl font-black text-stone-900">Catch Us at a Pop-up</h2>
-        <p className="text-sm text-stone-500 mt-1">Come see and try the collection in person.</p>
-      </div>
-      <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0">
-        {events.map((event, i) => (
-          <div key={event.id} className={`snap-start shrink-0 w-[85%] sm:w-auto bg-white rounded-3xl border border-stone-200 shadow-sm p-5 flex flex-col gap-1 min-w-0 ${i >= 3 && !showAll ? 'sm:hidden' : ''}`}>
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-black text-lg text-stone-900 leading-tight break-words min-w-0">{event.name}</h3>
-              {popupIsOn(event, today) && <span className="bg-pink-600 text-white text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0">Happening now</span>}
-            </div>
-            <span className="text-sm font-black text-pink-600">{popupDates(event)}</span>
-            {popupTimes(event) && <span className="text-xs font-bold text-stone-500">{popupTimes(event)}</span>}
-            <span className="text-sm font-bold text-stone-700 break-words">{event.venue}</span>
-            {event.notes && <p className="text-xs text-stone-500 whitespace-pre-line break-words mt-1">{event.notes}</p>}
+    <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="popups-title" onClick={(e) => e.stopPropagation()} className="bg-[#f9f6f0] w-full sm:max-w-lg max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 id="popups-title" className="text-xl font-black text-stone-900">Catch Us at a Pop-up</h2>
+            <p className="text-sm text-stone-500">Come see and try the collection in person.</p>
           </div>
-        ))}
-      </div>
-      {events.length > 3 && (
-        <div className="hidden sm:block text-center mt-4">
-          <button type="button" onClick={() => setShowAll(v => !v)} className="text-sm font-black text-pink-600 hover:text-pink-700">
-            {showAll ? 'Show fewer pop-ups' : `See all ${events.length} pop-ups`}
-          </button>
+          <button type="button" onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full bg-white hover:bg-stone-100 border border-stone-200 text-stone-600 font-black shrink-0 transition">✕</button>
         </div>
-      )}
-    </section>
+        <div className="space-y-3">
+          {events.map(event => {
+            const sameMonth = event.end_date && event.end_date !== event.date && event.end_date.slice(0, 7) === event.date.slice(0, 7);
+            return (
+              <div key={event.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4 flex gap-4 min-w-0">
+                <div className="w-16 shrink-0 rounded-xl bg-pink-50 border border-pink-100 text-pink-700 flex flex-col items-center justify-center py-2 h-fit">
+                  <span className="text-[10px] font-black uppercase tracking-widest">{popupDay(event.date, { month: 'short' })}</span>
+                  <span className="text-lg font-black leading-tight">{Number(event.date.slice(8))}{sameMonth ? `–${Number(event.end_date.slice(8))}` : ''}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-black text-stone-900 break-words">{event.name}</h3>
+                    {popupIsOn(event, today) && <span className="bg-pink-600 text-white text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">Happening now</span>}
+                  </div>
+                  <span className="block text-sm font-bold text-pink-600">{popupDates(event)}</span>
+                  {popupTimes(event) && <span className="block text-xs font-bold text-stone-500">{popupTimes(event)}</span>}
+                  <span className="block text-sm font-bold text-stone-700 break-words mt-1">{event.venue}</span>
+                  {event.notes && <p className="text-xs text-stone-500 whitespace-pre-line break-words mt-1">{event.notes}</p>}
+                  <a href={mapsUrl(event.venue)} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-xs font-black text-pink-600 hover:text-pink-700">Get directions →</a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -597,6 +627,8 @@ function CustomerView() {
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
   const [popups, setPopups] = useState([]);
+  const [showPopups, setShowPopups] = useState(false);
+  const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   useEffect(() => {
     axios.get(`${API_BASE}upcoming-popups/`)
@@ -658,21 +690,30 @@ function CustomerView() {
 
   return (
     <div className="min-h-screen bg-[#f9f6f0] font-sans text-stone-800 relative">
-      <nav className="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🌸</span>
-            <h1 className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</h1>
+      <header className="sticky top-0 z-30 shadow-sm">
+        <nav className="bg-white/90 backdrop-blur-md border-b border-stone-200" aria-label="Main">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-2" aria-label="Fleurette, back to top">
+              <span className="text-2xl">🌸</span>
+              <span className="font-black text-xl tracking-tight text-stone-900">FLEURETTE</span>
+            </button>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <button type="button" onClick={() => scrollTo('shop')} className="hidden sm:inline-block px-3 py-2 rounded-lg text-sm font-black text-stone-700 hover:text-pink-600 transition">Shop</button>
+              {popups.length > 0 && (
+                <button type="button" onClick={() => setShowPopups(true)} className="relative px-3 py-2 rounded-lg text-sm font-black text-stone-700 hover:text-pink-600 transition">
+                  Pop-ups
+                  <span className="absolute top-1.5 right-1 w-2 h-2 rounded-full bg-pink-600" aria-hidden="true" />
+                </button>
+              )}
+              <button type="button" onClick={() => scrollTo('contact')} className="hidden sm:inline-block px-3 py-2 rounded-lg text-sm font-black text-stone-700 hover:text-pink-600 transition">Contact</button>
+            </div>
           </div>
-          <Link to="/login" className="text-xs font-black text-white hover:text-white bg-pink-600 hover:bg-pink-700 transition uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-md">
-            Admin Login
-          </Link>
-        </div>
-      </nav>
+        </nav>
+        <PopUpBar events={popups} onOpen={() => setShowPopups(true)} />
+      </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <PopUpSchedule events={popups} />
-        <div className="text-center max-w-2xl mx-auto mb-8">
+        <div id="shop" className="text-center max-w-2xl mx-auto mb-8 scroll-mt-32">
           <h2 className="text-4xl font-black text-stone-900 mb-4">Latest Collection</h2>
           <p className="text-stone-500">Discover our newest arrivals. Browse available sizes and colors below.</p>
           <div className="mt-6 flex items-center gap-2 max-w-lg mx-auto">
@@ -712,7 +753,7 @@ function CustomerView() {
         )}
       </main>
 
-      <footer className="bg-white border-t border-stone-200 mt-6">
+      <footer id="contact" className="bg-white border-t border-stone-200 mt-6 scroll-mt-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col items-center text-center gap-4">
           {/* The word is centred on its own; the flower hangs off its left edge so it doesn't push the word right. */}
           <div className="relative">
@@ -754,6 +795,7 @@ function CustomerView() {
       {zoomedImage && (
         <PhotoViewer photos={zoomedImage.photos} startIndex={zoomedImage.index} onClose={() => setZoomedImage(null)} />
       )}
+      {showPopups && <PopUpDetails events={popups} onClose={() => setShowPopups(false)} />}
     </div>
   );
 }
