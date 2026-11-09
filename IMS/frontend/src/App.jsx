@@ -3516,9 +3516,9 @@ function AdminDashboard() {
       {/* ========================================== */}
       {/* 1. LIGHT KHAKI SIDEBAR                     */}
       {/* ========================================== */}
-      <aside className="w-full md:w-64 bg-[#eae4dc] text-stone-900 p-6 flex flex-col justify-between shrink-0 md:h-screen md:overflow-y-auto md:sticky md:top-0 z-30 shadow-xl border-r border-[#ddd5cc]">
+      <aside className="w-full md:w-64 bg-[#eae4dc] text-stone-900 p-6 md:px-5 md:py-4 flex flex-col justify-between shrink-0 md:h-screen md:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:sticky md:top-0 z-30 shadow-xl border-r border-[#ddd5cc]">
         <div>
-          <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[#ddd5cc]">
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#ddd5cc]">
             <span className="text-3xl">🌸</span>
             <div>
               <h1 className="font-black text-lg tracking-tight leading-none text-stone-900">FLEURETTE</h1>
@@ -3526,49 +3526,49 @@ function AdminDashboard() {
             </div>
           </div>
 
-          <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-3 px-2">Collection Menu</p>
-          <div className="space-y-2">
-            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">🛍️</span> Product Gallery
+          <p className="text-[11px] font-bold uppercase tracking-wider text-stone-600 mb-2 px-2">Collection Menu</p>
+          <div className="space-y-1">
+            <button onClick={() => { setActiveTab('inventory'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'inventory' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">🛍️</span> Product Gallery
             </button>
-            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">📜</span> Sales History
+            <button onClick={() => { setActiveTab('history'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'history' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">📜</span> Sales History
             </button>
-            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">📈</span> Net Profit Analytics
+            <button onClick={() => { setActiveTab('analytics'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'analytics' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">📈</span> Net Profit Analytics
             </button>
-            <button onClick={() => { setActiveTab('reports'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'reports' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">📊</span> Sales Report
+            <button onClick={() => { setActiveTab('reports'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'reports' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">📊</span> Sales Report
             </button>
-            <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">🛒</span> Online Orders
+            <button onClick={() => { setActiveTab('onlineorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'onlineorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">🛒</span> Online Orders
               {onlineOrders.filter(o => o?.status === 'Awaiting').length > 0 && (
                 <span className={`ml-auto text-[11px] font-black rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center ${activeTab === 'onlineorders' ? 'bg-white text-pink-600' : 'bg-pink-600 text-white'}`}>{onlineOrders.filter(o => o?.status === 'Awaiting').length}</span>
               )}
             </button>
-            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">📝</span> Custom Pre-Orders
+            <button onClick={() => { setActiveTab('preorders'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'preorders' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">📝</span> Custom Pre-Orders
             </button>
-            <button onClick={() => { setActiveTab('popups'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'popups' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
-              <span className="text-lg">⛺</span> Pop-ups
+            <button onClick={() => { setActiveTab('popups'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 ${ activeTab === 'popups' ? 'bg-pink-600 text-white shadow-lg shadow-pink-950/20 font-extrabold' : 'text-stone-800 hover:bg-[#ded6cc] hover:text-stone-950' }`}>
+              <span className="text-lg leading-none">⛺</span> Pop-ups
             </button>
-            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-4 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
-              <span className="text-lg">📊</span> Batch Tracker
+            <button onClick={() => { setActiveTab('batches'); setSelectedBatch(null); }} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm transition flex items-center gap-3 mt-2 border ${ activeTab === 'batches' ? 'bg-white text-stone-900 shadow-md border-stone-200 font-black' : 'text-stone-700 hover:bg-white hover:shadow-sm border-transparent' }`}>
+              <span className="text-lg leading-none">📊</span> Batch Tracker
             </button>
           </div>
         </div>
 
-        <div className="pt-6 border-t border-[#ddd5cc] mt-6 flex flex-col gap-2">
-          <button onClick={() => openAddBatchWizard('')} className="w-full bg-stone-900 hover:bg-black text-white font-black py-3 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm">
+        <div className="pt-3 border-t border-[#ddd5cc] mt-3 flex flex-col gap-1.5">
+          <button onClick={() => openAddBatchWizard('')} className="w-full bg-stone-900 hover:bg-black text-white font-black py-2.5 px-4 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 text-sm">
             <span className="text-lg leading-none">📦</span> Import New Batch
           </button>
-          <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
+          <button onClick={handleLogout} className="w-full bg-[#ded6cc] hover:bg-stone-300 text-stone-700 font-bold py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             Log Out
           </button>
-          <button onClick={downloadBackup} className="w-full bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs" title="Save all shop data to a file on this computer">
+          <button onClick={downloadBackup} className="w-full bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 font-bold py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs" title="Save all shop data to a file on this computer">
             💾 Download Backup
           </button>
-          <button onClick={handleFactoryReset} className="w-full mt-4 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
+          <button onClick={handleFactoryReset} className="w-full mt-1 bg-transparent border-2 border-rose-300 hover:bg-rose-100 hover:border-rose-400 text-rose-600 font-black py-2 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs">
             <span className="text-sm">🧨</span> Factory Reset
           </button>
         </div>
