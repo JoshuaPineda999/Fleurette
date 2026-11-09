@@ -406,6 +406,50 @@ const PopupBadge = ({ name, className = '' }) => name ? (
   <span className={`block w-fit bg-[#eae4dc] text-stone-800 border border-[#ddd5cc] text-[10px] font-black px-2 py-0.5 rounded-md ${className}`}>Sold at {name}</span>
 ) : null;
 
+// Today's Vietnamese dong to peso rate. Free sources, updated once a day, tried in order; the rate is
+// kept for an hour. fetch (not axios) so the admin's login never goes to these sites.
+const VND_RATE_SOURCES = [
+  ['https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/vnd.json', d => ({ rate: d?.vnd?.php, date: d?.date })],
+  ['https://latest.currency-api.pages.dev/v1/currencies/vnd.json', d => ({ rate: d?.vnd?.php, date: d?.date })],
+  ['https://open.er-api.com/v6/latest/VND', d => ({ rate: d?.rates?.PHP, date: d?.time_last_update_unix ? new Date(d.time_last_update_unix * 1000).toISOString().slice(0, 10) : '' })],
+];
+let vndRateCache = null;
+const fetchVndRate = () => {
+  if (vndRateCache && Date.now() - vndRateCache.at < 60 * 60 * 1000) return vndRateCache.promise;
+  const promise = (async () => {
+    for (const [url, read] of VND_RATE_SOURCES) {
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) continue;
+        const { rate, date } = read(await res.json());
+        if (Number.isFinite(rate) && rate > 0) return { rate, date };
+      } catch { /* try the next source */ }
+    }
+    throw new Error('No exchange rate available');
+  })();
+  vndRateCache = { promise, at: Date.now() };
+  promise.catch(() => { vndRateCache = null; });
+  return promise;
+};
+
+// { status: 'loading' | 'ok' | 'error', rate, date, retry } for the VND field.
+function useVndRate() {
+  const [state, setState] = useState({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setState({ status: 'loading' });
+    fetchVndRate().then(r => { if (live) setState({ status: 'ok', ...r }); }).catch(() => { if (live) setState({ status: 'error' }); });
+    return () => { live = false; };
+  }, [attempt]);
+  return { ...state, retry: () => setAttempt(a => a + 1) };
+}
+
+const vndToPeso = (vnd, rate) => {
+  const v = parseFloat(vnd);
+  return isNaN(v) || !rate ? '' : (Math.round(v * rate * 100) / 100).toFixed(2);
+};
+
 // The tax added on an item's base price when Add tax is ticked (the server only accepts this rate).
 const COST_TAX_PERCENT = 8;
 
@@ -432,22 +476,53 @@ const appendCostFields = (formData, item, fallback) => {
 
 // Tax fields for a form, from a saved item: with tax, the box is ticked and the price shown is the base.
 const costFormFields = (item) => (item?.cost_tax_percent != null
-  ? { cost_price: item.cost_base ?? '', tax_on: true }
-  : { cost_price: item?.cost_price ?? '', tax_on: false });
+  ? { cost_price: item.cost_base ?? '', tax_on: true, cost_vnd: '' }
+  : { cost_price: item?.cost_price ?? '', tax_on: false, cost_vnd: '' });
 
-// Cost price, or base price plus the tax when Add tax is ticked. onChange(field, value) for
-// cost_price and tax_on. small: the tighter look of the Import New Batch form;
-// ring: the focus colour of the form it sits in.
-function CostPriceField({ item, onChange, small = false, placeholder, ring = 'focus:ring-pink-500' }) {
+// The price in Vietnamese dong, turned into pesos with today's rate and put in the peso price.
+function VndPriceInput({ item, onChange, label, input }) {
+  const fx = useVndRate();
+  const amount = parseFloat(item.cost_vnd);
+  return (
+    <div className="mb-2">
+      <label className={label}>Base Price (VND) <span className="normal-case text-stone-400">(optional)</span></label>
+      <input
+        type="number" step="1" min="0" aria-label="Base price in VND" disabled={fx.status !== 'ok'}
+        placeholder={fx.status === 'loading' ? 'Getting today\'s rate…' : fx.status === 'error' ? 'Rate not available' : 'e.g. 250000'}
+        value={item.cost_vnd ?? ''}
+        onChange={(e) => onChange({ cost_vnd: e.target.value, cost_price: vndToPeso(e.target.value, fx.rate) })}
+        className={`${input} disabled:opacity-60`}
+      />
+      {fx.status === 'ok' && (
+        <p className="text-[11px] font-bold text-stone-500 mt-1">
+          {amount > 0 ? <span className="text-pink-700">₫{amount.toLocaleString('en-PH')} = ₱{vndToPeso(amount, fx.rate)} · </span> : null}
+          ₫1 = ₱{fx.rate.toPrecision(5)}{fx.date ? ` · rate of ${fx.date}` : ''}
+        </p>
+      )}
+      {fx.status === 'error' && (
+        <p className="text-[11px] font-bold text-rose-600 mt-1">
+          Could not get today's rate. Type the peso price below, or <button type="button" onClick={fx.retry} className="underline font-black">try again</button>.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Cost price, or base price plus the tax when Add tax is ticked. onChange(changes) gets the changed
+// fields (cost_price, tax_on, cost_vnd). small: the tighter look of the Import New Batch form;
+// ring: the focus colour of the form it sits in; vnd: also offer the price in Vietnamese dong.
+function CostPriceField({ item, onChange, small = false, placeholder, ring = 'focus:ring-pink-500', vnd = false }) {
   const label = small ? 'block text-[10px] font-bold text-stone-600 uppercase mb-1' : 'block text-xs font-bold text-stone-600 uppercase mb-1';
   const input = `w-full border border-stone-300 rounded-lg ${small ? 'p-2' : 'p-2.5'} text-sm font-bold focus:ring-2 ${ring} focus:outline-none bg-[#f9f6f0]`;
   const cost = item.tax_on ? taxedCost(item.cost_price) : null;
   return (
     <div>
+      {vnd && <VndPriceInput item={item} onChange={onChange} label={label} input={input} />}
       <label className={label}>{item.tax_on ? 'Base Price (₱)' : 'Cost Price (₱)'}</label>
-      <input type="number" step="0.01" min="0" required placeholder={placeholder} aria-label={item.tax_on ? 'Base price' : 'Cost price'} value={item.cost_price} onChange={(e) => onChange('cost_price', e.target.value)} className={input} />
+      {/* Typing pesos directly replaces any dong amount. */}
+      <input type="number" step="0.01" min="0" required placeholder={placeholder} aria-label={item.tax_on ? 'Base price' : 'Cost price'} value={item.cost_price} onChange={(e) => onChange({ cost_price: e.target.value, ...(vnd ? { cost_vnd: '' } : {}) })} className={input} />
       <label className="flex items-center gap-1.5 mt-2 w-fit text-[11px] font-bold text-stone-600 cursor-pointer select-none">
-        <input type="checkbox" checked={!!item.tax_on} onChange={(e) => onChange('tax_on', e.target.checked)} className="w-4 h-4 accent-pink-600" />
+        <input type="checkbox" checked={!!item.tax_on} onChange={(e) => onChange({ tax_on: e.target.checked })} className="w-4 h-4 accent-pink-600" />
         Add {COST_TAX_PERCENT}% tax
       </label>
       {cost != null && (
@@ -2053,7 +2128,7 @@ function AdminDashboard() {
   const [selectedBatch, setSelectedBatch] = useState(null);
 
   const [newBatch, setNewBatch] = useState({
-    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
+    batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', cost_vnd: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }]
   });
 
   const [editGarment, setEditGarment] = useState({
@@ -2109,7 +2184,7 @@ function AdminDashboard() {
   };
 
   const openAddBatchWizard = (prefillBatchName = '') => {
-    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+    setNewBatch({ batch_name: prefillBatchName, batch_status: prefillBatchName ? batchStatusOf(prefillBatchName) : 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', cost_vnd: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
     setShowAddBatchModal(true);
   };
 
@@ -2290,6 +2365,7 @@ function AdminDashboard() {
   };
 
   const handleBatchStyleChange = (index, field, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index][field] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
+  const handleBatchStyleFields = (index, changes) => setNewBatch({ ...newBatch, styles: newBatch.styles.map((st, i) => (i === index ? { ...st, ...changes } : st)) });
 
   // Finds an existing style by name (ignoring case and surrounding spaces). If the name exists in
   // several batches/categories, prefers the record in the batch being added to.
@@ -2323,7 +2399,7 @@ function AdminDashboard() {
     setNewBatch({ ...newBatch, styles: updatedStyles });
   };
   const handleBatchSizeChange = (index, size, value) => { const updatedStyles = [...newBatch.styles]; updatedStyles[index].sizes[size] = value; setNewBatch({ ...newBatch, styles: updatedStyles }); };
-  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
+  const addStyleToBatch = () => { setNewBatch({ ...newBatch, styles: [...newBatch.styles, { id: Date.now(), name: '', category: '', color: '', cost_price: '', cost_vnd: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] }); };
   const removeStyleFromBatch = (index) => { const updatedStyles = newBatch.styles.filter((_, i) => i !== index); setNewBatch({ ...newBatch, styles: updatedStyles }); };
 
   // The batch record a style row is added to: same name, batch, colour and category (none for a new item).
@@ -2387,7 +2463,7 @@ function AdminDashboard() {
       // The whole batch (including styles already in it) takes the status chosen in the form.
       await axios.post(`${API_BASE}garments/set-batch-status/`, { batch_name: newBatch.batch_name || 'Uncategorized', batch_status: newBatch.batch_status || 'On-hand' });
       setShowAddBatchModal(false);
-      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
+      setNewBatch({ batch_name: '', batch_status: 'On-hand', styles: [{ id: Date.now(), name: '', category: '', color: '', cost_price: '', cost_vnd: '', tax_on: false, selling_price: '', image: null, extra_photos: [], sizes: { S: 0, M: 0, L: 0, XL: 0 } }] });
       showToast(`✨ Successfully imported Batch: ${newBatch.batch_name || 'Uncategorized'}!`);
       await fetchData(true);
       if (photoProblems.length) alert(`The batch was saved, but some extra photos could not be added:\n\n${photoProblems.join('\n')}\n\nYou can add them in Edit Style Details.`);
@@ -5088,7 +5164,7 @@ function AdminDashboard() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 mt-3">
-                      <CostPriceField small placeholder="350" item={style} onChange={(field, value) => handleBatchStyleChange(index, field, value)} />
+                      <CostPriceField small vnd placeholder="350" item={style} onChange={(changes) => handleBatchStyleFields(index, changes)} />
                       <div>
                         <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
                         <input 
@@ -5242,7 +5318,7 @@ function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <CostPriceField item={editGarment} ring="focus:ring-amber-500" onChange={(field, value) => setEditGarment({ ...editGarment, [field]: value })} />
+                <CostPriceField item={editGarment} ring="focus:ring-amber-500" onChange={(changes) => setEditGarment({ ...editGarment, ...changes })} />
                 <div>
                   <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Selling Price (₱)</label>
                   <input 
