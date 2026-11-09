@@ -3516,7 +3516,7 @@ function AdminDashboard() {
       {/* ========================================== */}
       {/* 1. LIGHT KHAKI SIDEBAR                     */}
       {/* ========================================== */}
-      <aside className="w-full md:w-64 bg-[#eae4dc] text-stone-900 p-6 flex flex-col justify-between shrink-0 md:h-screen md:sticky md:top-0 z-30 shadow-xl border-r border-[#ddd5cc]">
+      <aside className="w-full md:w-64 bg-[#eae4dc] text-stone-900 p-6 flex flex-col justify-between shrink-0 md:h-screen md:overflow-y-auto md:sticky md:top-0 z-30 shadow-xl border-r border-[#ddd5cc]">
         <div>
           <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[#ddd5cc]">
             <span className="text-3xl">🌸</span>
@@ -3601,9 +3601,6 @@ function AdminDashboard() {
                   ]}
                   onClear={() => { setActiveCategory('All'); setActiveSize('All'); setActiveStock('All'); }}
                 />
-                <button type="button" onClick={toggleProfit} aria-pressed={!showProfit} title={showProfit ? 'Hide profit figures' : 'Show profit figures'} className="flex items-center gap-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 font-extrabold px-3 py-2 rounded-xl text-sm shadow-sm transition shrink-0">
-                  <VisibilityIcon hidden={!showProfit} /> Profit
-                </button>
                 <span className="bg-[#e6dece] text-stone-800 text-xs font-black px-3.5 py-2 rounded-xl shrink-0 hidden md:inline-block">{galleryDesigns.length} Styles</span>
               </div>
             </div>
@@ -3631,16 +3628,22 @@ function AdminDashboard() {
               <div className="bg-gradient-to-br from-pink-900 to-[#52453c] text-white rounded-3xl p-6 shadow-xl border border-pink-800/50 flex flex-col justify-between">
                 <div className="flex justify-between items-center border-b border-white/10 pb-2.5 mb-3">
                   <span className="text-xs font-black uppercase tracking-wider text-pink-300 flex items-center gap-1.5"><span>📅</span> Daily Boutique Sales</span>
-                  <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-xs font-bold bg-black/40 border border-white/20 rounded-lg px-2.5 py-1 text-white focus:outline-none focus:ring-2 focus:ring-pink-400" />
+                  <div className="flex items-center gap-2">
+                    {/* Hides the day's sales and every profit figure in the gallery, e.g. while a customer is looking. */}
+                    <button type="button" onClick={toggleProfit} aria-pressed={!showProfit} aria-label={showProfit ? 'Hide sales and profit figures' : 'Show sales and profit figures'} title={showProfit ? 'Hide sales and profit figures' : 'Show sales and profit figures'} className="bg-black/40 hover:bg-black/60 border border-white/20 text-pink-200 hover:text-white rounded-lg p-1.5 transition focus:outline-none focus:ring-2 focus:ring-pink-400">
+                      <VisibilityIcon hidden={!showProfit} />
+                    </button>
+                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-xs font-bold bg-black/40 border border-white/20 rounded-lg px-2.5 py-1 text-white focus:outline-none focus:ring-2 focus:ring-pink-400" />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 py-1">
                   <div>
                     <span className="text-[11px] text-stone-300 block font-bold uppercase tracking-wider mb-0.5">Pieces Sold Today</span>
-                    <span className="text-2xl sm:text-3xl font-black text-white">{dailyStats.total_pieces_sold} <span className="text-xs font-normal text-stone-300">sold</span></span>
+                    <span className="text-2xl sm:text-3xl font-black text-white">{showProfit ? dailyStats.total_pieces_sold : '••'} <span className="text-xs font-normal text-stone-300">sold</span></span>
                   </div>
                   <div className="border-l border-white/10 pl-4">
                     <span className="text-[11px] text-pink-300 block font-bold uppercase tracking-wider mb-0.5">Revenue Earned Today</span>
-                    <span className="text-2xl sm:text-3xl font-black text-pink-400">₱{dailyStats.total_profit_earned.toFixed(2)}</span>
+                    <span className="text-2xl sm:text-3xl font-black text-pink-400">{showProfit ? `₱${dailyStats.total_profit_earned.toFixed(2)}` : '₱ ••••'}</span>
                   </div>
                 </div>
               </div>
