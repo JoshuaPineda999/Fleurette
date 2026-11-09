@@ -706,6 +706,9 @@ function CustomerView() {
                 </button>
               )}
               <button type="button" onClick={() => scrollTo('contact')} className="hidden sm:inline-block px-3 py-2 rounded-lg text-sm font-black text-stone-700 hover:text-pink-600 transition">Contact</button>
+              <Link to="/login" className="ml-1 text-[11px] sm:text-xs font-black text-white hover:text-white bg-pink-600 hover:bg-pink-700 transition uppercase tracking-wider px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl shadow-md whitespace-nowrap">
+                Admin Login
+              </Link>
             </div>
           </div>
         </nav>
