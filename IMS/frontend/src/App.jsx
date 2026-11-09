@@ -1232,11 +1232,10 @@ const CROP_MIN_SCREEN = 48; // and on screen, so the box and its corners stay ea
 
 const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, accent = 'pink' }) {
-  const [rawUrl, setRawUrl] = useState(null);
+// Crops a photo to the product card's shape: drag the box, resize it from a corner, then Apply crop.
+function CropEditor({ src, previewName, previewPrice, onApply, onCancel, accent = 'pink', title = '', cancelLabel = 'Cancel' }) {
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [crop, setCrop] = useState(null); // { x, y, w } in photo pixels; crop height = w / CROP_ASPECT
-  const [resultUrl, setResultUrl] = useState(null);
   const [roomW, setRoomW] = useState(CROP_MAX_W);
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -1244,40 +1243,19 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
   const dragRef = useRef(null);
   const btnClass = accent === 'amber' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-pink-600 hover:bg-pink-700';
 
-  useEffect(() => {
-    if (!file) { setResultUrl(null); return undefined; }
-    const url = URL.createObjectURL(file);
-    setResultUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  useEffect(() => {
-    if (!rawUrl) return undefined;
-    return () => URL.revokeObjectURL(rawUrl);
-  }, [rawUrl]);
-
   // Width the editor can use: the space it sits in, less room for the corner handles.
   useEffect(() => {
     const el = editorRef.current;
-    if (!rawUrl || !el) return undefined;
+    if (!el) return undefined;
     const measure = () => setRoomW(Math.max(120, Math.min(CROP_MAX_W, el.clientWidth - 40)));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [rawUrl]);
+  }, [src]);
 
   const scale = natural.w ? Math.min(roomW / natural.w, CROP_MAX_H / natural.h) : 0; // screen px per photo px
   const cropH = crop ? crop.w / CROP_ASPECT : 0;
-
-  const pickFile = (e) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (!f) return;
-    setNatural({ w: 0, h: 0 });
-    setCrop(null);
-    setRawUrl(URL.createObjectURL(f));
-  };
 
   const onPhotoLoad = (e) => {
     const nw = e.currentTarget.naturalWidth;
@@ -1342,33 +1320,9 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
     canvas.getContext('2d').drawImage(img, crop.x, crop.y, crop.w, cropH, 0, 0, outW, outH);
     canvas.toBlob((blob) => {
       if (!blob) return;
-      onChange(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
-      setRawUrl(null);
+      onApply(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
     }, 'image/jpeg', 0.92);
   };
-
-  const shownUrl = resultUrl || currentUrl;
-
-  if (!rawUrl) {
-    return (
-      <div className="flex items-center gap-3">
-        {shownUrl ? (
-          <img src={shownUrl} alt="Photo" className="w-16 h-16 object-cover rounded-lg border border-stone-200 shrink-0" />
-        ) : (
-          <div className="w-16 h-16 rounded-lg bg-[#f2ece4] border border-stone-200 flex items-center justify-center text-2xl shrink-0">👗</div>
-        )}
-        <div className="flex-1 min-w-0 space-y-1">
-          <input
-            type="file" accept="image/*" onChange={pickFile}
-            className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
-          />
-          {file && (
-            <button type="button" onClick={() => onChange(null)} className="text-[10px] font-black text-rose-600 hover:text-rose-800">Discard new photo</button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   // Card preview: the photo positioned so only the crop box shows, at any size.
   const previewStyle = crop ? {
@@ -1389,11 +1343,12 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
 
   return (
     <div ref={editorRef} className="bg-white p-3 rounded-xl border border-stone-200 space-y-3 scroll-mt-3 md:scroll-mt-48">
+      {title && <p className="text-xs font-black text-stone-800">{title}</p>}
       {/* The buttons sit at the top, so they stay on screen above the form's bottom bar. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="basis-full sm:basis-0 sm:flex-1 text-[11px] font-bold text-stone-500">Drag the box to move it, drag a corner to resize. The area outside is cropped away.</p>
         <div className="flex gap-1.5 shrink-0 ml-auto">
-          <button type="button" onClick={() => setRawUrl(null)} className="px-3 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">Cancel</button>
+          <button type="button" onClick={onCancel} className="px-3 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">{cancelLabel}</button>
           <button type="button" onClick={applyCrop} disabled={!crop} className={`${btnClass} text-white font-extrabold px-4 py-2 rounded-lg text-xs shadow transition disabled:opacity-50`}>Apply crop</button>
         </div>
       </div>
@@ -1408,7 +1363,7 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
       >
         <div className="absolute inset-0 overflow-hidden bg-stone-900 rounded-lg">
           <img
-            ref={imgRef} src={rawUrl} alt="" draggable={false} onLoad={onPhotoLoad}
+            ref={imgRef} src={src} alt="" draggable={false} onLoad={onPhotoLoad}
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
           {frame && (
@@ -1439,7 +1394,7 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
           <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">Card preview</span>
           <div className="w-24 bg-white rounded-2xl shadow-md border border-stone-200 overflow-hidden">
             <div className="relative bg-[#f2ece4] overflow-hidden" style={{ aspectRatio: `${CROP_ASPECT}` }}>
-              <img src={rawUrl} alt="" draggable={false} className="absolute max-w-none pointer-events-none" style={previewStyle} />
+              <img src={src} alt="" draggable={false} className="absolute max-w-none pointer-events-none" style={previewStyle} />
             </div>
             <div className="p-1.5">
               <p className="font-black text-[10px] text-stone-900 truncate">{previewName || 'Style name'}</p>
@@ -1450,6 +1405,67 @@ function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, a
       </div>
     </div>
   );
+}
+
+// The main photo: pick one, crop it, and it becomes the style's photo (onChange gets the cropped File).
+function PhotoCropper({ file, currentUrl, previewName, previewPrice, onChange, accent = 'pink' }) {
+  const [rawFile, setRawFile] = useState(null);
+  const [resultUrl, setResultUrl] = useState(null);
+
+  useEffect(() => {
+    if (!file) { setResultUrl(null); return undefined; }
+    const url = URL.createObjectURL(file);
+    setResultUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const pickFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) setRawFile(f);
+  };
+
+  const shownUrl = resultUrl || currentUrl;
+
+  if (!rawFile) {
+    return (
+      <div className="flex items-center gap-3">
+        {shownUrl ? (
+          <img src={shownUrl} alt="Photo" className="w-16 h-16 object-cover rounded-lg border border-stone-200 shrink-0" />
+        ) : (
+          <div className="w-16 h-16 rounded-lg bg-[#f2ece4] border border-stone-200 flex items-center justify-center text-2xl shrink-0">👗</div>
+        )}
+        <div className="flex-1 min-w-0 space-y-1">
+          <input
+            type="file" accept="image/*" onChange={pickFile}
+            className="w-full text-xs text-stone-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-bold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100 border border-stone-200 rounded-lg p-1 bg-[#f9f6f0]"
+          />
+          {file && (
+            <button type="button" onClick={() => onChange(null)} className="text-[10px] font-black text-rose-600 hover:text-rose-800">Discard new photo</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <FileCropEditor
+      file={rawFile} previewName={previewName} previewPrice={previewPrice} accent={accent}
+      onApply={(cropped) => { onChange(cropped); setRawFile(null); }}
+      onCancel={() => setRawFile(null)}
+    />
+  );
+}
+
+// The crop editor for a picked file (it makes and frees the file's address for the photo).
+function FileCropEditor({ file, ...props }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  return src ? <CropEditor key={src} src={src} {...props} /> : null;
 }
 
 // 6b. GROUP COLOR VARIANTS INTO ONE DESIGN CARD (name + category). Input is the per-color
@@ -2340,6 +2356,7 @@ function AdminDashboard() {
     parseSafeArray(item?.sizes).forEach(s => { sizeMap[s?.size] = s?.quantity; });
     setEditGarment({ id: item.id, batch_name: item.batch_name || '', name: item.name || '', category: item.category || '', color: item.color || '', ...costFormFields(item), selling_price: item.selling_price || '', description: item.description || '', image: null, previewUrl: formatImageUrl(item.image), sizes: sizeMap, photos: formatPhotos(item.photos) });
     setProductModal({ show: false, garment: null, mode: 'sell', size: 'M', quantity: 1 });
+    setExtraQueue({ files: [], total: 0 });
     setShowEditModal(true);
   };
 
@@ -2353,24 +2370,31 @@ function AdminDashboard() {
     } catch (error) { alert('Error saving changes. Check your inputs.'); }
   };
 
-  // Extra photos are saved straight away (they don't wait for "Save Changes").
+  // Extra photos are saved straight away (they don't wait for "Save Changes"). Picked photos wait in
+  // extraQueue and are cropped one at a time; each is saved when its crop is applied.
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [extraQueue, setExtraQueue] = useState({ files: [], total: 0 });
   const MAX_EXTRA_PHOTOS = 6;
-  const handleAddExtraPhotos = async (fileList) => {
+  const handleAddExtraPhotos = (fileList) => {
     const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0 || !editGarment.id) return;
     const room = MAX_EXTRA_PHOTOS - (editGarment.photos || []).length;
     if (files.length > room) { alert(`An item can have up to ${MAX_EXTRA_PHOTOS} extra photos. You can add ${Math.max(room, 0)} more.`); return; }
+    setExtraQueue({ files, total: files.length });
+  };
+  const nextExtraPhoto = () => setExtraQueue(prev => ({ ...prev, files: prev.files.slice(1) }));
+  const handleSaveExtraPhoto = async (file) => {
+    nextExtraPhoto();
     setPhotoUploading(true);
     try {
       const formData = new FormData();
-      for (const f of files) formData.append('images', await shrinkImageFile(f));
+      formData.append('images', await shrinkImageFile(file));
       const { data } = await axios.post(`${API_BASE}garments/${editGarment.id}/photos/`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
       setEditGarment(prev => ({ ...prev, photos: formatPhotos(data.photos) }));
-      showToast(`📸 ${files.length} photo(s) added`);
+      showToast('📸 Photo added');
       await fetchData(true);
     } catch (error) {
-      alert(`Could not add the photo(s): ${error.response?.data?.error || error.message}`);
+      alert(`Could not add the photo: ${error.response?.data?.error || error.message}`);
     } finally {
       setPhotoUploading(false);
     }
@@ -5108,7 +5132,7 @@ function AdminDashboard() {
                       <button type="button" onClick={() => handleDeleteExtraPhoto(ph.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 hover:bg-white text-rose-600 font-black text-sm leading-none shadow" title="Remove photo">&times;</button>
                     </div>
                   ))}
-                  {(editGarment.photos || []).length < MAX_EXTRA_PHOTOS && (
+                  {(editGarment.photos || []).length < MAX_EXTRA_PHOTOS && extraQueue.files.length === 0 && (
                     <label className={`aspect-square rounded-lg border-2 border-dashed border-stone-300 flex flex-col items-center justify-center text-stone-500 text-[11px] font-black transition ${photoUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:border-amber-500 hover:text-amber-600'}`}>
                       <span className="text-xl leading-none">{photoUploading ? '⏳' : '＋'}</span>
                       {photoUploading ? 'Uploading…' : 'Add photos'}
@@ -5116,6 +5140,15 @@ function AdminDashboard() {
                     </label>
                   )}
                 </div>
+                {extraQueue.files.length > 0 && (
+                  <div className="mt-2">
+                    <FileCropEditor
+                      file={extraQueue.files[0]} accent="amber" previewName={editGarment.name} previewPrice={editGarment.selling_price}
+                      title={extraQueue.total > 1 ? `Photo ${extraQueue.total - extraQueue.files.length + 1} of ${extraQueue.total}` : ''}
+                      cancelLabel="Skip" onApply={handleSaveExtraPhoto} onCancel={nextExtraPhoto}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
