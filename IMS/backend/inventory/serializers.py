@@ -148,8 +148,20 @@ class GarmentSerializer(serializers.ModelSerializer):
         # One description per style: every batch record with the style's name gets it.
         Garment.objects.filter(name__iexact=str(name or '').strip()).update(description=description)
 
+    @staticmethod
+    def _share_photo(garment):
+        """One main photo per card: every batch record of the same style, colour and category
+        gets this record's photo, so a changed photo replaces the old one on the card."""
+        same_card = [
+            g.pk for g in Garment.objects.filter(name__iexact=str(garment.name or '').strip()).exclude(pk=garment.pk)
+            if _norm_color(g.color) == _norm_color(garment.color) and _norm_name(g.category) == _norm_name(garment.category)
+        ]
+        if same_card:
+            Garment.objects.filter(pk__in=same_card).update(image=garment.image.name)
+
     def create(self, validated_data):
         initial_sizes = validated_data.pop('initial_sizes', {})
+        new_photo = bool(validated_data.get('image'))
         if validated_data.get('description'):
             self._share_description(validated_data.get('name'), validated_data['description'])
         else:
@@ -166,6 +178,8 @@ class GarmentSerializer(serializers.ModelSerializer):
             if existing is not None:
                 validated_data['image'] = existing.image.name
         garment = Garment.objects.create(**validated_data)
+        if new_photo:
+            self._share_photo(garment)
         for size_label in ['S', 'M', 'L', 'XL']:
             qty = initial_sizes.get(size_label, 0)
             try: safe_qty = int(qty)
@@ -191,6 +205,8 @@ class GarmentSerializer(serializers.ModelSerializer):
         instance.save()
         if 'description' in validated_data:
             self._share_description(instance.name, instance.description)
+        if validated_data.get('image'):
+            self._share_photo(instance)
         if initial_sizes is not None:
             if isinstance(initial_sizes, str):
                 try: initial_sizes = json.loads(initial_sizes)
