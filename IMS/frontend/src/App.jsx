@@ -143,18 +143,18 @@ function PhotoViewer({ photos, startIndex = 0, onClose }) {
   if (count === 0) return null;
   return (
     <div onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-[60] cursor-pointer animate-fade-in">
-      <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center cursor-default" onClick={(e) => e.stopPropagation()}>
+      <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center">
         <div className="relative w-full flex items-center justify-center">
-          <img src={photos[index]} alt={`Photo ${index + 1} of ${count}`} className="max-w-full max-h-[74vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20" />
+          <img src={photos[index]} alt={`Photo ${index + 1} of ${count}`} onClick={(e) => e.stopPropagation()} className="max-w-full max-h-[74vh] object-contain rounded-3xl shadow-2xl border-2 border-white/20 cursor-default" />
           {count > 1 && (
             <>
-              <button type="button" onClick={() => go(-1)} aria-label="Previous photo" className="absolute left-1 sm:left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">‹</button>
-              <button type="button" onClick={() => go(1)} aria-label="Next photo" className="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">›</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); go(-1); }} aria-label="Previous photo" className="absolute left-1 sm:left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">‹</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); go(1); }} aria-label="Next photo" className="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-stone-900 font-black text-xl shadow-lg">›</button>
             </>
           )}
         </div>
         {count > 1 && (
-          <div className="flex gap-2 mt-3 overflow-x-auto max-w-full px-1 py-1">
+          <div className="flex gap-2 mt-3 overflow-x-auto max-w-full px-1 py-1" onClick={(e) => e.stopPropagation()}>
             {photos.map((url, i) => (
               <button key={`thumb-${i}`} type="button" onClick={() => setIndex(i)} className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${i === index ? 'border-pink-500' : 'border-white/20 opacity-60 hover:opacity-100'}`}>
                 <img src={url} alt={`Thumbnail ${i + 1}`} className="w-full h-full object-cover" />
@@ -162,9 +162,9 @@ function PhotoViewer({ photos, startIndex = 0, onClose }) {
             ))}
           </div>
         )}
-        <span className="text-white/80 text-xs mt-3 font-semibold bg-white/10 px-4 py-1.5 rounded-full border border-white/10">
+        <button type="button" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close photo" className="text-white/80 hover:text-white text-xs mt-3 font-semibold bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-full border border-white/10 transition">
           {count > 1 ? `${index + 1} / ${count} · ` : ''}✖ Click outside the photo to close
-        </span>
+        </button>
       </div>
     </div>
   );
@@ -759,6 +759,7 @@ function CustomerView() {
   const [catalogVersion, setCatalogVersion] = useState(0); // bump to reload stock after an order
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState(null);
+  const [detail, setDetail] = useState(null); // { design, idx }: the card opened for its details
   const [popups, setPopups] = useState([]);
   const [showPopups, setShowPopups] = useState(false);
   // Closed only for this visit: the bar is back whenever the site is opened again.
@@ -900,7 +901,7 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {groupGarmentDesigns(filteredGarments).map(design => (
-              <CustomerDesignCard key={`cust-${design.key}`} design={design} onZoom={setZoomedImage} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })} />
+              <CustomerDesignCard key={`cust-${design.key}`} design={design} onOpen={(idx) => setDetail({ design, idx })} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })} />
             ))}
           </div>
         )}
@@ -945,6 +946,12 @@ function CustomerView() {
       {orderItem && <OrderItemModal item={orderItem.item} cart={cart} actionLabel={orderItem.buyNow ? 'Buy Now' : 'Add to Cart'} onAdd={addToCart} onClose={() => setOrderItem(null)} />}
       {showOrder && <OrderCheckoutModal cart={cart} setCart={setCart} onClose={() => setShowOrder(false)} onPlaced={() => setCatalogVersion(v => v + 1)} />}
 
+      {detail && (
+        <CustomerItemDetails
+          key={`${detail.design.key}-${detail.idx}`} design={detail.design} startIdx={detail.idx} paused={!!zoomedImage}
+          onClose={() => setDetail(null)} onZoom={setZoomedImage} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })}
+        />
+      )}
       {zoomedImage && (
         <PhotoViewer photos={zoomedImage.photos} startIndex={zoomedImage.index} onClose={() => setZoomedImage(null)} />
       )}
@@ -1126,7 +1133,141 @@ function OrderCheckoutModal({ cart, setCart, onClose, onPlaced }) {
 }
 
 // One customer card per design; the colour buttons switch the photo, price and sizes shown.
-function CustomerDesignCard({ design, onZoom, onOrder }) {
+// Stock per size of one colour, split into batches that have arrived (on hand) and batches still on pre-order.
+const variantSizeStock = (item) => {
+  const sizeStock = { S: { onHand: 0, preOrder: 0 }, M: { onHand: 0, preOrder: 0 }, L: { onHand: 0, preOrder: 0 }, XL: { onHand: 0, preOrder: 0 } };
+  (item?.underlying_garments || []).forEach(g => {
+    const bucket = g?.batch_status === 'Pre-order' ? 'preOrder' : 'onHand';
+    parseSafeArray(g?.sizes).forEach(sz => {
+      if (!sizeStock[sz?.size]) sizeStock[sz?.size] = { onHand: 0, preOrder: 0 };
+      sizeStock[sz.size][bucket] += parseInt(sz?.quantity) || 0;
+    });
+  });
+  return sizeStock;
+};
+
+const variantColorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
+
+// What a customer sees after tapping a card: the photos, price, description and stock per size of each
+// colour, and the order buttons. Tapping the photo opens it full size.
+function CustomerItemDetails({ design, startIdx = 0, onClose, onOrder, onZoom, paused = false }) {
+  const [selectedIdx, setSelectedIdx] = useState(startIdx);
+  const [photoIdx, setPhotoIdx] = useState(0);
+  useEffect(() => {
+    if (paused) return undefined; // the full-size photo is open and handles Escape itself
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, paused]);
+  const item = design.variants[selectedIdx] || design.variants[0];
+  const ownPhotos = variantPhotoUrls(item);
+  const photos = ownPhotos.length > 0 ? ownPhotos : [design.variants.find(v => v?.image)?.image].filter(Boolean);
+  const shown = Math.min(photoIdx, Math.max(photos.length - 1, 0));
+  const sizeStock = variantSizeStock(item);
+  const soldOut = !(item?.total_pieces > 0);
+  const description = String(design.description || '').trim();
+  const pickColor = (i) => { setSelectedIdx(i); setPhotoIdx(0); };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={design.name} onClick={(e) => e.stopPropagation()} className="bg-white w-full sm:max-w-4xl max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col md:flex-row relative">
+        <button type="button" onClick={onClose} aria-label="Close details" className="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white/90 hover:bg-white border border-stone-200 text-stone-700 font-black shadow-sm transition">✕</button>
+
+        <div className="md:w-1/2 bg-[#f2ece4] p-4 sm:p-6 flex flex-col items-center gap-3 shrink-0">
+          <div className="relative w-full aspect-[1.1] rounded-2xl overflow-hidden bg-[#eae4dc]">
+            {photos.length > 0 ? (
+              <button type="button" onClick={() => onZoom({ photos, index: shown })} aria-label="View photo full size" className="w-full h-full cursor-zoom-in">
+                <img src={photos[shown]} alt={design.name} className={`w-full h-full object-cover ${soldOut ? 'opacity-50 grayscale' : ''}`} />
+              </button>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-7xl text-stone-300">👗</div>
+            )}
+            {soldOut && <span className="absolute top-3 left-3 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg pointer-events-none">Sold Out</span>}
+            {photos.length > 1 && (
+              <>
+                <button type="button" onClick={() => setPhotoIdx((shown - 1 + photos.length) % photos.length)} aria-label="Previous photo" className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 hover:bg-white text-stone-900 font-black text-lg shadow">‹</button>
+                <button type="button" onClick={() => setPhotoIdx((shown + 1) % photos.length)} aria-label="Next photo" className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 hover:bg-white text-stone-900 font-black text-lg shadow">›</button>
+              </>
+            )}
+          </div>
+          {photos.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto max-w-full p-1">
+              {photos.map((url, i) => (
+                <button key={`dthumb-${i}`} type="button" onClick={() => setPhotoIdx(i)} aria-label={`Photo ${i + 1}`} className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${i === shown ? 'border-pink-600' : 'border-transparent opacity-70 hover:opacity-100'}`}>
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="md:w-1/2 p-5 sm:p-7 flex flex-col gap-4 min-w-0">
+          <div className="pr-10">
+            <span className="text-xs font-bold text-stone-400">{String(design.category || 'Uncategorized')}</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-stone-900 leading-tight break-words">{String(design.name || 'Unnamed')}</h2>
+            <span className="block text-2xl font-black text-pink-600 mt-1">₱{parseFloat(item?.selling_price || 0).toFixed(2)}</span>
+          </div>
+
+          {design.variants.length > 1 ? (
+            <div>
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Colors</span>
+              <div className="flex flex-wrap gap-2">
+                {design.variants.map((v, i) => (
+                  <button key={`dcolor-${v?.id}-${i}`} type="button" onClick={() => pickColor(i)} className={`text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border transition ${i === selectedIdx ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'} ${v?.total_pieces === 0 ? 'line-through opacity-60' : ''}`}>
+                    {variantColorLabel(v)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : normColorKey(item?.color) && (
+            <span className="w-fit bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md">{String(item.color)}</span>
+          )}
+
+          {description && (
+            <div>
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1 block">Description</span>
+              <p className="text-sm text-stone-700 leading-relaxed whitespace-pre-line break-words">{description}</p>
+            </div>
+          )}
+
+          <div>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Stock per Size</span>
+            <div className="grid grid-cols-2 gap-2">
+              {['S', 'M', 'L', 'XL'].map(size => {
+                const st = sizeStock[size] || { onHand: 0, preOrder: 0 };
+                const status = st.onHand > 0 ? `${st.onHand} in stock`
+                  : st.preOrder > 0 ? `${st.preOrder} on pre-order`
+                  : 'Sold out';
+                const cls = st.onHand > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-800'
+                  : st.preOrder > 0 ? 'bg-pink-50 border-pink-300 text-pink-700'
+                  : 'bg-stone-50 border-stone-200 text-stone-400';
+                return (
+                  <div key={`dsize-${size}`} data-size={size} className={`flex items-center justify-between gap-2 border rounded-xl px-3 py-2 ${cls}`}>
+                    <span className="font-black text-sm">{displaySize(size)}</span>
+                    <span className={`text-xs font-bold text-right ${st.onHand === 0 && st.preOrder === 0 ? 'line-through' : ''}`}>
+                      {status}{st.onHand > 0 && st.preOrder > 0 ? ` · ${st.preOrder} on pre-order` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {!soldOut ? (
+            <div className="grid grid-cols-2 gap-2 mt-auto pt-2">
+              <button type="button" onClick={() => { onClose(); onOrder(item, false); }} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-3 rounded-xl text-sm transition active:scale-95">Add to Cart</button>
+              <button type="button" onClick={() => { onClose(); onOrder(item, true); }} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-3 rounded-xl text-sm shadow-sm transition active:scale-95">Buy Now</button>
+            </div>
+          ) : (
+            <p className="mt-auto pt-2 text-sm font-bold text-stone-500">This color is sold out{design.variants.some(v => v?.total_pieces > 0) ? '. Pick another color above.' : '.'}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomerDesignCard({ design, onOpen, onOrder }) {
   // Start on the first colour that still has stock.
   const [selectedIdx, setSelectedIdx] = useState(() => Math.max(0, design.variants.findIndex(v => v?.total_pieces > 0)));
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -1137,22 +1278,14 @@ function CustomerDesignCard({ design, onZoom, onOrder }) {
   const photos = ownPhotos.length > 0 ? ownPhotos : [design.variants.find(v => v?.image)?.image].filter(Boolean);
   const image = photos[Math.min(photoIdx, photos.length - 1)] || null;
   const stepPhoto = (e, step) => { e.stopPropagation(); setPhotoIdx(i => (i + step + photos.length) % photos.length); };
-  const colorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
-  // Stock per size, split into batches that have arrived (on hand) and batches still on pre-order.
-  const sizeStock = { S: { onHand: 0, preOrder: 0 }, M: { onHand: 0, preOrder: 0 }, L: { onHand: 0, preOrder: 0 }, XL: { onHand: 0, preOrder: 0 } };
-  (item?.underlying_garments || []).forEach(g => {
-    const bucket = g?.batch_status === 'Pre-order' ? 'preOrder' : 'onHand';
-    parseSafeArray(g?.sizes).forEach(sz => {
-      if (!sizeStock[sz?.size]) sizeStock[sz?.size] = { onHand: 0, preOrder: 0 };
-      sizeStock[sz.size][bucket] += parseInt(sz?.quantity) || 0;
-    });
-  });
+  const colorLabel = variantColorLabel;
+  const sizeStock = variantSizeStock(item);
   const onHandTotal = Object.values(sizeStock).reduce((sum, v) => sum + v.onHand, 0);
   const preOrderTotal = Object.values(sizeStock).reduce((sum, v) => sum + v.preOrder, 0);
   const preOrderOnly = onHandTotal === 0 && preOrderTotal > 0;
 
   return (
-    <div onClick={() => { if (image) onZoom({ photos, index: Math.min(photoIdx, photos.length - 1) }); }} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
+    <div onClick={() => onOpen(selectedIdx)} className="bg-white rounded-3xl shadow-sm border border-stone-200/80 overflow-hidden flex flex-col group relative cursor-pointer hover:shadow-xl transition duration-300">
       {item?.total_pieces === 0 && (
         <div className="absolute top-4 right-4 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full z-10 shadow-lg">Sold Out</div>
       )}
