@@ -754,7 +754,6 @@ function CustomerView() {
   const [activeSize, setActiveSize] = useState('All');
   const [activeAvailability, setActiveAvailability] = useState('All');
   const [cart, setCart] = useState([]);
-  const [orderItem, setOrderItem] = useState(null);
   const [showOrder, setShowOrder] = useState(false);
   const [catalogVersion, setCatalogVersion] = useState(0); // bump to reload stock after an order
   const [loading, setLoading] = useState(true);
@@ -801,7 +800,8 @@ function CustomerView() {
     fetchGarments();
   }, [catalogVersion]);
 
-  const addToCart = (item, size, quantity, left) => {
+  // buyNow: go straight to the checkout form.
+  const addToCart = (item, size, quantity, left, buyNow = false) => {
     const key = orderLineKey(item, size);
     setCart(prev => prev.some(l => l.key === key)
       ? prev.map(l => l.key === key ? { ...l, quantity: l.quantity + quantity } : l)
@@ -809,9 +809,7 @@ function CustomerView() {
           key, name: item.name, color: item.color, category: item.category, size, quantity,
           unit_price: parseFloat(item.selling_price) || 0, image: item.image || null, max: left,
         }]);
-    // Buy Now goes straight to the checkout form.
-    if (orderItem?.buyNow) setShowOrder(true);
-    setOrderItem(null);
+    if (buyNow) { setDetail(null); setShowOrder(true); }
   };
   const cartPieces = cart.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -901,7 +899,7 @@ function CustomerView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {groupGarmentDesigns(filteredGarments).map(design => (
-              <CustomerDesignCard key={`cust-${design.key}`} design={design} onOpen={(idx) => setDetail({ design, idx })} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })} />
+              <CustomerDesignCard key={`cust-${design.key}`} design={design} onOpen={(idx) => setDetail({ design, idx })} />
             ))}
           </div>
         )}
@@ -943,13 +941,12 @@ function CustomerView() {
           <span className="bg-white text-pink-600 text-xs font-black rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center">{cartPieces}</span>
         </button>
       )}
-      {orderItem && <OrderItemModal item={orderItem.item} cart={cart} actionLabel={orderItem.buyNow ? 'Buy Now' : 'Add to Cart'} onAdd={addToCart} onClose={() => setOrderItem(null)} />}
       {showOrder && <OrderCheckoutModal cart={cart} setCart={setCart} onClose={() => setShowOrder(false)} onPlaced={() => setCatalogVersion(v => v + 1)} />}
 
       {detail && (
         <CustomerItemDetails
           key={`${detail.design.key}-${detail.idx}`} design={detail.design} startIdx={detail.idx} paused={!!zoomedImage}
-          onClose={() => setDetail(null)} onZoom={setZoomedImage} onOrder={(item, buyNow) => setOrderItem({ item, buyNow })}
+          onClose={() => setDetail(null)} onZoom={setZoomedImage} cart={cart} onAdd={addToCart}
         />
       )}
       {zoomedImage && (
@@ -967,62 +964,6 @@ const messengerOrderUrl = (order) => `${MESSENGER_URL}?ref=${encodeURIComponent(
 const copyText = async (text) => {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 };
-
-// Pick a size and quantity for one colour of a style, then add it to the cart.
-function OrderItemModal({ item, cart, actionLabel, onAdd, onClose }) {
-  const stockFor = (size) => {
-    let onHand = 0, preOrder = 0;
-    (item.underlying_garments || []).forEach(g => parseSafeArray(g?.sizes).forEach(sz => {
-      if (sz?.size !== size) return;
-      if (g?.batch_status === 'Pre-order') preOrder += parseInt(sz?.quantity) || 0;
-      else onHand += parseInt(sz?.quantity) || 0;
-    }));
-    return { onHand, preOrder, total: onHand + preOrder };
-  };
-  const inCart = (size) => cart.filter(l => l.key === orderLineKey(item, size)).reduce((sum, l) => sum + l.quantity, 0);
-  const sizes = parseSafeArray(item.sizes).map(sz => ({ size: sz?.size, ...stockFor(sz?.size) }));
-  const [size, setSize] = useState(() => sizes.find(sz => sz.total - inCart(sz.size) > 0)?.size || '');
-  const [quantity, setQuantity] = useState(1);
-  const left = size ? stockFor(size).total - inCart(size) : 0;
-  const hasColor = normColorKey(item.color) !== '';
-  return (
-    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h2 className="text-xl font-black text-stone-900 leading-tight">{item.name}</h2>
-            <p className="text-sm font-bold text-stone-500">{hasColor ? `${item.color} · ` : ''}₱{parseFloat(item.selling_price || 0).toFixed(2)}</p>
-          </div>
-          <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-600 font-bold text-xl" aria-label="Close">&times;</button>
-        </div>
-        <span className="block text-xs font-extrabold text-stone-500 uppercase mb-2">Size</span>
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {sizes.map(sz => {
-            const out = sz.total - inCart(sz.size) <= 0;
-            return (
-              <button key={`oi-${sz.size}`} type="button" disabled={out} onClick={() => { setSize(sz.size); setQuantity(1); }}
-                className={`py-2 rounded-xl border text-sm font-black transition ${size === sz.size ? 'bg-pink-600 border-pink-600 text-white' : out ? 'bg-stone-50 border-stone-100 text-stone-300 line-through cursor-not-allowed' : sz.onHand === 0 ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-[#f9f6f0] border-stone-300 text-stone-700 hover:bg-stone-100'}`}>
-                {displaySize(sz.size)}
-              </button>
-            );
-          })}
-        </div>
-        {size && stockFor(size).onHand === 0 && <p className="text-[11px] font-bold text-pink-700 mb-2">This size is on pre-order.</p>}
-        <span className="block text-xs font-extrabold text-stone-500 uppercase mt-4 mb-2">Quantity</span>
-        <div className="flex items-center gap-3 mb-5">
-          <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0]">
-            <button type="button" onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-10 h-10 font-black text-stone-600">-</button>
-            <span className="w-8 text-center font-black">{quantity}</span>
-            <button type="button" onClick={() => setQuantity(q => Math.min(left, q + 1))} disabled={quantity >= left} className="w-10 h-10 font-black text-stone-600 disabled:text-stone-300">+</button>
-          </div>
-        </div>
-        <button type="button" disabled={!size || left <= 0} onClick={() => onAdd(item, size, quantity, left)} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95">
-          {actionLabel}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 const orderLineKey = (item, size) => `${normNameKey(item.name)}|${normColorKey(item.color)}|${normNameKey(item.category)}|${size}`;
 
@@ -1149,10 +1090,14 @@ const variantSizeStock = (item) => {
 const variantColorLabel = (v) => (!v?.color || v.color === 'N/A' ? 'No color' : String(v.color));
 
 // What a customer sees after tapping a card: the photos, price, description and stock per size of each
-// colour, and the order buttons. Tapping the photo opens it full size.
-function CustomerItemDetails({ design, startIdx = 0, onClose, onOrder, onZoom, paused = false }) {
+// colour. Tapping a size shows the quantity and the order buttons. Tapping the photo opens it full size.
+// onAdd(item, size, quantity, left, buyNow) puts the pieces in the cart.
+function CustomerItemDetails({ design, startIdx = 0, onClose, cart, onAdd, onZoom, paused = false }) {
   const [selectedIdx, setSelectedIdx] = useState(startIdx);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [size, setSize] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [added, setAdded] = useState('');
   useEffect(() => {
     if (paused) return undefined; // the full-size photo is open and handles Escape itself
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -1166,7 +1111,20 @@ function CustomerItemDetails({ design, startIdx = 0, onClose, onOrder, onZoom, p
   const sizeStock = variantSizeStock(item);
   const soldOut = !(item?.total_pieces > 0);
   const description = String(design.description || '').trim();
-  const pickColor = (i) => { setSelectedIdx(i); setPhotoIdx(0); };
+  const pickColor = (i) => { setSelectedIdx(i); setPhotoIdx(0); setSize(''); setQuantity(1); };
+  // Pieces of a size still free to order: its stock less what is already in the cart.
+  const inCart = (sz) => (cart || []).filter(l => l.key === orderLineKey(item, sz)).reduce((sum, l) => sum + l.quantity, 0);
+  const leftOf = (sz) => { const st = sizeStock[sz] || { onHand: 0, preOrder: 0 }; return st.onHand + st.preOrder - inCart(sz); };
+  const left = size ? leftOf(size) : 0;
+  const pickSize = (sz) => { setSize(sz); setQuantity(1); setAdded(''); };
+  const order = (buyNow) => {
+    onAdd(item, size, quantity, left, buyNow);
+    if (!buyNow) {
+      setAdded(`Added ${quantity} × ${displaySize(size)} to your cart.`);
+      setSize('');
+      setQuantity(1);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
@@ -1231,35 +1189,55 @@ function CustomerItemDetails({ design, startIdx = 0, onClose, onOrder, onZoom, p
           )}
 
           <div>
-            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">Stock per Size</span>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 block">{soldOut ? 'Stock per Size' : 'Stock per Size · tap one to order'}</span>
             <div className="grid grid-cols-2 gap-2">
-              {['S', 'M', 'L', 'XL'].map(size => {
-                const st = sizeStock[size] || { onHand: 0, preOrder: 0 };
+              {['S', 'M', 'L', 'XL'].map(sz => {
+                const st = sizeStock[sz] || { onHand: 0, preOrder: 0 };
+                const free = leftOf(sz);
                 const status = st.onHand > 0 ? `${st.onHand} in stock`
                   : st.preOrder > 0 ? `${st.preOrder} on pre-order`
                   : 'Sold out';
-                const cls = st.onHand > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-800'
-                  : st.preOrder > 0 ? 'bg-pink-50 border-pink-300 text-pink-700'
-                  : 'bg-stone-50 border-stone-200 text-stone-400';
+                const picked = size === sz;
+                const cls = picked ? 'bg-pink-600 border-pink-600 text-white'
+                  : free <= 0 ? 'bg-stone-50 border-stone-200 text-stone-400 cursor-not-allowed'
+                  : st.onHand > 0 ? 'bg-[#f9f6f0] border-stone-300 text-stone-800 hover:border-pink-500'
+                  : 'bg-pink-50 border-pink-300 text-pink-700 hover:border-pink-500';
                 return (
-                  <div key={`dsize-${size}`} data-size={size} className={`flex items-center justify-between gap-2 border rounded-xl px-3 py-2 ${cls}`}>
-                    <span className="font-black text-sm">{displaySize(size)}</span>
+                  <button key={`dsize-${sz}`} type="button" data-size={sz} disabled={free <= 0} aria-pressed={picked} onClick={() => pickSize(sz)}
+                    className={`flex items-center justify-between gap-2 border-2 rounded-xl px-3 py-2 text-left transition ${cls}`}>
+                    <span className="font-black text-sm">{displaySize(sz)}</span>
                     <span className={`text-xs font-bold text-right ${st.onHand === 0 && st.preOrder === 0 ? 'line-through' : ''}`}>
                       {status}{st.onHand > 0 && st.preOrder > 0 ? ` · ${st.preOrder} on pre-order` : ''}
+                      {st.onHand + st.preOrder > 0 && free <= 0 ? ' · all in your cart' : ''}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          {!soldOut ? (
-            <div className="grid grid-cols-2 gap-2 mt-auto pt-2">
-              <button type="button" onClick={() => { onClose(); onOrder(item, false); }} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-3 rounded-xl text-sm transition active:scale-95">Add to Cart</button>
-              <button type="button" onClick={() => { onClose(); onOrder(item, true); }} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-3 rounded-xl text-sm shadow-sm transition active:scale-95">Buy Now</button>
+          {soldOut ? (
+            <p className="mt-auto pt-2 text-sm font-bold text-stone-500">This color is sold out{design.variants.some(v => v?.total_pieces > 0) ? '. Pick another color above.' : '.'}</p>
+          ) : size ? (
+            <div className="mt-auto pt-2 space-y-3" data-order-panel>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">Quantity · Size {displaySize(size)}</span>
+                  {(sizeStock[size]?.onHand || 0) === 0 && <span className="text-[11px] font-bold text-pink-700">This size is on pre-order.</span>}
+                </div>
+                <div className="flex items-center border border-stone-300 rounded-xl bg-[#f9f6f0] shrink-0">
+                  <button type="button" onClick={() => setQuantity(q => Math.max(1, q - 1))} disabled={quantity <= 1} aria-label="Fewer" className="w-10 h-10 font-black text-stone-600 disabled:text-stone-300">-</button>
+                  <span className="w-8 text-center font-black" aria-label="Quantity">{quantity}</span>
+                  <button type="button" onClick={() => setQuantity(q => Math.min(left, q + 1))} disabled={quantity >= left} aria-label="More" className="w-10 h-10 font-black text-stone-600 disabled:text-stone-300">+</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => order(false)} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-3 rounded-xl text-sm transition active:scale-95">Add to Cart</button>
+                <button type="button" onClick={() => order(true)} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-3 rounded-xl text-sm shadow-sm transition active:scale-95">Buy Now</button>
+              </div>
             </div>
           ) : (
-            <p className="mt-auto pt-2 text-sm font-bold text-stone-500">This color is sold out{design.variants.some(v => v?.total_pieces > 0) ? '. Pick another color above.' : '.'}</p>
+            <p className={`mt-auto pt-2 text-sm font-bold ${added ? 'text-emerald-700' : 'text-stone-500'}`}>{added ? `✓ ${added} Tap a size to add more.` : 'Tap a size to choose it.'}</p>
           )}
         </div>
       </div>
@@ -1267,7 +1245,7 @@ function CustomerItemDetails({ design, startIdx = 0, onClose, onOrder, onZoom, p
   );
 }
 
-function CustomerDesignCard({ design, onOpen, onOrder }) {
+function CustomerDesignCard({ design, onOpen }) {
   // Start on the first colour that still has stock.
   const [selectedIdx, setSelectedIdx] = useState(() => Math.max(0, design.variants.findIndex(v => v?.total_pieces > 0)));
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -1364,10 +1342,10 @@ function CustomerDesignCard({ design, onOpen, onOrder }) {
           )}
           {item?.total_pieces > 0 && (
             <div className="grid grid-cols-2 gap-2 mt-4">
-              <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item, false); }} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs transition active:scale-95">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(selectedIdx); }} className="bg-white hover:bg-pink-50 text-pink-600 border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs transition active:scale-95">
                 Add to Cart
               </button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onOrder(item, true); }} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs shadow-sm transition active:scale-95">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(selectedIdx); }} className="bg-pink-600 hover:bg-pink-700 text-white border-2 border-pink-600 font-black py-2 px-1 rounded-xl text-xs shadow-sm transition active:scale-95">
                 Buy Now
               </button>
             </div>
